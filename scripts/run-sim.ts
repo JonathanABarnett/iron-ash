@@ -8,8 +8,10 @@ import { fileURLToPath } from 'node:url';
 
 import { createGame } from '../src/engine/setup';
 import { Rng } from '../src/engine/rng';
-import { apply, enumerate } from '../src/engine/moves';
+import { apply } from '../src/engine/moves';
 import { endOfRound, isRoundOver, rollPhase } from '../src/engine/rounds';
+import { pickMove } from '../src/ai/decide';
+import type { Difficulty } from '../src/ai/types';
 import {
   parseCards,
   parseFactions,
@@ -24,15 +26,25 @@ interface CliFlags {
   games: number;
   debug: boolean;
   seed: string;
+  difficulty: Difficulty;
 }
 
 function parseFlags(argv: readonly string[]): CliFlags {
-  const flags: CliFlags = { games: 1, debug: false, seed: 'sim-default' };
+  const flags: CliFlags = {
+    games: 1,
+    debug: false,
+    seed: 'sim-default',
+    difficulty: 'medium',
+  };
   for (const arg of argv) {
     const [key, val] = arg.split('=');
     if (key === '--games' && val) flags.games = Number(val);
     else if (key === '--seed' && val) flags.seed = val;
     else if (arg === '--debug') flags.debug = true;
+    else if (key === '--difficulty' && val) {
+      if (val === 'easy' || val === 'medium' || val === 'hard') flags.difficulty = val;
+      else throw new Error(`--difficulty must be easy|medium|hard (got ${val})`);
+    }
   }
   return flags;
 }
@@ -67,7 +79,11 @@ function chooseLineup(allFactionIds: FactionId[], rng: Rng): FactionId[] {
   return shuffled.slice(0, count);
 }
 
-function runGame(seed: string, configs: ReturnType<typeof loadConfigs>): GameState {
+function runGame(
+  seed: string,
+  configs: ReturnType<typeof loadConfigs>,
+  difficulty: Difficulty,
+): GameState {
   const { factions, regions, rules, roundGoals, secretGoals, cards } = configs;
   const setupRng = new Rng(`${seed}-lineup`);
   const lineup = chooseLineup(
@@ -101,9 +117,15 @@ function runGame(seed: string, configs: ReturnType<typeof loadConfigs>): GameSta
       state = endOfRound(state, { rules, roundGoals, secretGoals });
       continue;
     }
-    const moves = enumerate(state, { rules, cards, rng });
-    const choice = rng.pick(moves);
-    state = apply(state, choice, { rules, cards, rng });
+    const { move } = pickMove(state, {
+      rules,
+      cards,
+      roundGoals,
+      secretGoals,
+      rng,
+      difficulty,
+    });
+    state = apply(state, move, { rules, cards, rng });
     totalTurns += 1;
   }
   if (state.phase !== 'finished') {
@@ -115,10 +137,10 @@ function runGame(seed: string, configs: ReturnType<typeof loadConfigs>): GameSta
 function main() {
   const flags = parseFlags(process.argv.slice(2));
   const configs = loadConfigs();
-  const { games, seed, debug } = flags;
+  const { games, seed, debug, difficulty } = flags;
 
   console.log(
-    `[iron-ash] Running ${games} game${games === 1 ? '' : 's'} with seed prefix "${seed}"`,
+    `[iron-ash] Running ${games} game${games === 1 ? '' : 's'} (difficulty=${difficulty}) with seed prefix "${seed}"`,
   );
 
   const startedAt = Date.now();
@@ -136,7 +158,7 @@ function main() {
 
   for (let i = 0; i < games; i++) {
     const gameSeed = `${seed}-${i.toString(16)}`;
-    const final = runGame(gameSeed, configs);
+    const final = runGame(gameSeed, configs, difficulty);
     totalRoundsPlayed += final.round;
     for (const p of Object.values(final.players)) {
       factionAppearances.set(
