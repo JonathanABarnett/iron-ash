@@ -23,6 +23,7 @@ import {
   draftableCards,
   playableCards,
 } from './cards';
+import { applyBattle, canBattle } from './battle';
 
 export class NotImplementedYet extends Error {
   constructor(feature: string) {
@@ -113,6 +114,17 @@ export function enumerate(state: GameState, ctx?: MoveContext): Move[] {
     }
   }
 
+  // battle — non-fortress region with at least one enemy die
+  for (const die of player.dice) {
+    if (die.location.kind !== 'barracks') continue;
+    if (die.faceValue === null) continue;
+    for (const region of Object.values(state.regionDefs)) {
+      if (canBattle(state, die, region.id)) {
+        moves.push({ kind: 'battle', attackerDieId: die.id, targetRegionId: region.id });
+      }
+    }
+  }
+
   // pass is always legal
   moves.push({ kind: 'pass' });
 
@@ -144,7 +156,25 @@ export function apply(state: GameState, move: Move, ctx?: MoveContext): GameStat
       if (!ctx) throw new IllegalMove('hire-merc requires MoveContext (rules)');
       return applyHire(state, move, ctx.rules);
     }
+    case 'battle':
+      return applyBattleMove(state, move);
   }
+}
+
+function applyBattleMove(
+  state: GameState,
+  move: { kind: 'battle'; attackerDieId: string; targetRegionId: string },
+): GameState {
+  const { state: next } = applyBattle(
+    state,
+    state.activePlayerId,
+    move.attackerDieId,
+    move.targetRegionId,
+  );
+  return produce(next, (draft) => {
+    appendLog(draft, { kind: 'move', move });
+    advanceTurn(draft);
+  });
 }
 
 function applyDraftMove(

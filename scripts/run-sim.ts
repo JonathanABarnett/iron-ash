@@ -131,6 +131,7 @@ function main() {
   let hireMoves = 0;
   let draftMoves = 0;
   let playMoves = 0;
+  let battleMoves = 0;
   let totalVp = 0;
 
   for (let i = 0; i < games; i++) {
@@ -156,6 +157,7 @@ function main() {
         else if (entry.event.move.kind === 'hire-merc') hireMoves += 1;
         else if (entry.event.move.kind === 'draft-card') draftMoves += 1;
         else if (entry.event.move.kind === 'play-card') playMoves += 1;
+        else if (entry.event.move.kind === 'battle') battleMoves += 1;
       }
     }
     if (debug && i === 0) {
@@ -178,7 +180,7 @@ function main() {
   );
   console.log(`  rounds total:   ${totalRoundsPlayed}`);
   console.log(
-    `  moves:          place=${placeMoves}  combine=${combineMoves}  pass=${passMoves}  hire=${hireMoves}  draft=${draftMoves}  play=${playMoves}`,
+    `  moves:          place=${placeMoves}  combine=${combineMoves}  pass=${passMoves}  hire=${hireMoves}  draft=${draftMoves}  play=${playMoves}  battle=${battleMoves}`,
   );
   console.log(`  avg VP/player:  ${(totalVp / Math.max(1, [...factionAppearances.values()].reduce((a, b) => a + b, 0))).toFixed(1)}`);
   console.log(

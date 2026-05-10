@@ -189,6 +189,7 @@ export type Move =
   | { kind: 'draft-card'; cardId: CardId }
   | { kind: 'play-card'; cardId: CardId }
   | { kind: 'hire-merc'; mercSlot: 'low' | 'high' | 'specialist' }
+  | { kind: 'battle'; attackerDieId: DieId; targetRegionId: RegionId }
   | { kind: 'pass' };
 
 export interface GameLogEntry {
