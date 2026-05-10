@@ -1,11 +1,13 @@
 // Loads and validates JSON config files. Validation failures throw with a readable error.
 
 import {
+  CardsConfigSchema,
   FactionsConfigSchema,
   RegionsConfigSchema,
   RoundGoalsConfigSchema,
   RulesConfigSchema,
   SecretGoalsConfigSchema,
+  type ParsedCards,
   type ParsedFactions,
   type ParsedRegions,
   type ParsedRoundGoals,
@@ -14,6 +16,7 @@ import {
 } from '../shared/schemas';
 import type { ZodError } from 'zod';
 import type {
+  CardDefinition,
   FactionDefinition,
   Region,
   RoundGoalDefinition,
@@ -59,6 +62,14 @@ export function parseSecretGoals(raw: unknown): SecretGoalDefinition[] {
     throw new Error(`Invalid secret-goals config:\n${formatZodError(result.error)}`);
   }
   return result.data as ParsedSecretGoals as SecretGoalDefinition[];
+}
+
+export function parseCards(raw: unknown): CardDefinition[] {
+  const result = CardsConfigSchema.safeParse(raw);
+  if (!result.success) {
+    throw new Error(`Invalid cards config:\n${formatZodError(result.error)}`);
+  }
+  return result.data as ParsedCards as CardDefinition[];
 }
 
 function formatZodError(err: ZodError): string {

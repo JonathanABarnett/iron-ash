@@ -1,0 +1,66 @@
+[
+  {
+    "id": "card-modifier-iron",
+    "name": "Forge Edge",
+    "kind": "modifier",
+    "cost": { "iron": 1 },
+    "effect": { "kind": "modify-die", "delta": 1 },
+    "description": "+1 to a barracks die's face value"
+  },
+  {
+    "id": "card-modifier-essence",
+    "name": "Mind Sharpen",
+    "kind": "modifier",
+    "cost": { "essence": 1 },
+    "effect": { "kind": "modify-die", "delta": 2 },
+    "description": "+2 to a barracks die's face value"
+  },
+  {
+    "id": "card-modifier-down",
+    "name": "Whisper Step",
+    "kind": "modifier",
+    "cost": { "gold": 1 },
+    "effect": { "kind": "modify-die", "delta": -1 },
+    "description": "-1 to a barracks die (for low-only regions)"
+  },
+  {
+    "id": "card-reroll",
+    "name": "Second Wind",
+    "kind": "reroll",
+    "cost": { "gold": 1 },
+    "effect": { "kind": "reroll-die" },
+    "description": "Reroll a barracks die"
+  },
+  {
+    "id": "card-combine-bonus",
+    "name": "Tactical Synergy",
+    "kind": "combine-bonus",
+    "cost": { "iron": 1 },
+    "effect": { "kind": "gain-resource", "resource": "essence", "amount": 2 },
+    "description": "Placeholder: gain 2 essence (full combine-bonus mechanic comes later)"
+  },
+  {
+    "id": "card-lock",
+    "name": "Sealed Ground",
+    "kind": "lock",
+    "cost": { "essence": 1 },
+    "effect": { "kind": "gain-vp", "amount": 1 },
+    "description": "Placeholder: gain 1 VP (full lock mechanic comes later)"
+  },
+  {
+    "id": "card-steal",
+    "name": "Hand of the Thief",
+    "kind": "steal",
+    "cost": { "gold": 2 },
+    "effect": { "kind": "gain-resource", "resource": "gold", "amount": 1 },
+    "description": "Placeholder: gain 1 gold (full steal mechanic comes later)"
+  },
+  {
+    "id": "card-forced-march",
+    "name": "Forced March",
+    "kind": "forced-march",
+    "cost": { "iron": 1 },
+    "effect": { "kind": "gain-vp", "amount": 1 },
+    "description": "Placeholder: gain 1 VP (full forced-march mechanic comes later)"
+  }
+]

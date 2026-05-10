@@ -4,12 +4,14 @@ import { endOfRound, isRoundOver, rollPhase } from '@engine/rounds';
 import { apply, enumerate } from '@engine/moves';
 import { Rng } from '@engine/rng';
 import {
+  parseCards,
   parseFactions,
   parseRegions,
   parseRoundGoals,
   parseRules,
   parseSecretGoals,
 } from '@engine/config-loader';
+import cardsJson from '@config/cards.json';
 import factionsJson from '@config/factions.json';
 import regionsJson from '@config/regions.json';
 import roundGoalsJson from '@config/round-goals.json';
@@ -25,12 +27,13 @@ function configs() {
     rules: parseRules(rulesJson),
     roundGoals: parseRoundGoals(roundGoalsJson),
     secretGoals: parseSecretGoals(secretGoalsJson),
+    cards: parseCards(cardsJson),
   };
 }
 
 describe('round loop', () => {
   it('plays a single round to completion with random AI', () => {
-    const { factions, regions, rules, roundGoals, secretGoals } = configs();
+    const { factions, regions, rules, roundGoals, secretGoals, cards } = configs();
 
     let state = createGame({
       seed: 'round-smoke',
@@ -46,14 +49,14 @@ describe('round loop', () => {
     });
 
     const rng = Rng.fromSnapshot(JSON.parse(state.rngState));
-    state = rollPhase(state, rng);
+    state = rollPhase(state, { rng, cards });
     expect(state.phase).toBe('action');
 
     let turns = 0;
     while (!isRoundOver(state) && turns < MAX_TURNS_PER_ROUND) {
-      const moves = enumerate(state, { rules });
+      const moves = enumerate(state, { rules, cards, rng });
       const choice = rng.pick(moves);
-      state = apply(state, choice, { rules });
+      state = apply(state, choice, { rules, cards, rng });
       turns += 1;
     }
 
@@ -68,11 +71,12 @@ describe('round loop', () => {
         expect(['barracks', 'garrison']).toContain(die.location.kind);
       }
       expect(player.passedThisRound).toBe(false);
+      expect(player.hand.length).toBeLessThanOrEqual(2);
     }
   });
 
   it('a full game runs to phase=finished, picks a winner, and assigns positive VP', () => {
-    const { factions, regions, rules, roundGoals, secretGoals } = configs();
+    const { factions, regions, rules, roundGoals, secretGoals, cards } = configs();
 
     let state = createGame({
       seed: 'full-game-smoke',
@@ -92,30 +96,29 @@ describe('round loop', () => {
     let totalTurns = 0;
     while (state.phase !== 'finished' && totalTurns < 5000) {
       if (state.phase === 'roll') {
-        state = rollPhase(state, rng);
+        state = rollPhase(state, { rng, cards });
         continue;
       }
       if (isRoundOver(state)) {
         state = endOfRound(state, { rules, roundGoals, secretGoals });
         continue;
       }
-      const moves = enumerate(state, { rules });
+      const moves = enumerate(state, { rules, cards, rng });
       const choice = rng.pick(moves);
-      state = apply(state, choice, { rules });
+      state = apply(state, choice, { rules, cards, rng });
       totalTurns += 1;
     }
 
     expect(state.phase).toBe('finished');
     expect(state.scoreBreakdown).toBeDefined();
     expect(state.winnerId).toBeDefined();
-    // At least the winner must have non-zero VP after a full game.
     const winner = state.scoreBreakdown!.perPlayer[state.winnerId!]!;
     expect(winner.total).toBeGreaterThan(0);
     expect(totalTurns).toBeLessThan(5000);
   });
 
   it('threat track ends the game early when threshold is met before final round', () => {
-    const { factions, regions, roundGoals, secretGoals } = configs();
+    const { factions, regions, roundGoals, secretGoals, cards } = configs();
     const lowThresholdRules = {
       ...parseRules(rulesJson),
       threatTrackThreshold: 3,
@@ -138,7 +141,7 @@ describe('round loop', () => {
     const rng = Rng.fromSnapshot(JSON.parse(state.rngState));
     while (state.phase !== 'finished') {
       if (state.phase === 'roll') {
-        state = rollPhase(state, rng);
+        state = rollPhase(state, { rng, cards });
         continue;
       }
       if (isRoundOver(state)) {
@@ -149,8 +152,8 @@ describe('round loop', () => {
         });
         continue;
       }
-      const moves = enumerate(state, { rules: lowThresholdRules });
-      state = apply(state, rng.pick(moves), { rules: lowThresholdRules });
+      const moves = enumerate(state, { rules: lowThresholdRules, cards, rng });
+      state = apply(state, rng.pick(moves), { rules: lowThresholdRules, cards, rng });
     }
     expect(state.threatTrack).toBeGreaterThanOrEqual(3);
     expect(state.round).toBeLessThanOrEqual(3);

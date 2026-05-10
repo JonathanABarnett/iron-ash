@@ -73,6 +73,41 @@ export const FactionDefinitionSchema = z.object({
 
 export const FactionsConfigSchema = z.array(FactionDefinitionSchema);
 
+export const CardKindSchema = z.enum([
+  'modifier',
+  'reroll',
+  'combine-bonus',
+  'lock',
+  'steal',
+  'forced-march',
+]);
+
+export const CardEffectSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('gain-resource'),
+    resource: ResourceSchema,
+    amount: z.number().int(),
+  }),
+  z.object({ kind: z.literal('gain-vp'), amount: z.number().int() }),
+  z.object({ kind: z.literal('reroll-die') }),
+  z.object({ kind: z.literal('modify-die'), delta: z.number().int() }),
+]);
+
+export const CardDefinitionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: CardKindSchema,
+  cost: z.object({
+    iron: z.number().int().nonnegative().optional(),
+    gold: z.number().int().nonnegative().optional(),
+    essence: z.number().int().nonnegative().optional(),
+  }),
+  effect: CardEffectSchema,
+  description: z.string().optional(),
+});
+
+export const CardsConfigSchema = z.array(CardDefinitionSchema);
+
 export const RoundGoalDefinitionSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -111,3 +146,4 @@ export type ParsedFactions = z.infer<typeof FactionsConfigSchema>;
 export type ParsedRules = z.infer<typeof RulesConfigSchema>;
 export type ParsedRoundGoals = z.infer<typeof RoundGoalsConfigSchema>;
 export type ParsedSecretGoals = z.infer<typeof SecretGoalsConfigSchema>;
+export type ParsedCards = z.infer<typeof CardsConfigSchema>;

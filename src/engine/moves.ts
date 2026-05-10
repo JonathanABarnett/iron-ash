@@ -3,10 +3,26 @@
 // Card / merc / battle moves throw NotImplementedYet — added in Phase 2.
 
 import { produce } from 'immer';
-import type { Die, GameState, Move, Player, PlayerId, RulesConfig, Terrain } from './types';
+import type {
+  CardDefinition,
+  Die,
+  GameState,
+  Move,
+  Player,
+  PlayerId,
+  RulesConfig,
+  Terrain,
+} from './types';
+import type { Rng } from './rng';
 import { canCombineDice, canPlaceDie } from './map';
 import { applyGarrison } from './fortresses';
 import { applyHireMerc, isSlotAvailable, mercCost } from './mercenaries';
+import {
+  applyDraft,
+  applyPlay as applyPlayCardEffect,
+  draftableCards,
+  playableCards,
+} from './cards';
 
 export class NotImplementedYet extends Error {
   constructor(feature: string) {
@@ -38,6 +54,8 @@ export function getDie(state: GameState, ownerId: PlayerId, dieId: string): Die 
 
 export interface MoveContext {
   rules: RulesConfig;
+  cards?: CardDefinition[];
+  rng?: Rng;
 }
 
 /** All legal moves for the active player given current state. */
@@ -85,6 +103,16 @@ export function enumerate(state: GameState, ctx?: MoveContext): Move[] {
     }
   }
 
+  // draft-card / play-card require cards definitions
+  if (ctx?.cards) {
+    for (const id of draftableCards(state, player.id, ctx.cards)) {
+      moves.push({ kind: 'draft-card', cardId: id });
+    }
+    for (const id of playableCards(state, player.id)) {
+      moves.push({ kind: 'play-card', cardId: id });
+    }
+  }
+
   // pass is always legal
   moves.push({ kind: 'pass' });
 
@@ -103,13 +131,45 @@ export function apply(state: GameState, move: Move, ctx?: MoveContext): GameStat
       return applyCombine(state, move);
     case 'pass':
       return applyPass(state);
-    case 'play-card':
-      throw new NotImplementedYet('play-card');
+    case 'draft-card': {
+      if (!ctx?.cards) throw new IllegalMove('draft-card requires MoveContext.cards');
+      return applyDraftMove(state, move, ctx.cards);
+    }
+    case 'play-card': {
+      if (!ctx?.cards) throw new IllegalMove('play-card requires MoveContext.cards');
+      if (!ctx.rng) throw new IllegalMove('play-card requires MoveContext.rng');
+      return applyPlayMove(state, move, ctx.cards, ctx.rng);
+    }
     case 'hire-merc': {
       if (!ctx) throw new IllegalMove('hire-merc requires MoveContext (rules)');
       return applyHire(state, move, ctx.rules);
     }
   }
+}
+
+function applyDraftMove(
+  state: GameState,
+  move: { kind: 'draft-card'; cardId: string },
+  cards: CardDefinition[],
+): GameState {
+  const next = applyDraft(state, state.activePlayerId, move.cardId, cards);
+  return produce(next, (draft) => {
+    appendLog(draft, { kind: 'move', move });
+    advanceTurn(draft);
+  });
+}
+
+function applyPlayMove(
+  state: GameState,
+  move: { kind: 'play-card'; cardId: string },
+  cards: CardDefinition[],
+  rng: Rng,
+): GameState {
+  const next = applyPlayCardEffect(state, state.activePlayerId, move.cardId, cards, rng);
+  return produce(next, (draft) => {
+    appendLog(draft, { kind: 'move', move });
+    advanceTurn(draft);
+  });
 }
 
 function applyHire(

@@ -11,6 +11,7 @@ import { Rng } from '../src/engine/rng';
 import { apply, enumerate } from '../src/engine/moves';
 import { endOfRound, isRoundOver, rollPhase } from '../src/engine/rounds';
 import {
+  parseCards,
   parseFactions,
   parseRegions,
   parseRoundGoals,
@@ -54,7 +55,10 @@ function loadConfigs() {
   const secretGoals = parseSecretGoals(
     JSON.parse(readFileSync(resolve(root, 'config/secret-goals.json'), 'utf8')),
   );
-  return { factions, regions, rules, roundGoals, secretGoals };
+  const cards = parseCards(
+    JSON.parse(readFileSync(resolve(root, 'config/cards.json'), 'utf8')),
+  );
+  return { factions, regions, rules, roundGoals, secretGoals, cards };
 }
 
 function chooseLineup(allFactionIds: FactionId[], rng: Rng): FactionId[] {
@@ -64,7 +68,7 @@ function chooseLineup(allFactionIds: FactionId[], rng: Rng): FactionId[] {
 }
 
 function runGame(seed: string, configs: ReturnType<typeof loadConfigs>): GameState {
-  const { factions, regions, rules, roundGoals, secretGoals } = configs;
+  const { factions, regions, rules, roundGoals, secretGoals, cards } = configs;
   const setupRng = new Rng(`${seed}-lineup`);
   const lineup = chooseLineup(
     factions.map((f) => f.id),
@@ -90,16 +94,16 @@ function runGame(seed: string, configs: ReturnType<typeof loadConfigs>): GameSta
 
   while (state.phase !== 'finished' && totalTurns < TURN_BUDGET) {
     if (state.phase === 'roll') {
-      state = rollPhase(state, rng);
+      state = rollPhase(state, { rng, cards });
       continue;
     }
     if (isRoundOver(state)) {
       state = endOfRound(state, { rules, roundGoals, secretGoals });
       continue;
     }
-    const moves = enumerate(state, { rules });
+    const moves = enumerate(state, { rules, cards, rng });
     const choice = rng.pick(moves);
-    state = apply(state, choice, { rules });
+    state = apply(state, choice, { rules, cards, rng });
     totalTurns += 1;
   }
   if (state.phase !== 'finished') {
@@ -125,6 +129,8 @@ function main() {
   let combineMoves = 0;
   let passMoves = 0;
   let hireMoves = 0;
+  let draftMoves = 0;
+  let playMoves = 0;
   let totalVp = 0;
 
   for (let i = 0; i < games; i++) {
@@ -148,6 +154,8 @@ function main() {
         else if (entry.event.move.kind === 'combine') combineMoves += 1;
         else if (entry.event.move.kind === 'pass') passMoves += 1;
         else if (entry.event.move.kind === 'hire-merc') hireMoves += 1;
+        else if (entry.event.move.kind === 'draft-card') draftMoves += 1;
+        else if (entry.event.move.kind === 'play-card') playMoves += 1;
       }
     }
     if (debug && i === 0) {
@@ -170,7 +178,7 @@ function main() {
   );
   console.log(`  rounds total:   ${totalRoundsPlayed}`);
   console.log(
-    `  moves:          place=${placeMoves}  combine=${combineMoves}  pass=${passMoves}  hire=${hireMoves}`,
+    `  moves:          place=${placeMoves}  combine=${combineMoves}  pass=${passMoves}  hire=${hireMoves}  draft=${draftMoves}  play=${playMoves}`,
   );
   console.log(`  avg VP/player:  ${(totalVp / Math.max(1, [...factionAppearances.values()].reduce((a, b) => a + b, 0))).toFixed(1)}`);
   console.log(

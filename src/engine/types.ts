@@ -160,10 +160,34 @@ export interface MercPool {
   claimed: Partial<Record<MercSource, PlayerId>>;
 }
 
+export type CardKind =
+  | 'modifier'
+  | 'reroll'
+  | 'combine-bonus'
+  | 'lock'
+  | 'steal'
+  | 'forced-march';
+
+export type CardEffect =
+  | { kind: 'gain-resource'; resource: Resource; amount: number }
+  | { kind: 'gain-vp'; amount: number }
+  | { kind: 'reroll-die' }
+  | { kind: 'modify-die'; delta: number };
+
+export interface CardDefinition {
+  id: CardId;
+  name: string;
+  kind: CardKind;
+  cost: Partial<Record<Resource, number>>;
+  effect: CardEffect;
+  description?: string;
+}
+
 export type Move =
   | { kind: 'place'; dieId: DieId; regionId: RegionId }
   | { kind: 'combine'; dieIds: [DieId, DieId]; regionId: RegionId }
-  | { kind: 'play-card'; cardId: CardId; targets?: unknown }
+  | { kind: 'draft-card'; cardId: CardId }
+  | { kind: 'play-card'; cardId: CardId }
   | { kind: 'hire-merc'; mercSlot: 'low' | 'high' | 'specialist' }
   | { kind: 'pass' };
 

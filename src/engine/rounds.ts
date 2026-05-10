@@ -17,6 +17,8 @@ import {
   scoreRoundGoal,
 } from './scoring';
 import { clearMercDicePostRound, refreshMercPool } from './mercenaries';
+import { endOfRoundHandCleanup, refreshMarket } from './cards';
+import type { CardDefinition } from './types';
 
 /** Round ends when every player has either passed or has no placeable barracks dice. */
 export function isRoundOver(state: GameState): boolean {
@@ -26,8 +28,15 @@ export function isRoundOver(state: GameState): boolean {
   });
 }
 
-/** Run the simultaneous roll phase + refresh the merc pool for the new round. */
-export function rollPhase(state: GameState, rng: Rng): GameState {
+export interface RollPhaseContext {
+  rng: Rng;
+  cards?: CardDefinition[];
+}
+
+/** Run the simultaneous roll phase + refresh the merc pool + market. */
+export function rollPhase(state: GameState, ctxOrRng: RollPhaseContext | Rng): GameState {
+  const ctx: RollPhaseContext = ctxOrRng instanceof Rng ? { rng: ctxOrRng } : ctxOrRng;
+  const { rng, cards } = ctx;
   let next = produce(state, (draft) => {
     for (const playerId of draft.turnOrder) {
       const player = draft.players[playerId]!;
@@ -44,6 +53,7 @@ export function rollPhase(state: GameState, rng: Rng): GameState {
     });
   });
   next = refreshMercPool(next, rng);
+  if (cards) next = refreshMarket(next, cards, rng);
   return produce(next, (draft) => {
     draft.rngState = JSON.stringify(rng.snapshot());
   });
@@ -72,6 +82,9 @@ export function endOfRound(state: GameState, ctx: EndOfRoundContext): GameState 
 
   // 3) Clean up merc dice (refunds unused) before regular dice return.
   next = clearMercDicePostRound(next);
+
+  // 3b) Hand cleanup: keep up to HAND_LIMIT, discard the rest.
+  next = endOfRoundHandCleanup(next);
 
   // 4) Mark phase, log, return dice, reset passed, advance threat track, maybe end.
   next = produce(next, (draft) => {
