@@ -1,0 +1,149 @@
+[
+  {
+    "id": "iron-pass",
+    "name": "Iron Pass",
+    "terrain": "mountain",
+    "isFortress": false,
+    "valueRequirement": { "kind": "min", "value": 5 },
+    "vp": 2,
+    "adjacency": ["black-citadel", "whispering-vale"]
+  },
+  {
+    "id": "black-citadel",
+    "name": "Black Citadel",
+    "terrain": "fortress",
+    "isFortress": true,
+    "valueRequirement": { "kind": "min", "value": 4 },
+    "vp": 3,
+    "adjacency": ["iron-pass", "silverwood", "skull-ruins"]
+  },
+  {
+    "id": "silverwood",
+    "name": "Silverwood",
+    "terrain": "forest",
+    "isFortress": false,
+    "valueRequirement": { "kind": "exact", "value": 3 },
+    "vp": 1,
+    "adjacency": ["black-citadel", "marshlands", "stormwall-keep"]
+  },
+  {
+    "id": "marshlands",
+    "name": "Marshlands",
+    "terrain": "swamp",
+    "isFortress": false,
+    "valueRequirement": { "kind": "max", "value": 2 },
+    "vp": 1,
+    "adjacency": ["silverwood", "goldhaven"]
+  },
+  {
+    "id": "whispering-vale",
+    "name": "Whispering Vale",
+    "terrain": "plains",
+    "isFortress": false,
+    "valueRequirement": { "kind": "min", "value": 2 },
+    "vp": 1,
+    "adjacency": ["iron-pass", "skull-ruins", "dragons-reach"]
+  },
+  {
+    "id": "skull-ruins",
+    "name": "Skull Ruins",
+    "terrain": "ruins",
+    "isFortress": false,
+    "valueRequirement": { "kind": "exact", "value": 4 },
+    "vp": 2,
+    "adjacency": ["black-citadel", "whispering-vale", "stormwall-keep", "mireborn-bog"]
+  },
+  {
+    "id": "stormwall-keep",
+    "name": "Stormwall Keep",
+    "terrain": "fortress",
+    "isFortress": true,
+    "valueRequirement": { "kind": "minSum", "value": 7 },
+    "vp": 3,
+    "adjacency": ["silverwood", "skull-ruins", "goldhaven", "emerald-glade"]
+  },
+  {
+    "id": "goldhaven",
+    "name": "Goldhaven",
+    "terrain": "plains",
+    "isFortress": false,
+    "valueRequirement": { "kind": "min", "value": 3 },
+    "vp": 2,
+    "adjacency": ["marshlands", "stormwall-keep", "crows-nest"]
+  },
+  {
+    "id": "dragons-reach",
+    "name": "Dragon's Reach",
+    "terrain": "mountain",
+    "isFortress": false,
+    "valueRequirement": { "kind": "min", "value": 6 },
+    "vp": 3,
+    "unlocksRound": 3,
+    "adjacency": ["whispering-vale", "mireborn-bog", "highspire"]
+  },
+  {
+    "id": "mireborn-bog",
+    "name": "Mireborn Bog",
+    "terrain": "swamp",
+    "isFortress": false,
+    "valueRequirement": { "kind": "exact", "value": 2 },
+    "vp": 1,
+    "adjacency": ["skull-ruins", "dragons-reach", "emerald-glade", "bonewatch"]
+  },
+  {
+    "id": "emerald-glade",
+    "name": "Emerald Glade",
+    "terrain": "forest",
+    "isFortress": false,
+    "valueRequirement": { "kind": "min", "value": 2 },
+    "vp": 1,
+    "adjacency": ["stormwall-keep", "mireborn-bog", "crows-nest", "verdant-grove"]
+  },
+  {
+    "id": "crows-nest",
+    "name": "Crow's Nest",
+    "terrain": "ruins",
+    "isFortress": false,
+    "valueRequirement": { "kind": "max", "value": 3 },
+    "vp": 1,
+    "adjacency": ["goldhaven", "emerald-glade", "drownland"]
+  },
+  {
+    "id": "highspire",
+    "name": "Highspire",
+    "terrain": "fortress",
+    "isFortress": true,
+    "valueRequirement": { "kind": "min", "value": 5 },
+    "vp": 3,
+    "unlocksRound": 2,
+    "adjacency": ["dragons-reach", "bonewatch"]
+  },
+  {
+    "id": "bonewatch",
+    "name": "Bonewatch",
+    "terrain": "mountain",
+    "isFortress": false,
+    "valueRequirement": { "kind": "minSum", "value": 8 },
+    "vp": 2,
+    "unlocksRound": 4,
+    "adjacency": ["mireborn-bog", "highspire", "verdant-grove"]
+  },
+  {
+    "id": "verdant-grove",
+    "name": "Verdant Grove",
+    "terrain": "plains",
+    "isFortress": false,
+    "valueRequirement": { "kind": "min", "value": 4 },
+    "vp": 2,
+    "adjacency": ["emerald-glade", "bonewatch", "drownland"]
+  },
+  {
+    "id": "drownland",
+    "name": "Drownland",
+    "terrain": "swamp",
+    "isFortress": false,
+    "valueRequirement": { "kind": "min", "value": 3 },
+    "vp": 1,
+    "adjacency": ["crows-nest", "verdant-grove"]
+  }
+]

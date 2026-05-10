@@ -1,0 +1,90 @@
+[
+  {
+    "id": "warriors",
+    "name": "Warriors",
+    "startDice": [
+      { "range": "1-6", "count": 1 },
+      { "range": "1-3", "count": 2 }
+    ],
+    "startResources": { "iron": 2, "gold": 1, "essence": 0 },
+    "barracksMax": 8,
+    "primaryResource": "iron"
+  },
+  {
+    "id": "assassins",
+    "name": "Assassins",
+    "startDice": [
+      { "range": "1-6", "count": 1 },
+      { "range": "1-3", "count": 2 }
+    ],
+    "startResources": { "iron": 1, "gold": 2, "essence": 0 },
+    "barracksMax": 5,
+    "primaryResource": "shadow"
+  },
+  {
+    "id": "mages",
+    "name": "Mages",
+    "startDice": [
+      { "range": "1-6", "count": 1 },
+      { "range": "1-3", "count": 1 }
+    ],
+    "startResources": { "iron": 0, "gold": 1, "essence": 2 },
+    "barracksMax": 6,
+    "primaryResource": "essence"
+  },
+  {
+    "id": "necromancers",
+    "name": "Necromancers",
+    "startDice": [
+      { "range": "1-6", "count": 1 },
+      { "range": "1-3", "count": 2 }
+    ],
+    "startResources": { "iron": 1, "gold": 0, "essence": 2 },
+    "barracksMax": 7,
+    "primaryResource": "souls"
+  },
+  {
+    "id": "merchants",
+    "name": "Merchants",
+    "startDice": [
+      { "range": "1-6", "count": 1 },
+      { "range": "1-3", "count": 1 }
+    ],
+    "startResources": { "iron": 0, "gold": 3, "essence": 0 },
+    "barracksMax": 6,
+    "primaryResource": "gold"
+  },
+  {
+    "id": "rangers",
+    "name": "Rangers",
+    "startDice": [
+      { "range": "1-6", "count": 1 },
+      { "range": "1-3", "count": 2 }
+    ],
+    "startResources": { "iron": 1, "gold": 1, "essence": 1 },
+    "barracksMax": 7,
+    "primaryResource": "wood"
+  },
+  {
+    "id": "paladins",
+    "name": "Paladins",
+    "startDice": [
+      { "range": "1-6", "count": 1 },
+      { "range": "1-3", "count": 1 }
+    ],
+    "startResources": { "iron": 1, "gold": 1, "essence": 1 },
+    "barracksMax": 7,
+    "primaryResource": "faith"
+  },
+  {
+    "id": "beastmasters",
+    "name": "Beastmasters",
+    "startDice": [
+      { "range": "1-6", "count": 1 },
+      { "range": "1-3", "count": 1 }
+    ],
+    "startResources": { "iron": 1, "gold": 0, "essence": 2 },
+    "barracksMax": 6,
+    "primaryResource": "wild"
+  }
+]

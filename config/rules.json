@@ -1,0 +1,14 @@
+{
+  "totalRounds": 7,
+  "resourceCap": 8,
+  "specialistSequence": [6, 5, 4, 3, 2, 1, 1],
+  "freeForAllRound": 7,
+  "freeForAllToggles": {
+    "free": true,
+    "allMercsFree": true,
+    "halfPriceCards": true,
+    "specialistChoosable": true,
+    "waiveCardHandLimit": false
+  },
+  "threatTrackThreshold": 6
+}
