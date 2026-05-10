@@ -47,14 +47,17 @@ describe('refreshMercPool', () => {
   it('mints a Low (1-3), High (3-6), and Specialist die at the round value', () => {
     const { state, rng } = newGame();
     const refreshed = refreshMercPool(state, rng);
-    expect(refreshed.mercs.low?.range).toBe('1-3');
-    expect(refreshed.mercs.low?.faceValue).not.toBeNull();
-    expect(refreshed.mercs.low?.faceValue!).toBeGreaterThanOrEqual(1);
-    expect(refreshed.mercs.low?.faceValue!).toBeLessThanOrEqual(3);
+    const low = refreshed.mercs.low;
+    if (!low || low.faceValue === null) throw new Error('low merc not minted');
+    expect(low.range).toBe('1-3');
+    expect(low.faceValue).toBeGreaterThanOrEqual(1);
+    expect(low.faceValue).toBeLessThanOrEqual(3);
 
-    expect(refreshed.mercs.high?.range).toBe('3-6');
-    expect(refreshed.mercs.high?.faceValue!).toBeGreaterThanOrEqual(3);
-    expect(refreshed.mercs.high?.faceValue!).toBeLessThanOrEqual(6);
+    const high = refreshed.mercs.high;
+    if (!high || high.faceValue === null) throw new Error('high merc not minted');
+    expect(high.range).toBe('3-6');
+    expect(high.faceValue).toBeGreaterThanOrEqual(3);
+    expect(high.faceValue).toBeLessThanOrEqual(6);
 
     expect(refreshed.mercs.specialist?.faceValue).toBe(refreshed.mercs.specialistValue);
     expect(refreshed.mercs.specialist?.mercSource).toBe('specialist');
