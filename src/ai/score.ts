@@ -21,7 +21,9 @@ import {
   roundGoalAlignment,
   secretGoalAlignment,
 } from './heuristics';
+import { evaluateSpecialistHire } from './specialist-merc';
 import type { AIScoreBreakdown, ScoredCandidate } from './types';
+import type { RulesConfig } from '../engine/types';
 
 export interface ScoreContext {
   state: GameState;
@@ -30,6 +32,7 @@ export interface ScoreContext {
   cards?: CardDefinition[];
   roundGoals: RoundGoalDefinition[];
   secretGoals: SecretGoalDefinition[];
+  rules?: RulesConfig;
 }
 
 const WEIGHTS = {
@@ -41,10 +44,18 @@ const WEIGHTS = {
 } as const;
 
 export function scoreMove(move: Move, ctx: ScoreContext): ScoredCandidate {
-  const { state, playerId, factionId, cards, roundGoals, secretGoals } = ctx;
+  const { state, playerId, factionId, cards, roundGoals, secretGoals, rules } = ctx;
   const w = weightsFor(factionId);
 
-  const vpGain = estimateVPGain(move, state);
+  let vpGain = estimateVPGain(move, state);
+  // Specialist merc: weight by the spec's evaluateSpecialistHire (currentValue
+  // vs faction need, future-round penalty). Boosts when the round's value
+  // matches faction taste, dampens when next round looks better.
+  if (move.kind === 'hire-merc' && move.mercSlot === 'specialist' && rules) {
+    const currentValue = state.mercs.specialistValue;
+    const eval_ = evaluateSpecialistHire(currentValue, state, factionId, rules);
+    vpGain = vpGain * (1 + eval_);
+  }
   const resourceGain = estimateResourceGain(move, state, cards);
   const denial = estimateDenialValue(move, state, playerId);
   const rga = roundGoalAlignment(move, state, playerId, roundGoals);

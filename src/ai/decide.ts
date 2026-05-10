@@ -55,6 +55,7 @@ export function pickMove(state: GameState, ctx: DecideContext): DecideResult {
     factionId,
     roundGoals: ctx.roundGoals,
     secretGoals: goals,
+    rules: ctx.rules,
   };
   let scored: ScoredCandidate[] = moves.map((m) =>
     scoreMove(m, ctx.cards ? { ...scoreCtxBase, cards: ctx.cards } : scoreCtxBase),

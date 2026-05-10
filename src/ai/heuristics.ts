@@ -36,7 +36,9 @@ export function estimateVPGain(move: Move, state: GameState): number {
       return 1 * winChance;
     }
     case 'hire-merc':
-      return 0;
+      // A hired merc die is worth roughly one future placement.
+      // Specialist gets a value-aware bump in score.ts via evaluateSpecialistHire.
+      return move.mercSlot === 'specialist' ? 1.5 : 1.0;
     case 'draft-card':
       return 0;
     case 'play-card':
