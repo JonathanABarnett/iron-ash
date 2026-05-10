@@ -18,6 +18,7 @@ import {
 } from './scoring';
 import { clearMercDicePostRound, refreshMercPool } from './mercenaries';
 import { endOfRoundHandCleanup, refreshMarket } from './cards';
+import { applyPassivesStartOfRound } from './factions/abilities';
 import type { CardDefinition } from './types';
 
 /** Round ends when every player has either passed or has no placeable barracks dice. */
@@ -52,6 +53,7 @@ export function rollPhase(state: GameState, ctxOrRng: RollPhaseContext | Rng): G
       event: { kind: 'roll' },
     });
   });
+  next = applyPassivesStartOfRound(next);
   next = refreshMercPool(next, rng);
   if (cards) next = refreshMarket(next, cards, rng);
   return produce(next, (draft) => {

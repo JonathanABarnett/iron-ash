@@ -4,16 +4,29 @@
 // they leave the game at end of round. Unused merc dice refund their cost.
 
 import { produce } from 'immer';
-import type { Die, GameState, MercSource, RulesConfig } from './types';
+import type { Die, GameState, MercSource, PlayerId, RulesConfig } from './types';
 import { Rng, makeIdFactory } from './rng';
 import { rollDie } from './dice';
+import { getMercDiscount } from './factions/abilities';
 
 export const DEFAULT_MERC_COST = 3;
 
-/** Cost to hire any merc this round, given the active rules. */
-export function mercCost(state: GameState, rules: RulesConfig): number {
+/**
+ * Cost to hire any merc, given the active rules and an optional hirer id
+ * (for faction-specific discounts e.g. Warriors -1 gold).
+ */
+export function mercCost(
+  state: GameState,
+  rules: RulesConfig,
+  hirerId?: PlayerId,
+): number {
   if (state.freeForAll && rules.freeForAllToggles.allMercsFree) return 0;
-  return DEFAULT_MERC_COST;
+  let cost = DEFAULT_MERC_COST;
+  if (hirerId) {
+    const player = state.players[hirerId];
+    if (player) cost = Math.max(0, cost - getMercDiscount(player.factionId, hirerId));
+  }
+  return cost;
 }
 
 /** Specialist value for the active round, applying free-for-all "any value" if enabled. */
@@ -77,7 +90,7 @@ export function applyHireMerc(
   if (!isSlotAvailable(state, slot)) {
     throw new Error(`Mercenary slot ${slot} not available`);
   }
-  const cost = mercCost(state, rules);
+  const cost = mercCost(state, rules, hirerId);
   const hirer = state.players[hirerId];
   if (!hirer) throw new Error(`Unknown player ${hirerId}`);
   if (hirer.resources.gold < cost) {

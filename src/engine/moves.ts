@@ -92,9 +92,9 @@ export function enumerate(state: GameState, ctx?: MoveContext): Move[] {
     }
   }
 
-  // hire-merc — only if rules supplied (cost depends on rules + freeForAll)
+  // hire-merc — only if rules supplied (cost depends on rules + freeForAll + faction)
   if (ctx) {
-    const cost = mercCost(state, ctx.rules);
+    const cost = mercCost(state, ctx.rules, player.id);
     if (player.resources.gold >= cost) {
       for (const slot of ['low', 'high', 'specialist'] as const) {
         if (isSlotAvailable(state, slot)) {
