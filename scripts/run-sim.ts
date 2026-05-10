@@ -1,17 +1,11 @@
-// Phase 2 sim runner: random AI, full scoring, end-game winners.
-// Validates that engine + config + RNG wire up end-to-end. Replaced in Phase 4
-// by src/simulation/runner.ts (proper batch runner with stats).
+// Phase 4 sim runner CLI.
+// Delegates batching + stats + warnings to src/simulation/runner.ts;
+// this script just parses flags, loads configs, and prints/writes output.
 
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createGame } from '../src/engine/setup';
-import { Rng } from '../src/engine/rng';
-import { apply } from '../src/engine/moves';
-import { endOfRound, isRoundOver, rollPhase } from '../src/engine/rounds';
-import { pickMove } from '../src/ai/decide';
-import type { Difficulty } from '../src/ai/types';
 import {
   parseCards,
   parseFactions,
@@ -20,27 +14,31 @@ import {
   parseRules,
   parseSecretGoals,
 } from '../src/engine/config-loader';
-import type { FactionId, GameState } from '../src/engine/types';
+import { runSimulation } from '../src/simulation/runner';
+import { writeResultToFile } from '../src/simulation/output';
+import type { Difficulty } from '../src/ai/types';
 
 interface CliFlags {
   games: number;
-  debug: boolean;
   seed: string;
   difficulty: Difficulty;
+  output?: string;
+  quiet: boolean;
 }
 
 function parseFlags(argv: readonly string[]): CliFlags {
   const flags: CliFlags = {
     games: 1,
-    debug: false,
     seed: 'sim-default',
     difficulty: 'medium',
+    quiet: false,
   };
   for (const arg of argv) {
     const [key, val] = arg.split('=');
     if (key === '--games' && val) flags.games = Number(val);
     else if (key === '--seed' && val) flags.seed = val;
-    else if (arg === '--debug') flags.debug = true;
+    else if (key === '--output' && val) flags.output = val;
+    else if (arg === '--quiet') flags.quiet = true;
     else if (key === '--difficulty' && val) {
       if (val === 'easy' || val === 'medium' || val === 'hard') flags.difficulty = val;
       else throw new Error(`--difficulty must be easy|medium|hard (got ${val})`);
@@ -73,144 +71,66 @@ function loadConfigs() {
   return { factions, regions, rules, roundGoals, secretGoals, cards };
 }
 
-function chooseLineup(allFactionIds: FactionId[], rng: Rng): FactionId[] {
-  const shuffled = rng.shuffle(allFactionIds);
-  const count = rng.nextInt(2, 4);
-  return shuffled.slice(0, count);
-}
-
-function runGame(
-  seed: string,
-  configs: ReturnType<typeof loadConfigs>,
-  difficulty: Difficulty,
-): GameState {
-  const { factions, regions, rules, roundGoals, secretGoals, cards } = configs;
-  const setupRng = new Rng(`${seed}-lineup`);
-  const lineup = chooseLineup(
-    factions.map((f) => f.id),
-    setupRng,
-  );
-  let state = createGame({
-    seed,
-    players: lineup.map((factionId, i) => ({
-      id: `p${i + 1}`,
-      factionId,
-      isAI: true,
-    })),
-    regions,
-    factions,
-    rules,
-    roundGoals,
-    secretGoals,
-  });
-
-  const rng = Rng.fromSnapshot(JSON.parse(state.rngState));
-  let totalTurns = 0;
-  const TURN_BUDGET = 20000;
-
-  while (state.phase !== 'finished' && totalTurns < TURN_BUDGET) {
-    if (state.phase === 'roll') {
-      state = rollPhase(state, { rng, cards });
-      continue;
-    }
-    if (isRoundOver(state)) {
-      state = endOfRound(state, { rules, roundGoals, secretGoals });
-      continue;
-    }
-    const { move } = pickMove(state, {
-      rules,
-      cards,
-      roundGoals,
-      secretGoals,
-      rng,
-      difficulty,
-    });
-    state = apply(state, move, { rules, cards, rng });
-    totalTurns += 1;
-  }
-  if (state.phase !== 'finished') {
-    throw new Error(`Game did not finish within ${TURN_BUDGET} turns (seed=${seed})`);
-  }
-  return state;
-}
-
 function main() {
   const flags = parseFlags(process.argv.slice(2));
   const configs = loadConfigs();
-  const { games, seed, debug, difficulty } = flags;
+  const { games, seed, difficulty, output, quiet } = flags;
 
-  console.log(
-    `[iron-ash] Running ${games} game${games === 1 ? '' : 's'} (difficulty=${difficulty}) with seed prefix "${seed}"`,
-  );
-
-  const startedAt = Date.now();
-  const factionAppearances = new Map<FactionId, number>();
-  const factionWins = new Map<FactionId, number>();
-  let totalRoundsPlayed = 0;
-  let placeMoves = 0;
-  let combineMoves = 0;
-  let passMoves = 0;
-  let hireMoves = 0;
-  let draftMoves = 0;
-  let playMoves = 0;
-  let battleMoves = 0;
-  let totalVp = 0;
-
-  for (let i = 0; i < games; i++) {
-    const gameSeed = `${seed}-${i.toString(16)}`;
-    const final = runGame(gameSeed, configs, difficulty);
-    totalRoundsPlayed += final.round;
-    for (const p of Object.values(final.players)) {
-      factionAppearances.set(
-        p.factionId,
-        (factionAppearances.get(p.factionId) ?? 0) + 1,
-      );
-      totalVp += p.vp;
-    }
-    if (final.winnerId) {
-      const winnerFaction = final.players[final.winnerId]!.factionId;
-      factionWins.set(winnerFaction, (factionWins.get(winnerFaction) ?? 0) + 1);
-    }
-    for (const entry of final.log) {
-      if (entry.event.kind === 'move') {
-        if (entry.event.move.kind === 'place') placeMoves += 1;
-        else if (entry.event.move.kind === 'combine') combineMoves += 1;
-        else if (entry.event.move.kind === 'pass') passMoves += 1;
-        else if (entry.event.move.kind === 'hire-merc') hireMoves += 1;
-        else if (entry.event.move.kind === 'draft-card') draftMoves += 1;
-        else if (entry.event.move.kind === 'play-card') playMoves += 1;
-        else if (entry.event.move.kind === 'battle') battleMoves += 1;
-      }
-    }
-    if (debug && i === 0) {
-      console.log(`\n--- Game 0 log (truncated to last 20 entries) ---`);
-      for (const entry of final.log.slice(-20)) {
-        console.log(JSON.stringify(entry));
-      }
-      console.log(`--- end log; total entries: ${final.log.length} ---`);
-      console.log(
-        `Winner: ${final.winnerId} — VP totals: ${Object.values(final.players)
-          .map((p) => `${p.id}(${p.factionId})=${p.vp}`)
-          .join('  ')}\n`,
-      );
-    }
+  if (!quiet) {
+    console.log(
+      `[iron-ash] Running ${games} game${games === 1 ? '' : 's'} (difficulty=${difficulty}) seed="${seed}"`,
+    );
   }
 
-  const elapsedMs = Date.now() - startedAt;
+  const result = runSimulation({
+    numGames: games,
+    difficulty,
+    seed,
+    configs,
+  });
+
+  if (output) {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const root = resolve(here, '..');
+    const outPath = resolve(root, output);
+    writeResultToFile(result, outPath);
+    if (!quiet) console.log(`[iron-ash] Wrote ${outPath}`);
+  }
+
+  if (quiet) return;
+
   console.log(
-    `[iron-ash] Done. ${games} games in ${elapsedMs}ms (${(games / Math.max(1, elapsedMs / 1000)).toFixed(1)} games/sec)`,
+    `[iron-ash] Done. ${result.gamesRun} games in ${result.elapsedMs}ms (${(result.gamesRun / Math.max(1, result.elapsedMs / 1000)).toFixed(1)} games/sec)`,
   );
-  console.log(`  rounds total:   ${totalRoundsPlayed}`);
+  console.log(`  avg game length: ${result.rulePressure.avgGameLength.toFixed(2)} rounds`);
+  console.log(`  round-7 reach:   ${(result.rulePressure.round7ReachRate * 100).toFixed(1)}%`);
   console.log(
-    `  moves:          place=${placeMoves}  combine=${combineMoves}  pass=${passMoves}  hire=${hireMoves}  draft=${draftMoves}  play=${playMoves}  battle=${battleMoves}`,
-  );
-  console.log(`  avg VP/player:  ${(totalVp / Math.max(1, [...factionAppearances.values()].reduce((a, b) => a + b, 0))).toFixed(1)}`);
-  console.log(
-    `  faction picks:  ${[...factionAppearances.entries()].map(([k, v]) => `${k}=${v}`).join('  ')}`,
+    `  fortress turn:   ${(result.rulePressure.fortressTurnoverRate * 100).toFixed(1)}%`,
   );
   console.log(
-    `  faction wins:   ${[...factionWins.entries()].map(([k, v]) => `${k}=${v}`).join('  ')}`,
+    `  combine rate:    ${(result.rulePressure.combineActionRate * 100).toFixed(1)}%`,
   );
+  console.log(
+    `  merc hire rate:  ${(result.rulePressure.mercenaryHireRate * 100).toFixed(2)}%`,
+  );
+  console.log(
+    `  specialist by round: ${result.rulePressure.specialistClaimByRound
+      .map((v) => (v === null ? 'n/a' : `${(v * 100).toFixed(0)}%`))
+      .join('  ')}`,
+  );
+  console.log('');
+  console.log('  Faction stats:');
+  for (const f of Object.values(result.factionStats)) {
+    if (f.playCount === 0) continue;
+    console.log(
+      `    ${f.factionId.padEnd(13)} plays=${String(f.playCount).padStart(4)}  win=${(f.winRate * 100).toFixed(1).padStart(5)}%  avgVP=${f.avgVP.toFixed(1).padStart(5)}`,
+    );
+  }
+  if (result.warnings.length > 0) {
+    console.log('');
+    console.log('  Warnings:');
+    for (const w of result.warnings) console.log(`    - ${w}`);
+  }
 }
 
 main();
