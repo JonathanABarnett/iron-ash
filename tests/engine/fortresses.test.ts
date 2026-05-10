@@ -69,7 +69,7 @@ function mkState(): GameState {
     regions: { f: runtime },
     regionDefs: { f: fortress },
     market: [],
-    mercs: { low: null, high: null, specialistValue: 6, claimed: {} },
+    mercs: { low: null, high: null, specialist: null, specialistValue: 6, claimed: {} },
     threatTrack: 0,
     roundGoals: [],
     secretGoalsByPlayer: { p1: [], p2: [] },

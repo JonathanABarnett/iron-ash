@@ -74,7 +74,7 @@ function mkState(players: Player[], regions: Region[], overrides: Partial<GameSt
     regions: regionRuntimes,
     regionDefs,
     market: [],
-    mercs: { low: null, high: null, specialistValue: 6, claimed: {} },
+    mercs: { low: null, high: null, specialist: null, specialistValue: 6, claimed: {} },
     threatTrack: 0,
     roundGoals: [],
     secretGoalsByPlayer: Object.fromEntries(players.map((p) => [p.id, []])),

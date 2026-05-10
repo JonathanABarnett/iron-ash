@@ -51,9 +51,9 @@ describe('round loop', () => {
 
     let turns = 0;
     while (!isRoundOver(state) && turns < MAX_TURNS_PER_ROUND) {
-      const moves = enumerate(state);
+      const moves = enumerate(state, { rules });
       const choice = rng.pick(moves);
-      state = apply(state, choice);
+      state = apply(state, choice, { rules });
       turns += 1;
     }
 
@@ -99,9 +99,9 @@ describe('round loop', () => {
         state = endOfRound(state, { rules, roundGoals, secretGoals });
         continue;
       }
-      const moves = enumerate(state);
+      const moves = enumerate(state, { rules });
       const choice = rng.pick(moves);
-      state = apply(state, choice);
+      state = apply(state, choice, { rules });
       totalTurns += 1;
     }
 
@@ -149,8 +149,8 @@ describe('round loop', () => {
         });
         continue;
       }
-      const moves = enumerate(state);
-      state = apply(state, rng.pick(moves));
+      const moves = enumerate(state, { rules: lowThresholdRules });
+      state = apply(state, rng.pick(moves), { rules: lowThresholdRules });
     }
     expect(state.threatTrack).toBeGreaterThanOrEqual(3);
     expect(state.round).toBeLessThanOrEqual(3);

@@ -3,9 +3,10 @@
 // Card / merc / battle moves throw NotImplementedYet — added in Phase 2.
 
 import { produce } from 'immer';
-import type { Die, GameState, Move, Player, PlayerId, Terrain } from './types';
+import type { Die, GameState, Move, Player, PlayerId, RulesConfig, Terrain } from './types';
 import { canCombineDice, canPlaceDie } from './map';
 import { applyGarrison } from './fortresses';
+import { applyHireMerc, isSlotAvailable, mercCost } from './mercenaries';
 
 export class NotImplementedYet extends Error {
   constructor(feature: string) {
@@ -35,8 +36,12 @@ export function getDie(state: GameState, ownerId: PlayerId, dieId: string): Die 
   return die;
 }
 
-/** All legal moves for the active player given current state. Phase 1 scope. */
-export function enumerate(state: GameState): Move[] {
+export interface MoveContext {
+  rules: RulesConfig;
+}
+
+/** All legal moves for the active player given current state. */
+export function enumerate(state: GameState, ctx?: MoveContext): Move[] {
   if (state.phase !== 'action') return [];
   const player = getActivePlayer(state);
   const moves: Move[] = [];
@@ -68,6 +73,18 @@ export function enumerate(state: GameState): Move[] {
     }
   }
 
+  // hire-merc — only if rules supplied (cost depends on rules + freeForAll)
+  if (ctx) {
+    const cost = mercCost(state, ctx.rules);
+    if (player.resources.gold >= cost) {
+      for (const slot of ['low', 'high', 'specialist'] as const) {
+        if (isSlotAvailable(state, slot)) {
+          moves.push({ kind: 'hire-merc', mercSlot: slot });
+        }
+      }
+    }
+  }
+
   // pass is always legal
   moves.push({ kind: 'pass' });
 
@@ -75,7 +92,7 @@ export function enumerate(state: GameState): Move[] {
 }
 
 /** Apply a move; returns new state. Throws IllegalMove if invalid. */
-export function apply(state: GameState, move: Move): GameState {
+export function apply(state: GameState, move: Move, ctx?: MoveContext): GameState {
   if (state.phase !== 'action') {
     throw new IllegalMove(`apply() called in phase ${state.phase}`);
   }
@@ -88,9 +105,23 @@ export function apply(state: GameState, move: Move): GameState {
       return applyPass(state);
     case 'play-card':
       throw new NotImplementedYet('play-card');
-    case 'hire-merc':
-      throw new NotImplementedYet('hire-merc');
+    case 'hire-merc': {
+      if (!ctx) throw new IllegalMove('hire-merc requires MoveContext (rules)');
+      return applyHire(state, move, ctx.rules);
+    }
   }
+}
+
+function applyHire(
+  state: GameState,
+  move: { kind: 'hire-merc'; mercSlot: 'low' | 'high' | 'specialist' },
+  rules: RulesConfig,
+): GameState {
+  const next = applyHireMerc(state, state.activePlayerId, move.mercSlot, rules);
+  return produce(next, (draft) => {
+    appendLog(draft, { kind: 'move', move });
+    advanceTurn(draft);
+  });
 }
 
 function applyPlace(

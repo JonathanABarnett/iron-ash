@@ -29,6 +29,8 @@ export type DieLocation =
   | { kind: 'region'; regionId: RegionId }
   | { kind: 'garrison'; regionId: RegionId };
 
+export type MercSource = 'low' | 'high' | 'specialist';
+
 export interface Die {
   id: DieId;
   range: DieRange;
@@ -36,6 +38,13 @@ export interface Die {
   faceValue: number | null;
   ownerId: PlayerId;
   location: DieLocation;
+  /**
+   * If set, this die came from the mercenary pool. Merc dice leave the game
+   * at end of round (used or not). Unused merc dice refund their cost.
+   */
+  mercSource?: MercSource | undefined;
+  /** Gold paid when hiring; refunded if the merc isn't used this round. */
+  mercCost?: number | undefined;
 }
 
 export type ValueRequirement =
@@ -143,10 +152,12 @@ export interface MercPool {
   low: Die | null;
   /** High merc — 3-6 die, rerolled fresh each round */
   high: Die | null;
-  /** Specialist current value, follows config/rules.json -> specialistSequence */
+  /** Specialist die at the round's current value (pre-minted at refresh time). */
+  specialist: Die | null;
+  /** Specialist nominal value for the round, follows specialistSequence. */
   specialistValue: number;
   /** which mercs have been claimed this round, by player id */
-  claimed: Partial<Record<'low' | 'high' | 'specialist', PlayerId>>;
+  claimed: Partial<Record<MercSource, PlayerId>>;
 }
 
 export type Move =

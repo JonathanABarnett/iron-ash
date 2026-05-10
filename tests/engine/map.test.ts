@@ -13,7 +13,7 @@ function emptyState(round = 1): GameState {
     regions: {},
     regionDefs: {},
     market: [],
-    mercs: { low: null, high: null, specialistValue: 6, claimed: {} },
+    mercs: { low: null, high: null, specialist: null, specialistValue: 6, claimed: {} },
     threatTrack: 0,
     roundGoals: [],
     secretGoalsByPlayer: {},

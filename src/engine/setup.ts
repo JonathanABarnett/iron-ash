@@ -138,6 +138,7 @@ export function createGame(args: CreateGameArgs): GameState {
     mercs: {
       low: null,
       high: null,
+      specialist: null,
       specialistValue: rules.specialistSequence[0] ?? 6,
       claimed: {},
     },

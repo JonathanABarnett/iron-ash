@@ -16,6 +16,7 @@ import {
   scoreFortressPerRound,
   scoreRoundGoal,
 } from './scoring';
+import { clearMercDicePostRound, refreshMercPool } from './mercenaries';
 
 /** Round ends when every player has either passed or has no placeable barracks dice. */
 export function isRoundOver(state: GameState): boolean {
@@ -25,9 +26,9 @@ export function isRoundOver(state: GameState): boolean {
   });
 }
 
-/** Run the simultaneous roll phase. Mutates RNG state via the passed-in Rng. */
+/** Run the simultaneous roll phase + refresh the merc pool for the new round. */
 export function rollPhase(state: GameState, rng: Rng): GameState {
-  return produce(state, (draft) => {
+  let next = produce(state, (draft) => {
     for (const playerId of draft.turnOrder) {
       const player = draft.players[playerId]!;
       player.dice = rollBarracksDice(player.dice, rng);
@@ -41,6 +42,9 @@ export function rollPhase(state: GameState, rng: Rng): GameState {
       playerId: draft.turnOrder[0]!,
       event: { kind: 'roll' },
     });
+  });
+  next = refreshMercPool(next, rng);
+  return produce(next, (draft) => {
     draft.rngState = JSON.stringify(rng.snapshot());
   });
 }
@@ -66,7 +70,10 @@ export function endOfRound(state: GameState, ctx: EndOfRoundContext): GameState 
   // 2) Per-round fortress VP for garrison holders.
   next = scoreFortressPerRound(next);
 
-  // 3) Mark phase, log, return dice, reset passed, advance threat track, maybe end.
+  // 3) Clean up merc dice (refunds unused) before regular dice return.
+  next = clearMercDicePostRound(next);
+
+  // 4) Mark phase, log, return dice, reset passed, advance threat track, maybe end.
   next = produce(next, (draft) => {
     draft.phase = 'end-of-round';
     draft.log.push({

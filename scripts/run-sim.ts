@@ -97,9 +97,9 @@ function runGame(seed: string, configs: ReturnType<typeof loadConfigs>): GameSta
       state = endOfRound(state, { rules, roundGoals, secretGoals });
       continue;
     }
-    const moves = enumerate(state);
+    const moves = enumerate(state, { rules });
     const choice = rng.pick(moves);
-    state = apply(state, choice);
+    state = apply(state, choice, { rules });
     totalTurns += 1;
   }
   if (state.phase !== 'finished') {
@@ -124,6 +124,7 @@ function main() {
   let placeMoves = 0;
   let combineMoves = 0;
   let passMoves = 0;
+  let hireMoves = 0;
   let totalVp = 0;
 
   for (let i = 0; i < games; i++) {
@@ -146,6 +147,7 @@ function main() {
         if (entry.event.move.kind === 'place') placeMoves += 1;
         else if (entry.event.move.kind === 'combine') combineMoves += 1;
         else if (entry.event.move.kind === 'pass') passMoves += 1;
+        else if (entry.event.move.kind === 'hire-merc') hireMoves += 1;
       }
     }
     if (debug && i === 0) {
@@ -168,7 +170,7 @@ function main() {
   );
   console.log(`  rounds total:   ${totalRoundsPlayed}`);
   console.log(
-    `  moves:          place=${placeMoves}  combine=${combineMoves}  pass=${passMoves}`,
+    `  moves:          place=${placeMoves}  combine=${combineMoves}  pass=${passMoves}  hire=${hireMoves}`,
   );
   console.log(`  avg VP/player:  ${(totalVp / Math.max(1, [...factionAppearances.values()].reduce((a, b) => a + b, 0))).toFixed(1)}`);
   console.log(
