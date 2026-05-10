@@ -8,7 +8,11 @@ import type {
   PlayerId,
   Region,
   RegionRuntime,
+  RoundGoalDefinition,
+  RoundGoalSlot,
   RulesConfig,
+  SecretGoalDefinition,
+  SecretGoalId,
 } from './types';
 import { Rng, makeIdFactory } from './rng';
 
@@ -24,6 +28,8 @@ export interface CreateGameArgs {
   regions: Region[];
   factions: FactionDefinition[];
   rules: RulesConfig;
+  roundGoals?: RoundGoalDefinition[];
+  secretGoals?: SecretGoalDefinition[];
 }
 
 export function createGame(args: CreateGameArgs): GameState {
@@ -63,6 +69,15 @@ export function createGame(args: CreateGameArgs): GameState {
       vp: 0,
       secretGoals: [],
       passedThisRound: false,
+      progress: {
+        maxFortressesSimultaneous: 0,
+        combinesThisGame: 0,
+        battlesWonThisGame: 0,
+        mercsHiredThisGame: 0,
+        cardsKeptThisGame: 0,
+        terrainsPlacedOn: [],
+        maxDicePlacedAtRoundEnd: 0,
+      },
       factionState: {},
     };
   }
@@ -83,6 +98,33 @@ export function createGame(args: CreateGameArgs): GameState {
   const firstId = turnOrder[0];
   if (!firstId) throw new Error('No players');
 
+  // Round goals: one slot per round, drawn from pool. Round 7 (free-for-all) has no goal.
+  const roundGoalSlots: RoundGoalSlot[] = [];
+  if (args.roundGoals && args.roundGoals.length > 0) {
+    const shuffled = rng.shuffle(args.roundGoals);
+    const goalsToAssign = Math.min(rules.totalRounds - 1, shuffled.length);
+    for (let r = 1; r <= goalsToAssign; r++) {
+      roundGoalSlots.push({
+        goalId: shuffled[r - 1]!.id,
+        forRound: r,
+        resolved: false,
+      });
+    }
+  }
+
+  // Secret goals: each player drafts 2 of 4 random goals.
+  const secretGoalsByPlayer: Record<PlayerId, SecretGoalId[]> = {};
+  if (args.secretGoals && args.secretGoals.length >= 4) {
+    for (const s of setups) {
+      const draftPool = rng.shuffle(args.secretGoals).slice(0, 4);
+      // Random AI: just keep the first 2. Phase 3 AI will draft preferentially.
+      secretGoalsByPlayer[s.id] = draftPool.slice(0, 2).map((g) => g.id);
+      players[s.id]!.secretGoals = secretGoalsByPlayer[s.id]!;
+    }
+  } else {
+    for (const s of setups) secretGoalsByPlayer[s.id] = [];
+  }
+
   return {
     round: 1,
     turn: 0,
@@ -100,7 +142,8 @@ export function createGame(args: CreateGameArgs): GameState {
       claimed: {},
     },
     threatTrack: 0,
-    roundGoals: [],
+    roundGoals: roundGoalSlots,
+    secretGoalsByPlayer,
     rngSeed: seed,
     rngState: JSON.stringify(rng.snapshot()),
     log: [],

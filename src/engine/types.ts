@@ -60,8 +60,10 @@ export interface RegionRuntime {
   regionId: RegionId;
   /** dice currently placed on this region (not in fortress garrison) */
   placedDieIds: DieId[];
-  /** dice garrisoned (fortress only) */
+  /** dice garrisoned (fortress only) — held across rounds until usurped */
   garrisonedDieIds: DieId[];
+  /** owner of the current garrison, derived from garrisonedDieIds */
+  garrisonOwnerId?: PlayerId | undefined;
   /** how many rounds the current garrison has held — for VP accrual */
   heldRounds: number;
 }
@@ -87,6 +89,8 @@ export interface Player {
   secretGoals: SecretGoalId[];
   /** Set when the player has explicitly passed for the rest of this round. */
   passedThisRound: boolean;
+  /** Counters fed by the round/turn loop and queried by goal predicates. */
+  progress: GoalProgress;
   /** arbitrary per-faction extras populated in Phase 2 */
   factionState: Record<string, unknown>;
 }
@@ -96,6 +100,42 @@ export interface RoundGoalSlot {
   forRound: number;
   /** populated at end-of-round when scored */
   resolved: boolean;
+}
+
+export interface RoundGoalDefinition {
+  id: RoundGoalId;
+  name: string;
+  description: string;
+  /**
+   * 'highest' = winner has the largest measured value,
+   * 'lowest'  = winner has the smallest measured value.
+   */
+  direction: 'highest' | 'lowest';
+}
+
+export interface SecretGoalDefinition {
+  id: SecretGoalId;
+  name: string;
+  description: string;
+  vp: number;
+}
+
+/** Per-player counters used by goal predicates and end-game scoring. */
+export interface GoalProgress {
+  /** max number of fortresses held simultaneously over the game */
+  maxFortressesSimultaneous: number;
+  /** lifetime combine actions */
+  combinesThisGame: number;
+  /** lifetime battles initiated and won (Phase 2D wires this) */
+  battlesWonThisGame: number;
+  /** lifetime mercenaries hired (Phase 2B wires this) */
+  mercsHiredThisGame: number;
+  /** lifetime times the player paid to keep a card (Phase 2C wires this) */
+  cardsKeptThisGame: number;
+  /** distinct terrains the player has placed on at any point */
+  terrainsPlacedOn: Terrain[];
+  /** max dice placed at any round-end */
+  maxDicePlacedAtRoundEnd: number;
 }
 
 export interface MercPool {
@@ -148,8 +188,12 @@ export interface GameState {
   mercs: MercPool;
   /** current threat track value */
   threatTrack: number;
-  /** round goals (Phase 2) */
+  /** Round goals selected at game start (one per round in slots[round-1]). */
   roundGoals: RoundGoalSlot[];
+  /** Per-player secret goal selections (chose 2 of 4 at start). */
+  secretGoalsByPlayer: Record<PlayerId, SecretGoalId[]>;
+  /** End-of-game scoring breakdown, populated when phase=finished. */
+  scoreBreakdown?: ScoreBreakdown | undefined;
   /** seed used to start the game — for replay */
   rngSeed: string;
   /** serialized RNG cursor; written when state is persisted */
@@ -173,4 +217,23 @@ export interface RulesConfig {
     waiveCardHandLimit: boolean;
   };
   threatTrackThreshold: number;
+}
+
+export interface ScoreBreakdown {
+  perPlayer: Record<PlayerId, PlayerScore>;
+  winnerId: PlayerId;
+}
+
+export interface PlayerScore {
+  playerId: PlayerId;
+  total: number;
+  parts: {
+    roundGoals: number;
+    fortressesPerRound: number;
+    regionControl: number;
+    fortressEndGame: number;
+    fullBarracksBonus: number;
+    secretGoals: number;
+    bothSecretGoalsBonus: number;
+  };
 }

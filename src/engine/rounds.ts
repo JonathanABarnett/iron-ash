@@ -1,10 +1,21 @@
 // Round / turn loop: roll phase, action phase, end-of-round resolution.
-// Phase 1 end-of-round: dice return to barracks, advance round counter, no scoring yet.
+// Phase 2 end-of-round: score round goal, fortress per-round VP, threat track,
+// dice return to barracks, possibly end the game.
 
 import { produce } from 'immer';
 import { rollBarracksDice } from './dice';
-import type { GameState, RulesConfig } from './types';
+import type {
+  GameState,
+  RoundGoalDefinition,
+  RulesConfig,
+  SecretGoalDefinition,
+} from './types';
 import { Rng } from './rng';
+import {
+  computeEndGameScore,
+  scoreFortressPerRound,
+  scoreRoundGoal,
+} from './scoring';
 
 /** Round ends when every player has either passed or has no placeable barracks dice. */
 export function isRoundOver(state: GameState): boolean {
@@ -34,9 +45,29 @@ export function rollPhase(state: GameState, rng: Rng): GameState {
   });
 }
 
-/** Phase 1 end-of-round: dice return to barracks; round advances. */
-export function endOfRound(state: GameState, rules: RulesConfig): GameState {
-  const next = produce(state, (draft) => {
+export interface EndOfRoundContext {
+  rules: RulesConfig;
+  roundGoals: RoundGoalDefinition[];
+  secretGoals: SecretGoalDefinition[];
+}
+
+/** End-of-round: score, advance threat track, possibly end game. */
+export function endOfRound(state: GameState, ctx: EndOfRoundContext): GameState {
+  const { rules, roundGoals, secretGoals } = ctx;
+
+  // 1) Score the current round's goal, if assigned.
+  let next = state;
+  const slot = next.roundGoals.find((s) => s.forRound === next.round);
+  if (slot) {
+    const goalDef = roundGoals.find((g) => g.id === slot.goalId);
+    if (goalDef) next = scoreRoundGoal(next, goalDef);
+  }
+
+  // 2) Per-round fortress VP for garrison holders.
+  next = scoreFortressPerRound(next);
+
+  // 3) Mark phase, log, return dice, reset passed, advance threat track, maybe end.
+  next = produce(next, (draft) => {
     draft.phase = 'end-of-round';
     draft.log.push({
       round: draft.round,
@@ -45,7 +76,15 @@ export function endOfRound(state: GameState, rules: RulesConfig): GameState {
       event: { kind: 'end-of-round' },
     });
 
-    // Return all non-garrisoned dice to barracks; clear region placements.
+    // Update goal progress: max-dice-placed-at-round-end (counts deployed dice).
+    for (const player of Object.values(draft.players)) {
+      const placed = player.dice.filter((d) => d.location.kind !== 'barracks').length;
+      if (placed > player.progress.maxDicePlacedAtRoundEnd) {
+        player.progress.maxDicePlacedAtRoundEnd = placed;
+      }
+    }
+
+    // Return non-garrisoned dice to barracks; clear region placements.
     for (const player of Object.values(draft.players)) {
       for (const die of player.dice) {
         if (die.location.kind === 'region') {
@@ -57,19 +96,24 @@ export function endOfRound(state: GameState, rules: RulesConfig): GameState {
     }
     for (const rt of Object.values(draft.regions)) {
       rt.placedDieIds = [];
-      // garrisoned dice stay; bump heldRounds (Phase 2 fortress VP uses this)
       if (rt.garrisonedDieIds.length > 0) rt.heldRounds += 1;
     }
 
-    if (draft.round >= rules.totalRounds) {
+    // Threat track always ticks; faction abilities can push more in later phases.
+    draft.threatTrack += 1;
+    const reachedThreshold = draft.threatTrack >= rules.threatTrackThreshold;
+    const lastRound = draft.round >= rules.totalRounds;
+
+    if (lastRound || reachedThreshold) {
       draft.phase = 'finished';
+      draft.scoreBreakdown = computeEndGameScore(draft, secretGoals);
+      draft.winnerId = draft.scoreBreakdown.winnerId;
     } else {
       draft.round += 1;
       draft.freeForAll = draft.round === rules.freeForAllRound;
       draft.phase = 'roll';
       draft.turn = 0;
       draft.activePlayerId = draft.turnOrder[0]!;
-      // Bump specialist value if sequence has more entries (1-indexed by round).
       const idx = draft.round - 1;
       if (idx < rules.specialistSequence.length) {
         const v = rules.specialistSequence[idx];

@@ -3,8 +3,9 @@
 // Card / merc / battle moves throw NotImplementedYet — added in Phase 2.
 
 import { produce } from 'immer';
-import type { Die, GameState, Move, Player, PlayerId } from './types';
+import type { Die, GameState, Move, Player, PlayerId, Terrain } from './types';
 import { canCombineDice, canPlaceDie } from './map';
+import { applyGarrison } from './fortresses';
 
 export class NotImplementedYet extends Error {
   constructor(feature: string) {
@@ -105,11 +106,16 @@ function applyPlace(
   }
 
   return produce(state, (draft) => {
-    const dp = draft.players[player.id]!;
-    const dd = dp.dice.find((d) => d.id === die.id)!;
-    dd.location = { kind: 'region', regionId: region.id };
-    const rt = draft.regions[region.id]!;
-    rt.placedDieIds.push(die.id);
+    if (region.isFortress) {
+      applyGarrison(draft, region.id, player.id, [die.id]);
+    } else {
+      const dp = draft.players[player.id]!;
+      const dd = dp.dice.find((d) => d.id === die.id)!;
+      dd.location = { kind: 'region', regionId: region.id };
+      const rt = draft.regions[region.id]!;
+      rt.placedDieIds.push(die.id);
+    }
+    trackTerrainProgress(draft, player.id, region.terrain);
     appendLog(draft, { kind: 'move', move });
     advanceTurn(draft);
   });
@@ -129,13 +135,19 @@ function applyCombine(
   }
 
   return produce(state, (draft) => {
-    const dp = draft.players[player.id]!;
-    for (const dieId of move.dieIds) {
-      const dd = dp.dice.find((d) => d.id === dieId)!;
-      dd.location = { kind: 'region', regionId: region.id };
+    if (region.isFortress) {
+      applyGarrison(draft, region.id, player.id, move.dieIds);
+    } else {
+      const dp = draft.players[player.id]!;
+      for (const dieId of move.dieIds) {
+        const dd = dp.dice.find((d) => d.id === dieId)!;
+        dd.location = { kind: 'region', regionId: region.id };
+      }
+      const rt = draft.regions[region.id]!;
+      rt.placedDieIds.push(...move.dieIds);
     }
-    const rt = draft.regions[region.id]!;
-    rt.placedDieIds.push(...move.dieIds);
+    draft.players[player.id]!.progress.combinesThisGame += 1;
+    trackTerrainProgress(draft, player.id, region.terrain);
     appendLog(draft, { kind: 'move', move });
     advanceTurn(draft);
   });
@@ -160,6 +172,11 @@ function appendLog(
     playerId: draft.activePlayerId,
     event,
   });
+}
+
+function trackTerrainProgress(draft: GameState, playerId: PlayerId, terrain: Terrain): void {
+  const list = draft.players[playerId]!.progress.terrainsPlacedOn;
+  if (!list.includes(terrain)) list.push(terrain);
 }
 
 /** Rotate to next non-passed player. End-of-round detection lives in rounds.ts. */

@@ -1,6 +1,7 @@
 // Region helpers: legality of placement / combine / round-unlock gating.
 
 import type { Die, GameState, Region, ValueRequirement } from './types';
+import { canGarrisonOrUsurp } from './fortresses';
 
 export function meetsRequirement(value: number, req: ValueRequirement): boolean {
   switch (req.kind) {
@@ -25,8 +26,13 @@ export function canPlaceDie(die: Die, region: Region, state: GameState): boolean
   if (die.faceValue === null) return false;
   if (die.location.kind !== 'barracks') return false;
 
-  // minSum on a single placement: die must alone satisfy the floor.
-  return meetsRequirement(die.faceValue, region.valueRequirement);
+  if (!meetsRequirement(die.faceValue, region.valueRequirement)) return false;
+
+  if (region.isFortress) {
+    const garrisonCheck = canGarrisonOrUsurp(state, region.id, die.ownerId, die.faceValue);
+    if (!garrisonCheck.ok) return false;
+  }
+  return true;
 }
 
 /** Combine legality: two of the player's barracks dice placed on the same region. */
@@ -43,5 +49,11 @@ export function canCombineDice(
   if (dieA.ownerId !== dieB.ownerId) return false;
 
   const sum = dieA.faceValue + dieB.faceValue;
-  return meetsRequirement(sum, region.valueRequirement);
+  if (!meetsRequirement(sum, region.valueRequirement)) return false;
+
+  if (region.isFortress) {
+    const garrisonCheck = canGarrisonOrUsurp(state, region.id, dieA.ownerId, sum);
+    if (!garrisonCheck.ok) return false;
+  }
+  return true;
 }

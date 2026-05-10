@@ -1,11 +1,10 @@
-// Phase 1 sim runner: random AI, no scoring, no real metrics.
-// Validates that engine + config + RNG wire up end-to-end.
-// Replaced in Phase 4 by src/simulation/runner.ts (proper batch runner with stats).
+// Phase 2 sim runner: random AI, full scoring, end-game winners.
+// Validates that engine + config + RNG wire up end-to-end. Replaced in Phase 4
+// by src/simulation/runner.ts (proper batch runner with stats).
 
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
 
 import { createGame } from '../src/engine/setup';
 import { Rng } from '../src/engine/rng';
@@ -14,7 +13,9 @@ import { endOfRound, isRoundOver, rollPhase } from '../src/engine/rounds';
 import {
   parseFactions,
   parseRegions,
+  parseRoundGoals,
   parseRules,
+  parseSecretGoals,
 } from '../src/engine/config-loader';
 import type { FactionId, GameState } from '../src/engine/types';
 
@@ -47,7 +48,13 @@ function loadConfigs() {
   const rules = parseRules(
     JSON.parse(readFileSync(resolve(root, 'config/rules.json'), 'utf8')),
   );
-  return { factions, regions, rules };
+  const roundGoals = parseRoundGoals(
+    JSON.parse(readFileSync(resolve(root, 'config/round-goals.json'), 'utf8')),
+  );
+  const secretGoals = parseSecretGoals(
+    JSON.parse(readFileSync(resolve(root, 'config/secret-goals.json'), 'utf8')),
+  );
+  return { factions, regions, rules, roundGoals, secretGoals };
 }
 
 function chooseLineup(allFactionIds: FactionId[], rng: Rng): FactionId[] {
@@ -57,7 +64,7 @@ function chooseLineup(allFactionIds: FactionId[], rng: Rng): FactionId[] {
 }
 
 function runGame(seed: string, configs: ReturnType<typeof loadConfigs>): GameState {
-  const { factions, regions, rules } = configs;
+  const { factions, regions, rules, roundGoals, secretGoals } = configs;
   const setupRng = new Rng(`${seed}-lineup`);
   const lineup = chooseLineup(
     factions.map((f) => f.id),
@@ -73,6 +80,8 @@ function runGame(seed: string, configs: ReturnType<typeof loadConfigs>): GameSta
     regions,
     factions,
     rules,
+    roundGoals,
+    secretGoals,
   });
 
   const rng = Rng.fromSnapshot(JSON.parse(state.rngState));
@@ -85,7 +94,7 @@ function runGame(seed: string, configs: ReturnType<typeof loadConfigs>): GameSta
       continue;
     }
     if (isRoundOver(state)) {
-      state = endOfRound(state, rules);
+      state = endOfRound(state, { rules, roundGoals, secretGoals });
       continue;
     }
     const moves = enumerate(state);
@@ -110,10 +119,12 @@ function main() {
 
   const startedAt = Date.now();
   const factionAppearances = new Map<FactionId, number>();
+  const factionWins = new Map<FactionId, number>();
   let totalRoundsPlayed = 0;
   let placeMoves = 0;
   let combineMoves = 0;
   let passMoves = 0;
+  let totalVp = 0;
 
   for (let i = 0; i < games; i++) {
     const gameSeed = `${seed}-${i.toString(16)}`;
@@ -124,6 +135,11 @@ function main() {
         p.factionId,
         (factionAppearances.get(p.factionId) ?? 0) + 1,
       );
+      totalVp += p.vp;
+    }
+    if (final.winnerId) {
+      const winnerFaction = final.players[final.winnerId]!.factionId;
+      factionWins.set(winnerFaction, (factionWins.get(winnerFaction) ?? 0) + 1);
     }
     for (const entry of final.log) {
       if (entry.event.kind === 'move') {
@@ -133,11 +149,16 @@ function main() {
       }
     }
     if (debug && i === 0) {
-      console.log(`\n--- Game 0 log (truncated to first 30 entries) ---`);
-      for (const entry of final.log.slice(0, 30)) {
+      console.log(`\n--- Game 0 log (truncated to last 20 entries) ---`);
+      for (const entry of final.log.slice(-20)) {
         console.log(JSON.stringify(entry));
       }
-      console.log(`--- end log; total entries: ${final.log.length} ---\n`);
+      console.log(`--- end log; total entries: ${final.log.length} ---`);
+      console.log(
+        `Winner: ${final.winnerId} — VP totals: ${Object.values(final.players)
+          .map((p) => `${p.id}(${p.factionId})=${p.vp}`)
+          .join('  ')}\n`,
+      );
     }
   }
 
@@ -149,7 +170,13 @@ function main() {
   console.log(
     `  moves:          place=${placeMoves}  combine=${combineMoves}  pass=${passMoves}`,
   );
-  console.log(`  faction picks:  ${[...factionAppearances.entries()].map(([k, v]) => `${k}=${v}`).join('  ')}`);
+  console.log(`  avg VP/player:  ${(totalVp / Math.max(1, [...factionAppearances.values()].reduce((a, b) => a + b, 0))).toFixed(1)}`);
+  console.log(
+    `  faction picks:  ${[...factionAppearances.entries()].map(([k, v]) => `${k}=${v}`).join('  ')}`,
+  );
+  console.log(
+    `  faction wins:   ${[...factionWins.entries()].map(([k, v]) => `${k}=${v}`).join('  ')}`,
+  );
 }
 
 main();

@@ -1,0 +1,74 @@
+[
+  {
+    "id": "most-fortresses",
+    "name": "Hold the Line",
+    "description": "Most fortresses garrisoned at end of round",
+    "direction": "highest"
+  },
+  {
+    "id": "most-regions",
+    "name": "Wide Reach",
+    "description": "Most regions with at least one of your dice",
+    "direction": "highest"
+  },
+  {
+    "id": "most-combines",
+    "name": "Coordinated March",
+    "description": "Most combine actions taken this round",
+    "direction": "highest"
+  },
+  {
+    "id": "least-resources",
+    "name": "Spendthrift",
+    "description": "Least total resources at end of round",
+    "direction": "lowest"
+  },
+  {
+    "id": "most-low-placements",
+    "name": "Stealth",
+    "description": "Most placements this round with face value 2 or less",
+    "direction": "highest"
+  },
+  {
+    "id": "most-high-placements",
+    "name": "Show of Force",
+    "description": "Most placements this round with face value 5 or more",
+    "direction": "highest"
+  },
+  {
+    "id": "most-dice-placed",
+    "name": "Mobilization",
+    "description": "Most dice not in barracks at end of round",
+    "direction": "highest"
+  },
+  {
+    "id": "equal-resources",
+    "name": "Balance",
+    "description": "Largest minimum across all three resources",
+    "direction": "highest"
+  },
+  {
+    "id": "most-iron",
+    "name": "Steel Magnate",
+    "description": "Most iron held",
+    "direction": "highest"
+  },
+  {
+    "id": "most-gold",
+    "name": "Coin Hoarder",
+    "description": "Most gold held",
+    "direction": "highest"
+  },
+  {
+    "id": "most-essence",
+    "name": "Arcane Reservoir",
+    "description": "Most essence held",
+    "direction": "highest"
+  },
+  {
+    "id": "most-passes",
+    "name": "Patience",
+    "description": "Most pass actions taken this round",
+    "direction": "highest"
+  }
+]

@@ -16,6 +16,7 @@ function emptyState(round = 1): GameState {
     mercs: { low: null, high: null, specialistValue: 6, claimed: {} },
     threatTrack: 0,
     roundGoals: [],
+    secretGoalsByPlayer: {},
     rngSeed: 's',
     rngState: '',
     log: [],

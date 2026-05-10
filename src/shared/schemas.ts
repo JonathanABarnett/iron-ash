@@ -73,6 +73,24 @@ export const FactionDefinitionSchema = z.object({
 
 export const FactionsConfigSchema = z.array(FactionDefinitionSchema);
 
+export const RoundGoalDefinitionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  direction: z.enum(['highest', 'lowest']),
+});
+
+export const RoundGoalsConfigSchema = z.array(RoundGoalDefinitionSchema);
+
+export const SecretGoalDefinitionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  vp: z.number().int().positive(),
+});
+
+export const SecretGoalsConfigSchema = z.array(SecretGoalDefinitionSchema);
+
 export const RulesConfigSchema = z.object({
   totalRounds: z.number().int().positive(),
   resourceCap: z.number().int().positive(),
@@ -91,3 +109,5 @@ export const RulesConfigSchema = z.object({
 export type ParsedRegions = z.infer<typeof RegionsConfigSchema>;
 export type ParsedFactions = z.infer<typeof FactionsConfigSchema>;
 export type ParsedRules = z.infer<typeof RulesConfigSchema>;
+export type ParsedRoundGoals = z.infer<typeof RoundGoalsConfigSchema>;
+export type ParsedSecretGoals = z.infer<typeof SecretGoalsConfigSchema>;

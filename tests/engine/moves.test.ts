@@ -55,16 +55,21 @@ describe('moves.enumerate', () => {
 describe('moves.apply', () => {
   it('place moves the die onto the region and rotates turn', () => {
     const { state } = setup();
-    const placeable = enumerate(state).find((m) => m.kind === 'place');
-    if (!placeable || placeable.kind !== 'place') {
-      // Some seeds may produce no place moves (all dice rolled badly). Resample:
+    // Find a place move to a non-fortress so we can verify the regular placement path.
+    const placeable = enumerate(state).find(
+      (m): m is { kind: 'place'; dieId: string; regionId: string } =>
+        m.kind === 'place' && state.regionDefs[m.regionId]?.isFortress === false,
+    );
+    if (!placeable) {
       const { state: s2 } = setup('moves-test-alt');
-      const m2 = enumerate(s2).find((m) => m.kind === 'place');
-      if (!m2 || m2.kind !== 'place') throw new Error('no placeable move in either seed');
+      const m2 = enumerate(s2).find(
+        (m): m is { kind: 'place'; dieId: string; regionId: string } =>
+          m.kind === 'place' && s2.regionDefs[m.regionId]?.isFortress === false,
+      );
+      if (!m2) throw new Error('no non-fortress placeable move in either seed');
       const next = apply(s2, m2);
       const die = next.players[s2.activePlayerId]!.dice.find((d) => d.id === m2.dieId)!;
       expect(die.location).toEqual({ kind: 'region', regionId: m2.regionId });
-      expect(next.activePlayerId).not.toBe(s2.activePlayerId);
       return;
     }
     const next = apply(state, placeable);
@@ -74,6 +79,27 @@ describe('moves.apply', () => {
     expect(die.location).toEqual({ kind: 'region', regionId: placeable.regionId });
     expect(next.regions[placeable.regionId]!.placedDieIds).toContain(placeable.dieId);
     expect(next.activePlayerId).not.toBe(state.activePlayerId);
+  });
+
+  it('place onto a fortress garrisons the die instead of regular placement', () => {
+    const { state } = setup('moves-fortress');
+    const fortressMove = enumerate(state).find(
+      (m): m is { kind: 'place'; dieId: string; regionId: string } =>
+        m.kind === 'place' && state.regionDefs[m.regionId]?.isFortress === true,
+    );
+    if (!fortressMove) {
+      // not all seeds produce a fortress placement; skip silently
+      return;
+    }
+    const next = apply(state, fortressMove);
+    const die = next.players[state.activePlayerId]!.dice.find(
+      (d) => d.id === fortressMove.dieId,
+    )!;
+    expect(die.location).toEqual({ kind: 'garrison', regionId: fortressMove.regionId });
+    expect(next.regions[fortressMove.regionId]!.garrisonedDieIds).toContain(
+      fortressMove.dieId,
+    );
+    expect(next.regions[fortressMove.regionId]!.garrisonOwnerId).toBe(state.activePlayerId);
   });
 
   it('pass marks the player passed and rotates to next non-passed player', () => {

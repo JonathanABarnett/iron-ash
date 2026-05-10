@@ -10,5 +10,5 @@
     "specialistChoosable": true,
     "waiveCardHandLimit": false
   },
-  "threatTrackThreshold": 6
+  "threatTrackThreshold": 8
 }
