@@ -19,7 +19,7 @@ import type {
 } from '@engine/types';
 import { loadConfigs } from '@ui/configLoader';
 import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
-import { TerrainBadge, terrainLabel } from '@ui/components/TerrainBadge';
+import { MapView } from '@ui/components/MapView';
 import { ResourceIcon } from '@ui/components/ResourceIcon';
 
 const ALL_FACTIONS: FactionId[] = [
@@ -293,7 +293,15 @@ export function PlayPage() {
             )}
             <MercPool state={active.state} />
             <PlayersGrid state={active.state} />
-            <RegionsGrid state={active.state} />
+            <MapView
+              state={active.state}
+              humanMoves={active.waitingForHuman ? active.pendingMoves : []}
+              onRegionClick={(_regionId, moves) => {
+                // If only one move for this region, apply it immediately.
+                // Otherwise it's already visible in the HumanActionMenu.
+                if (moves.length === 1) applyHumanMove(moves[0]!);
+              }}
+            />
             {active.state.phase === 'finished' && <EndGamePanel state={active.state} />}
           </div>
           <AILogPanel entries={active.log} state={active.state} />
@@ -575,87 +583,7 @@ function MercSlot({
   );
 }
 
-function RegionsGrid({ state }: { state: GameState }) {
-  return (
-    <div className="rounded border border-neutral-800 bg-neutral-900/40 p-3">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-        Regions
-      </h3>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {Object.values(state.regionDefs).map((region) => {
-          const rt = state.regions[region.id]!;
-          const locked =
-            region.unlocksRound !== undefined && state.round < region.unlocksRound;
-          return (
-            <div
-              key={region.id}
-              className={`rounded border p-2 text-xs ${
-                locked
-                  ? 'border-neutral-900 bg-neutral-950/40 text-neutral-600'
-                  : region.isFortress
-                    ? 'border-amber-900/60 bg-amber-950/10'
-                    : 'border-neutral-800 bg-neutral-900/40'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-1">
-                <span className="flex items-center gap-1 truncate font-medium">
-                  <TerrainBadge terrain={region.terrain} size={16} />
-                  <span className="truncate">{region.name}</span>
-                </span>
-                <span className="rounded bg-neutral-800 px-1 text-[10px] uppercase">
-                  {region.vp}VP
-                </span>
-              </div>
-              <div className="mt-1 flex items-center justify-between text-[10px] text-neutral-400">
-                <span>
-                  {region.valueRequirement.kind === 'min' && `≥${region.valueRequirement.value}`}
-                  {region.valueRequirement.kind === 'max' && `≤${region.valueRequirement.value}`}
-                  {region.valueRequirement.kind === 'exact' && `=${region.valueRequirement.value}`}
-                  {region.valueRequirement.kind === 'minSum' &&
-                    `Σ≥${region.valueRequirement.value}`}
-                </span>
-                <span>{terrainLabel(region.terrain)}</span>
-              </div>
-              <div className="mt-1 flex flex-wrap gap-0.5">
-                {rt.placedDieIds.map((id) => {
-                  const die = findDie(state, id);
-                  if (!die) return null;
-                  return (
-                    <span
-                      key={id}
-                      className="inline-flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-[10px] font-semibold"
-                      title={`${die.ownerId}`}
-                    >
-                      {die.faceValue}
-                    </span>
-                  );
-                })}
-                {rt.garrisonedDieIds.length > 0 && (
-                  <span className="inline-flex items-center gap-0.5 rounded bg-amber-900/40 px-1 text-[10px] text-amber-200">
-                    🛡 {rt.garrisonedDieIds.length}
-                  </span>
-                )}
-              </div>
-              {locked && (
-                <div className="mt-1 text-[10px] uppercase tracking-wide">
-                  Unlocks R{region.unlocksRound}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function findDie(state: GameState, id: string) {
-  for (const player of Object.values(state.players)) {
-    const die = player.dice.find((d) => d.id === id);
-    if (die) return die;
-  }
-  return undefined;
-}
+// RegionsGrid removed — replaced by MapView component.
 
 function AILogPanel({
   entries,
