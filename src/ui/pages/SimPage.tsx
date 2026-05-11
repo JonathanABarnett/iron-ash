@@ -4,6 +4,8 @@ import { loadConfigs } from '@ui/configLoader';
 import { FactionWinChart } from '@ui/components/charts/FactionWinChart';
 import { SpecialistCurveChart } from '@ui/components/charts/SpecialistCurveChart';
 import { VPSourceChart } from '@ui/components/charts/VPSourceChart';
+import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
+import type { FactionId } from '@engine/types';
 
 export function SimPage() {
   const form = useUIStore((s) => s.form);
@@ -180,7 +182,12 @@ export function SimPage() {
                   .filter((f) => f.playCount > 0)
                   .map((f) => (
                     <tr key={f.factionId} className="border-t border-neutral-800">
-                      <td className="py-1.5">{f.factionId}</td>
+                      <td className="py-1.5">
+                        <span className="inline-flex items-center gap-2">
+                          <FactionEmblem factionId={f.factionId as FactionId} size={28} />
+                          <span>{factionLabel(f.factionId as FactionId)}</span>
+                        </span>
+                      </td>
                       <td className="py-1.5 text-right tabular-nums">{f.playCount}</td>
                       <td className="py-1.5 text-right tabular-nums">
                         {(f.winRate * 100).toFixed(1)}%

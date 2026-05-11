@@ -1,4 +1,17 @@
 import { Link } from 'react-router';
+import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
+import type { FactionId } from '@engine/types';
+
+const FACTIONS: FactionId[] = [
+  'warriors',
+  'assassins',
+  'mages',
+  'necromancers',
+  'merchants',
+  'rangers',
+  'paladins',
+  'beastmasters',
+];
 
 export function HomePage() {
   return (
@@ -26,6 +39,23 @@ export function HomePage() {
             Interactive 1-human vs 1–3 AI session. Coming after the sim-driven balance pass.
           </p>
         </div>
+      </section>
+
+      <section className="mt-12">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+          Factions
+        </h2>
+        <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {FACTIONS.map((id) => (
+            <li
+              key={id}
+              className="flex items-center gap-3 rounded border border-neutral-800 bg-neutral-900/40 p-3"
+            >
+              <FactionEmblem factionId={id} size={48} />
+              <span className="text-sm">{factionLabel(id)}</span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="mt-10 text-xs text-neutral-500">
