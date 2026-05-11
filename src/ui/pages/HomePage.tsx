@@ -33,12 +33,16 @@ export function HomePage() {
             Batch AI-vs-AI games. Specialist claim curves, faction win rates, balance warnings.
           </p>
         </Link>
-        <div className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5 opacity-60">
-          <h2 className="text-lg font-semibold">Play (Phase 5b)</h2>
+        <Link
+          to="/play"
+          className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-5 transition hover:border-purple-700 hover:bg-purple-950/20"
+        >
+          <h2 className="text-lg font-semibold">Watch a game</h2>
           <p className="mt-1 text-sm text-neutral-400">
-            Interactive 1-human vs 1–3 AI session. Coming after the sim-driven balance pass.
+            Step or auto-play through an AI-vs-AI match. Per-turn scoring reasoning visible
+            in the side panel.
           </p>
-        </div>
+        </Link>
       </section>
 
       <section className="mt-12">
