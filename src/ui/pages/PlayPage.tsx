@@ -1,12 +1,12 @@
-// Interactive game viewer. Phase 5b first slice: AI-vs-AI watch mode.
-// Set up a lineup, then step through turns or auto-play; per-turn AI reasoning
-// is captured and surfaced in the side panel. Human-controlled players land
-// in a follow-up (the action menu UI is the missing piece).
+// Interactive game viewer — Phase 5c: human player input added.
+// A faction can be marked "You" in the lineup picker; when it's that player's
+// turn the AI is bypassed, autoplay pauses, and a grouped action menu appears.
+// All other turns continue to auto-play as before.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Rng } from '@engine/rng';
 import { createGame } from '@engine/setup';
-import { apply } from '@engine/moves';
+import { apply, enumerate } from '@engine/moves';
 import { endOfRound, isRoundOver, rollPhase } from '@engine/rounds';
 import { pickMove } from '@ai/decide';
 import type { Difficulty } from '@ai/types';
@@ -45,6 +45,12 @@ interface ActiveGame {
   state: GameState;
   log: AILogEntry[];
   rngSnapshot: string;
+  /** ID of the human-controlled player, if any. */
+  humanPlayerId: PlayerId | null;
+  /** True when it's the human's action turn — engine pauses until a move is submitted. */
+  waitingForHuman: boolean;
+  /** Legal moves for the current human turn. */
+  pendingMoves: Move[];
 }
 
 export function PlayPage() {
@@ -53,6 +59,7 @@ export function PlayPage() {
     'mages',
     'merchants',
   ]);
+  const [humanFaction, setHumanFaction] = useState<FactionId | null>('warriors');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [seed, setSeed] = useState('play-1');
   const [active, setActive] = useState<ActiveGame | null>(null);
@@ -69,7 +76,7 @@ export function PlayPage() {
         players: lineup.map((factionId, i) => ({
           id: `p${i + 1}`,
           factionId,
-          isAI: true,
+          isAI: true, // engine treats all as AI; UI intercepts the human's turns
         })),
         regions: configs.regions,
         factions: configs.factions,
@@ -77,7 +84,17 @@ export function PlayPage() {
         roundGoals: configs.roundGoals,
         secretGoals: configs.secretGoals,
       });
-      setActive({ state, log: [], rngSnapshot: state.rngState });
+      // Derive the human player's id from the chosen faction (order in lineup = p1, p2, …).
+      const humanIdx = humanFaction ? lineup.indexOf(humanFaction) : -1;
+      const humanPlayerId = humanIdx >= 0 ? `p${humanIdx + 1}` : null;
+      setActive({
+        state,
+        log: [],
+        rngSnapshot: state.rngState,
+        humanPlayerId,
+        waitingForHuman: false,
+        pendingMoves: [],
+      });
       setAutoplay(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -85,6 +102,9 @@ export function PlayPage() {
   }
 
   function step(prev: ActiveGame): ActiveGame {
+    // If already waiting for the human, nothing to advance.
+    if (prev.waitingForHuman) return prev;
+
     const rng = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
     let state = prev.state;
     let newLog = prev.log;
@@ -100,6 +120,22 @@ export function PlayPage() {
         secretGoals: configs.secretGoals,
       });
     } else {
+      // Human turn: pause and expose legal moves.
+      if (prev.humanPlayerId && state.activePlayerId === prev.humanPlayerId) {
+        const pending = enumerate(state, {
+          rules: configs.rules,
+          cards: configs.cards,
+          rng,
+        });
+        return {
+          ...prev,
+          rngSnapshot: JSON.stringify(rng.snapshot()),
+          waitingForHuman: true,
+          pendingMoves: pending,
+        };
+      }
+
+      // AI turn.
       const playerIdAtMove = state.activePlayerId;
       const turnAtMove = state.turn;
       const roundAtMove = state.round;
@@ -117,7 +153,7 @@ export function PlayPage() {
         rng,
       });
       newLog = [
-        ...prev.log.slice(-49), // keep last 50
+        ...prev.log.slice(-49),
         {
           turn: turnAtMove,
           round: roundAtMove,
@@ -129,17 +165,43 @@ export function PlayPage() {
     }
 
     return {
+      ...prev,
       state,
       log: newLog,
       rngSnapshot: JSON.stringify(rng.snapshot()),
+      waitingForHuman: false,
+      pendingMoves: [],
     };
+  }
+
+  /** Apply the human's chosen move, clear the waiting state, then advance. */
+  function applyHumanMove(move: Move) {
+    setActive((prev) => {
+      if (!prev || !prev.waitingForHuman) return prev;
+      const rng = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
+      const state = apply(prev.state, move, {
+        rules: configs.rules,
+        cards: configs.cards,
+        rng,
+      });
+      // Resume normal step cycle from the new state.
+      const resumed: ActiveGame = {
+        ...prev,
+        state,
+        rngSnapshot: JSON.stringify(rng.snapshot()),
+        waitingForHuman: false,
+        pendingMoves: [],
+      };
+      // Immediately advance past any non-human non-action steps (roll / end-of-round).
+      return step(resumed);
+    });
   }
 
   function stepOnce() {
     setActive((prev) => (prev ? step(prev) : prev));
   }
 
-  // Auto-play: step every N ms until finished or paused.
+  // Auto-play: step every N ms until finished, paused, or waiting for human.
   const autoplayRef = useRef(autoplay);
   autoplayRef.current = autoplay;
   useEffect(() => {
@@ -148,6 +210,8 @@ export function PlayPage() {
       setAutoplay(false);
       return;
     }
+    // Pause for human — don't advance, let the action menu handle it.
+    if (active.waitingForHuman) return;
     const id = window.setTimeout(() => {
       if (!autoplayRef.current) return;
       setActive((prev) => (prev ? step(prev) : prev));
@@ -160,14 +224,19 @@ export function PlayPage() {
     <main className="mx-auto max-w-6xl px-6 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Iron &amp; Ash — Play</h1>
       <p className="mt-1 text-sm text-neutral-400">
-        Watch AI factions play a full game with their per-turn scoring reasoning shown.
-        Human input lands later.
+        Pick a faction, mark it <strong className="text-teal-300">YOU</strong>, then play against AI opponents.
+        All AI turns auto-step with scoring reasoning shown.
       </p>
 
       {/* Setup */}
       <section className="mt-6 rounded border border-neutral-800 bg-neutral-900/40 p-4">
         <div className="flex flex-wrap items-end gap-4">
-          <LineupPicker value={lineup} onChange={setLineup} />
+          <LineupPicker
+          value={lineup}
+          humanFaction={humanFaction}
+          onChange={setLineup}
+          onSetHuman={setHumanFaction}
+        />
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-neutral-400">
             Difficulty
             <select
@@ -209,10 +278,19 @@ export function PlayPage() {
           <div className="space-y-4">
             <GameStatusBar
               state={active.state}
+              humanPlayerId={active.humanPlayerId}
+              waitingForHuman={active.waitingForHuman}
               onStep={stepOnce}
               autoplay={autoplay}
               onToggleAutoplay={() => setAutoplay((p) => !p)}
             />
+            {active.waitingForHuman && (
+              <HumanActionMenu
+                moves={active.pendingMoves}
+                state={active.state}
+                onChoose={applyHumanMove}
+              />
+            )}
             <MercPool state={active.state} />
             <PlayersGrid state={active.state} />
             <RegionsGrid state={active.state} />
@@ -227,14 +305,19 @@ export function PlayPage() {
 
 function LineupPicker({
   value,
+  humanFaction,
   onChange,
+  onSetHuman,
 }: {
   value: FactionId[];
+  humanFaction: FactionId | null;
   onChange: (next: FactionId[]) => void;
+  onSetHuman: (f: FactionId | null) => void;
 }) {
   function toggle(id: FactionId) {
     if (value.includes(id)) {
-      if (value.length <= 2) return; // need at least 2
+      if (value.length <= 2) return;
+      if (humanFaction === id) onSetHuman(null);
       onChange(value.filter((x) => x !== id));
     } else {
       if (value.length >= 4) return;
@@ -242,26 +325,42 @@ function LineupPicker({
     }
   }
   return (
-    <div className="flex flex-col gap-1 text-xs uppercase tracking-wide text-neutral-400">
+    <div className="flex flex-col gap-1.5 text-xs uppercase tracking-wide text-neutral-400">
       <span>Lineup ({value.length}/4)</span>
       <div className="flex flex-wrap gap-1">
         {ALL_FACTIONS.map((id) => {
           const picked = value.includes(id);
+          const isHuman = humanFaction === id;
           return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => toggle(id)}
-              className={`flex items-center gap-1 rounded border px-2 py-1 text-xs normal-case tracking-normal ${
-                picked
-                  ? 'border-purple-600 bg-purple-950/40 text-purple-100'
-                  : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:bg-neutral-800'
-              }`}
-              title={factionLabel(id)}
-            >
-              <FactionEmblem factionId={id} size={20} />
-              <span>{factionLabel(id)}</span>
-            </button>
+            <div key={id} className="flex overflow-hidden rounded border border-neutral-700">
+              <button
+                type="button"
+                onClick={() => toggle(id)}
+                className={`flex items-center gap-1 px-2 py-1 text-xs normal-case tracking-normal transition ${
+                  picked
+                    ? 'bg-purple-950/50 text-purple-100'
+                    : 'bg-neutral-900 text-neutral-400 hover:bg-neutral-800'
+                }`}
+                title={`Toggle ${factionLabel(id)}`}
+              >
+                <FactionEmblem factionId={id} size={20} />
+                <span>{factionLabel(id)}</span>
+              </button>
+              {picked && (
+                <button
+                  type="button"
+                  onClick={() => onSetHuman(isHuman ? null : id)}
+                  title={isHuman ? 'Switch to AI' : 'Play as this faction'}
+                  className={`px-2 py-1 text-[10px] font-bold transition ${
+                    isHuman
+                      ? 'bg-teal-700 text-white hover:bg-teal-600'
+                      : 'bg-neutral-800 text-neutral-500 hover:text-neutral-200'
+                  }`}
+                >
+                  {isHuman ? 'YOU' : 'AI'}
+                </button>
+              )}
+            </div>
           );
         })}
       </div>
@@ -271,11 +370,15 @@ function LineupPicker({
 
 function GameStatusBar({
   state,
+  humanPlayerId,
+  waitingForHuman,
   onStep,
   autoplay,
   onToggleAutoplay,
 }: {
   state: GameState;
+  humanPlayerId: PlayerId | null;
+  waitingForHuman: boolean;
   onStep: () => void;
   autoplay: boolean;
   onToggleAutoplay: () => void;
@@ -300,6 +403,16 @@ function GameStatusBar({
       {goalSlot && (
         <span className="text-xs text-neutral-300">
           Goal: <span className="font-medium text-neutral-100">{goalSlot.goalId}</span>
+        </span>
+      )}
+      {waitingForHuman && (
+        <span className="animate-pulse rounded bg-teal-700/60 px-3 py-0.5 text-xs font-bold uppercase tracking-wide text-teal-100">
+          ⚔ Your Turn
+        </span>
+      )}
+      {!waitingForHuman && humanPlayerId && state.activePlayerId === humanPlayerId && state.phase === 'action' && (
+        <span className="rounded bg-neutral-700 px-2 py-0.5 text-xs text-neutral-300">
+          Your turn next…
         </span>
       )}
       <div className="ml-auto flex items-center gap-2">
@@ -638,6 +751,127 @@ function MoveSummary({ move, state }: { move: Move; state: GameState }) {
       return <div className="mt-1 text-[11px]">Play {move.cardId}</div>;
     case 'pass':
       return <div className="mt-1 text-[11px]">Pass</div>;
+  }
+}
+
+function HumanActionMenu({
+  moves,
+  state,
+  onChoose,
+}: {
+  moves: Move[];
+  state: GameState;
+  onChoose: (m: Move) => void;
+}) {
+  const player = state.players[state.activePlayerId];
+  if (!player) return null;
+
+  // Group moves by kind for a structured display.
+  type Group = { label: string; color: string; moves: Move[] };
+  const groups: Group[] = [
+    { label: '⚔ Battle', color: 'border-red-800 bg-red-950/30', moves: moves.filter((m) => m.kind === 'battle') },
+    { label: '🏰 Garrison / Place', color: 'border-amber-800 bg-amber-950/20', moves: moves.filter((m) => (m.kind === 'place' || m.kind === 'combine') && state.regionDefs[m.regionId]?.isFortress) },
+    { label: '📍 Place / Combine', color: 'border-purple-800 bg-purple-950/20', moves: moves.filter((m) => (m.kind === 'place' || m.kind === 'combine') && !state.regionDefs[m.regionId]?.isFortress) },
+    { label: '⚡ Hire Merc', color: 'border-blue-800 bg-blue-950/20', moves: moves.filter((m) => m.kind === 'hire-merc') },
+    { label: '🃏 Cards', color: 'border-teal-800 bg-teal-950/20', moves: moves.filter((m) => m.kind === 'draft-card' || m.kind === 'play-card') },
+    { label: '⏸ Pass', color: 'border-neutral-700 bg-neutral-900/40', moves: moves.filter((m) => m.kind === 'pass') },
+  ].filter((g) => g.moves.length > 0);
+
+  return (
+    <div className="rounded border-2 border-teal-700 bg-teal-950/20 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-teal-200">
+          Choose your action —{' '}
+          <span className="text-neutral-300">{player.id} ({factionLabel(player.factionId)})</span>
+        </h3>
+        <span className="text-xs text-neutral-400">{moves.length} legal moves</span>
+      </div>
+      <div className="space-y-3">
+        {groups.map((g) => (
+          <div key={g.label}>
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+              {g.label}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {g.moves.map((m, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onChoose(m)}
+                  className={`rounded border px-3 py-1.5 text-xs transition hover:brightness-125 active:scale-95 ${g.color}`}
+                >
+                  <HumanMoveLabel move={m} state={state} player={player} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HumanMoveLabel({
+  move,
+  state,
+  player,
+}: {
+  move: Move;
+  state: GameState;
+  player: ReturnType<typeof Object.values<typeof state.players[string]>>[number];
+}) {
+  switch (move.kind) {
+    case 'place': {
+      const die = player?.dice.find((d) => d.id === move.dieId);
+      const region = state.regionDefs[move.regionId];
+      return (
+        <span>
+          [{die?.range ?? '?'}: <strong>{die?.faceValue}</strong>] →{' '}
+          <span className="text-neutral-200">{region?.name ?? move.regionId}</span>
+          <span className="ml-1 text-neutral-500">({region?.vp}VP)</span>
+        </span>
+      );
+    }
+    case 'combine': {
+      const dieA = player?.dice.find((d) => d.id === move.dieIds[0]);
+      const dieB = player?.dice.find((d) => d.id === move.dieIds[1]);
+      const region = state.regionDefs[move.regionId];
+      const sum = (dieA?.faceValue ?? 0) + (dieB?.faceValue ?? 0);
+      return (
+        <span>
+          <strong>{dieA?.faceValue}</strong> + <strong>{dieB?.faceValue}</strong> ={' '}
+          <strong className="text-teal-300">{sum}</strong> →{' '}
+          <span className="text-neutral-200">{region?.name ?? move.regionId}</span>
+        </span>
+      );
+    }
+    case 'battle': {
+      const die = player?.dice.find((d) => d.id === move.attackerDieId);
+      const region = state.regionDefs[move.targetRegionId];
+      return (
+        <span>
+          Attack <span className="text-neutral-200">{region?.name ?? move.targetRegionId}</span>{' '}
+          with <strong className="text-red-300">{die?.faceValue}</strong>
+        </span>
+      );
+    }
+    case 'hire-merc': {
+      const slot = move.mercSlot;
+      const die = state.mercs[slot];
+      const val = die && typeof die === 'object' && 'faceValue' in die ? die.faceValue : state.mercs.specialistValue;
+      return (
+        <span>
+          {slot === 'low' ? 'Low' : slot === 'high' ? 'High' : 'Specialist'} merc{' '}
+          {val !== null && <strong>({val})</strong>}
+        </span>
+      );
+    }
+    case 'draft-card':
+      return <span>Draft <span className="text-neutral-200">{move.cardId.replace('card-', '')}</span></span>;
+    case 'play-card':
+      return <span>Play <span className="text-neutral-200">{move.cardId.replace('card-', '')}</span></span>;
+    case 'pass':
+      return <span className="text-neutral-400">Pass (end turn)</span>;
   }
 }
 
