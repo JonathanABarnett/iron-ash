@@ -1,0 +1,20 @@
+{
+  "dieUpgrade": {
+    "comment": "Cost to advance a die's range one tier (1-3→2-5 or 2-5→3-6)",
+    "iron": 2,
+    "gold": 1,
+    "essence": 0
+  },
+  "barracksExpand": {
+    "comment": "Cost to unlock one additional barracks slot (new 1-3 die added)",
+    "iron": 1,
+    "gold": 2,
+    "essence": 0
+  },
+  "cardKeep": {
+    "comment": "Cost per extra card kept beyond the hand limit at end of round",
+    "iron": 0,
+    "gold": 1,
+    "essence": 0
+  }
+}

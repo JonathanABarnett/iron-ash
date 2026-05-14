@@ -190,7 +190,24 @@ export type Move =
   | { kind: 'play-card'; cardId: CardId }
   | { kind: 'hire-merc'; mercSlot: 'low' | 'high' | 'specialist' }
   | { kind: 'battle'; attackerDieId: DieId; targetRegionId: RegionId }
+  /** Spend Iron + Gold to advance this die's range one tier (1-3→2-5→3-6). */
+  | { kind: 'upgrade-die'; dieId: DieId }
+  /** Spend resources to unlock one additional barracks slot (new 1-3 die). */
+  | { kind: 'expand-barracks' }
   | { kind: 'pass' };
+
+/** The range tier above the given range, or null if already at max. */
+export function nextDieRange(range: DieRange): DieRange | null {
+  if (range === '1-3') return '2-5';
+  if (range === '2-5') return '3-6';
+  return null; // '3-6' and '1-6' cannot be upgraded
+}
+
+export interface CostsConfig {
+  dieUpgrade: { iron: number; gold: number; essence: number };
+  barracksExpand: { iron: number; gold: number; essence: number };
+  cardKeep: { iron: number; gold: number; essence: number };
+}
 
 export interface GameLogEntry {
   round: number;

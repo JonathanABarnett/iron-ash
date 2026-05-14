@@ -138,15 +138,40 @@ function applyEffect(
 }
 
 /**
- * End-of-round hand cleanup. Phase 2C rule: keep up to HAND_LIMIT free,
- * discard the rest. (Pay-to-keep-extras is a later refinement.)
- * Random AI picks an arbitrary HAND_LIMIT-card subset to keep.
+ * End-of-round hand cleanup.
+ * - Each player may keep up to HAND_LIMIT cards free.
+ * - Extra cards cost 1 gold each to keep (per cardKeep cost in config).
+ * - Cards the player can't afford to keep are discarded first.
+ * - Random / AI strategy: keep up to what they can afford, front of hand priority.
  */
-export function endOfRoundHandCleanup(state: GameState): GameState {
+export function endOfRoundHandCleanup(
+  state: GameState,
+  costPerExtra?: { gold: number; iron: number; essence: number },
+): GameState {
   return produce(state, (draft) => {
     for (const player of Object.values(draft.players)) {
-      if (player.hand.length > HAND_LIMIT) {
+      if (player.hand.length <= HAND_LIMIT) continue;
+
+      const extra = player.hand.length - HAND_LIMIT;
+      if (!costPerExtra || extra <= 0) {
+        // No cost config or nothing extra — just trim.
         player.hand = player.hand.slice(0, HAND_LIMIT);
+        continue;
+      }
+
+      // Determine how many extras the player can afford to pay for.
+      const goldPerCard = costPerExtra.gold;
+      const affordable = goldPerCard > 0
+        ? Math.floor(player.resources.gold / goldPerCard)
+        : extra;
+      const keep = Math.min(extra, affordable);
+      const totalKept = HAND_LIMIT + keep;
+
+      // Spend gold for kept extras.
+      player.resources.gold = Math.max(0, player.resources.gold - keep * goldPerCard);
+      player.hand = player.hand.slice(0, totalKept);
+      if (keep > 0) {
+        player.progress.cardsKeptThisGame += keep;
       }
     }
   });

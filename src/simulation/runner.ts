@@ -72,18 +72,19 @@ export function runOneGame(
       continue;
     }
     if (isRoundOver(state)) {
-      state = endOfRound(state, { rules, roundGoals, secretGoals });
+      state = endOfRound(state, { rules, roundGoals, secretGoals, cardKeepCost: configs.costs.cardKeep });
       continue;
     }
     const { move } = pickMove(state, {
       rules,
       cards,
+      costs: configs.costs,
       roundGoals,
       secretGoals,
       rng,
       difficulty,
     });
-    state = apply(state, move, { rules, cards, rng });
+    state = apply(state, move, { rules, cards, costs: configs.costs, rng });
     totalTurns += 1;
   }
   if (state.phase !== 'finished') {

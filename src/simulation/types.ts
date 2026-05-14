@@ -2,6 +2,7 @@
 
 import type {
   CardDefinition,
+  CostsConfig,
   FactionDefinition,
   FactionId,
   Region,
@@ -18,6 +19,7 @@ export interface SimConfigs {
   roundGoals: RoundGoalDefinition[];
   secretGoals: SecretGoalDefinition[];
   cards: CardDefinition[];
+  costs: CostsConfig;
 }
 
 export type LineupMode = 'random' | 'fixed-rotate' | 'all-combinations';

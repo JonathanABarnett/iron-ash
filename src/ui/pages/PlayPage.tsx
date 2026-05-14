@@ -17,6 +17,7 @@ import type {
   Move,
   PlayerId,
 } from '@engine/types';
+import { nextDieRange } from '@engine/types';
 import { loadConfigs } from '@ui/configLoader';
 import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
 import { MapView } from '@ui/components/MapView';
@@ -125,6 +126,7 @@ export function PlayPage() {
         rules: configs.rules,
         roundGoals: configs.roundGoals,
         secretGoals: configs.secretGoals,
+        cardKeepCost: configs.costs.cardKeep,
       });
     } else {
       // Human turn: pause and expose legal moves.
@@ -132,6 +134,7 @@ export function PlayPage() {
         const pending = enumerate(state, {
           rules: configs.rules,
           cards: configs.cards,
+        costs: configs.costs,
           rng,
         });
         return {
@@ -150,6 +153,7 @@ export function PlayPage() {
       const { move, reasoning } = pickMove(state, {
         rules: configs.rules,
         cards: configs.cards,
+        costs: configs.costs,
         roundGoals: configs.roundGoals,
         secretGoals: configs.secretGoals,
         rng,
@@ -158,6 +162,7 @@ export function PlayPage() {
       state = apply(state, move, {
         rules: configs.rules,
         cards: configs.cards,
+        costs: configs.costs,
         rng,
       });
       newLog = [
@@ -190,6 +195,7 @@ export function PlayPage() {
       const state = apply(prev.state, move, {
         rules: configs.rules,
         cards: configs.cards,
+        costs: configs.costs,
         rng,
       });
       // Resume normal step cycle from the new state.
@@ -322,6 +328,9 @@ export function PlayPage() {
               waitingForHuman={active.waitingForHuman}
               selectedDieId={active.selectedDieId}
               onSelectDie={selectDie}
+              pendingMoves={active.pendingMoves}
+              onChooseMove={applyHumanMove}
+              configs={configs}
             />
             <MapView
               state={active.state}
@@ -486,12 +495,18 @@ function PlayersGrid({
   waitingForHuman,
   selectedDieId,
   onSelectDie,
+  pendingMoves,
+  onChooseMove,
+  configs,
 }: {
   state: GameState;
   humanPlayerId?: PlayerId | null;
   waitingForHuman?: boolean;
   selectedDieId?: string | null;
   onSelectDie?: (dieId: string) => void;
+  pendingMoves?: Move[];
+  onChooseMove?: (m: Move) => void;
+  configs?: ReturnType<typeof loadConfigs>;
 }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -572,9 +587,86 @@ function PlayersGrid({
               </p>
             )}
 
-            {player.hand.length > 0 && (
-              <div className="mt-2 text-xs text-neutral-400">
-                Hand: {player.hand.length} card{player.hand.length !== 1 ? 's' : ''}
+            {/* Card hand — clickable when human's turn */}
+            {player.hand.length > 0 && configs && (
+              <div className="mt-2">
+                <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">
+                  Hand ({player.hand.length})
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {player.hand.map((cardId) => {
+                    const cardDef = configs.cards.find((c) => c.id === cardId);
+                    const canPlay = isHumanTurn && pendingMoves?.some(
+                      (m) => m.kind === 'play-card' && m.cardId === cardId,
+                    );
+                    const effectLabel =
+                      cardDef?.effect.kind === 'gain-resource'
+                        ? `+${cardDef.effect.amount} ${cardDef.effect.resource}`
+                        : cardDef?.effect.kind === 'gain-vp'
+                          ? `+${cardDef.effect.amount} VP`
+                          : cardDef?.effect.kind === 'reroll-die'
+                            ? 'reroll'
+                            : cardDef?.effect.kind === 'modify-die'
+                              ? `${cardDef.effect.delta > 0 ? '+' : ''}${cardDef.effect.delta} die`
+                              : '?';
+                    return (
+                      <button
+                        key={cardId}
+                        type="button"
+                        disabled={!canPlay}
+                        onClick={() =>
+                          canPlay && onChooseMove?.({ kind: 'play-card', cardId })
+                        }
+                        title={cardDef?.description ?? cardId}
+                        className={`rounded border px-2 py-1 text-[10px] transition ${
+                          canPlay
+                            ? 'cursor-pointer border-teal-700 bg-teal-950/30 text-teal-200 hover:bg-teal-900/50'
+                            : 'border-neutral-800 bg-neutral-900/40 text-neutral-400'
+                        }`}
+                      >
+                        <span className="font-medium">
+                          {cardDef?.name ?? cardId.replace('card-', '')}
+                        </span>
+                        <span className="ml-1 opacity-70">{effectLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Upgrade / expand economy buttons — human only */}
+            {isHumanTurn && configs && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {player.dice
+                  .filter((d) => d.location.kind === 'barracks' && nextDieRange(d.range))
+                  .map((d) => {
+                    const canUpgrade = pendingMoves?.some(
+                      (m) => m.kind === 'upgrade-die' && m.dieId === d.id,
+                    );
+                    if (!canUpgrade) return null;
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => onChooseMove?.({ kind: 'upgrade-die', dieId: d.id })}
+                        title={`Upgrade ${d.range} → ${nextDieRange(d.range)} (costs ${configs.costs.dieUpgrade.iron} iron, ${configs.costs.dieUpgrade.gold} gold)`}
+                        className="rounded border border-amber-800 bg-amber-950/30 px-2 py-1 text-[10px] text-amber-200 hover:bg-amber-900/50"
+                      >
+                        ↑ {d.range}→{nextDieRange(d.range)}
+                      </button>
+                    );
+                  })}
+                {pendingMoves?.some((m) => m.kind === 'expand-barracks') && (
+                  <button
+                    type="button"
+                    onClick={() => onChooseMove?.({ kind: 'expand-barracks' })}
+                    title={`Add barracks slot (costs ${configs.costs.barracksExpand.iron} iron, ${configs.costs.barracksExpand.gold} gold)`}
+                    className="rounded border border-blue-800 bg-blue-950/30 px-2 py-1 text-[10px] text-blue-200 hover:bg-blue-900/50"
+                  >
+                    + Expand ({player.dice.length}/{player.barracksMax})
+                  </button>
+                )}
               </div>
             )}
             {player.passedThisRound && (

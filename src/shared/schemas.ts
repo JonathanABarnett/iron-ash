@@ -141,9 +141,23 @@ export const RulesConfigSchema = z.object({
   threatTrackThreshold: z.number().int().positive(),
 });
 
+const ResourceCostSchema = z.object({
+  iron: z.number().int().nonnegative(),
+  gold: z.number().int().nonnegative(),
+  essence: z.number().int().nonnegative(),
+  comment: z.string().optional(),
+});
+
+export const CostsConfigSchema = z.object({
+  dieUpgrade: ResourceCostSchema,
+  barracksExpand: ResourceCostSchema,
+  cardKeep: ResourceCostSchema,
+});
+
 export type ParsedRegions = z.infer<typeof RegionsConfigSchema>;
 export type ParsedFactions = z.infer<typeof FactionsConfigSchema>;
 export type ParsedRules = z.infer<typeof RulesConfigSchema>;
 export type ParsedRoundGoals = z.infer<typeof RoundGoalsConfigSchema>;
 export type ParsedSecretGoals = z.infer<typeof SecretGoalsConfigSchema>;
 export type ParsedCards = z.infer<typeof CardsConfigSchema>;
+export type ParsedCosts = z.infer<typeof CostsConfigSchema>;

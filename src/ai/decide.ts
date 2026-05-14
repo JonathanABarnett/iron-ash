@@ -4,6 +4,7 @@
 import type {
   AIReasoning,
   CardDefinition,
+  CostsConfig,
   GameState,
   Move,
   RoundGoalDefinition,
@@ -20,6 +21,7 @@ import { REASONING_TOP_N } from './types';
 export interface DecideContext {
   rules: RulesConfig;
   cards?: CardDefinition[];
+  costs?: CostsConfig;
   roundGoals: RoundGoalDefinition[];
   secretGoals: SecretGoalDefinition[];
   rng: Rng;
@@ -32,9 +34,12 @@ export interface DecideResult {
 }
 
 export function pickMove(state: GameState, ctx: DecideContext): DecideResult {
-  const moveCtx = ctx.cards
-    ? { rules: ctx.rules, cards: ctx.cards, rng: ctx.rng }
-    : { rules: ctx.rules, rng: ctx.rng };
+  const moveCtx = {
+    rules: ctx.rules,
+    rng: ctx.rng,
+    ...(ctx.cards ? { cards: ctx.cards } : {}),
+    ...(ctx.costs ? { costs: ctx.costs } : {}),
+  };
   const moves = enumerate(state, moveCtx);
   if (moves.length === 0) {
     return {

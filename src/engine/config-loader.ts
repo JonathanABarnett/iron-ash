@@ -2,12 +2,14 @@
 
 import {
   CardsConfigSchema,
+  CostsConfigSchema,
   FactionsConfigSchema,
   RegionsConfigSchema,
   RoundGoalsConfigSchema,
   RulesConfigSchema,
   SecretGoalsConfigSchema,
   type ParsedCards,
+  type ParsedCosts,
   type ParsedFactions,
   type ParsedRegions,
   type ParsedRoundGoals,
@@ -17,6 +19,7 @@ import {
 import type { ZodError } from 'zod';
 import type {
   CardDefinition,
+  CostsConfig,
   FactionDefinition,
   Region,
   RoundGoalDefinition,
@@ -70,6 +73,14 @@ export function parseCards(raw: unknown): CardDefinition[] {
     throw new Error(`Invalid cards config:\n${formatZodError(result.error)}`);
   }
   return result.data as ParsedCards as CardDefinition[];
+}
+
+export function parseCosts(raw: unknown): CostsConfig {
+  const result = CostsConfigSchema.safeParse(raw);
+  if (!result.success) {
+    throw new Error(`Invalid costs config:\n${formatZodError(result.error)}`);
+  }
+  return result.data as ParsedCosts as CostsConfig;
 }
 
 function formatZodError(err: ZodError): string {

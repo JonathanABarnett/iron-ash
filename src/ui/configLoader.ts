@@ -4,6 +4,7 @@
 
 import {
   parseCards,
+  parseCosts,
   parseFactions,
   parseRegions,
   parseRoundGoals,
@@ -16,9 +17,15 @@ import rulesJson from '@config/rules.json';
 import roundGoalsJson from '@config/round-goals.json';
 import secretGoalsJson from '@config/secret-goals.json';
 import cardsJson from '@config/cards.json';
+import costsJson from '@config/costs.json';
+import type { CostsConfig } from '@engine/types';
 import type { SimConfigs } from '@simulation/types';
 
-export function loadConfigs(): SimConfigs {
+export interface AppConfigs extends SimConfigs {
+  costs: CostsConfig;
+}
+
+export function loadConfigs(): AppConfigs {
   return {
     factions: parseFactions(factionsJson),
     regions: parseRegions(regionsJson),
@@ -26,5 +33,6 @@ export function loadConfigs(): SimConfigs {
     roundGoals: parseRoundGoals(roundGoalsJson),
     secretGoals: parseSecretGoals(secretGoalsJson),
     cards: parseCards(cardsJson),
+    costs: parseCosts(costsJson),
   };
 }

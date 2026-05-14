@@ -5,6 +5,7 @@
 import { produce } from 'immer';
 import type {
   CardDefinition,
+  CostsConfig,
   Die,
   GameState,
   Move,
@@ -13,7 +14,10 @@ import type {
   RulesConfig,
   Terrain,
 } from './types';
+import { nextDieRange } from './types';
 import type { Rng } from './rng';
+import { Rng as RngClass, makeIdFactory } from './rng';
+import { canAfford, spend } from './resources';
 import { canCombineDice, canPlaceDie } from './map';
 import { applyGarrison } from './fortresses';
 import { applyHireMerc, isSlotAvailable, mercCost } from './mercenaries';
@@ -57,6 +61,7 @@ export interface MoveContext {
   rules: RulesConfig;
   cards?: CardDefinition[];
   rng?: Rng;
+  costs?: CostsConfig;
 }
 
 /** All legal moves for the active player given current state. */
@@ -125,6 +130,23 @@ export function enumerate(state: GameState, ctx?: MoveContext): Move[] {
     }
   }
 
+  // upgrade-die — for each barracks die that has a next tier and player can afford
+  if (ctx?.costs && canAfford(player, ctx.costs.dieUpgrade)) {
+    for (const die of player.dice) {
+      if (die.location.kind !== 'barracks') continue;
+      if (nextDieRange(die.range) !== null) {
+        moves.push({ kind: 'upgrade-die', dieId: die.id });
+      }
+    }
+  }
+
+  // expand-barracks — if below faction max and affordable
+  if (ctx?.costs && canAfford(player, ctx.costs.barracksExpand)) {
+    if (player.dice.length < player.barracksMax) {
+      moves.push({ kind: 'expand-barracks' });
+    }
+  }
+
   // pass is always legal
   moves.push({ kind: 'pass' });
 
@@ -158,6 +180,14 @@ export function apply(state: GameState, move: Move, ctx?: MoveContext): GameStat
     }
     case 'battle':
       return applyBattleMove(state, move);
+    case 'upgrade-die': {
+      if (!ctx?.costs) throw new IllegalMove('upgrade-die requires MoveContext.costs');
+      return applyUpgradeDie(state, move, ctx.costs);
+    }
+    case 'expand-barracks': {
+      if (!ctx?.costs || !ctx.rng) throw new IllegalMove('expand-barracks requires MoveContext.costs + rng');
+      return applyExpandBarracks(state, ctx.costs, ctx.rng);
+    }
   }
 }
 
@@ -314,4 +344,59 @@ function advanceTurn(draft: GameState): void {
     }
   }
   // Everyone passed; leave activePlayerId as-is. rounds.ts detects round-over.
+}
+
+function applyUpgradeDie(
+  state: GameState,
+  move: { kind: 'upgrade-die'; dieId: string },
+  costs: CostsConfig,
+): GameState {
+  const player = getActivePlayer(state);
+  const die = getDie(state, player.id, move.dieId);
+  const next = nextDieRange(die.range);
+  if (!next) throw new IllegalMove(`Die ${die.id} (${die.range}) cannot be upgraded further`);
+  if (!canAfford(player, costs.dieUpgrade)) {
+    throw new IllegalMove(`Cannot afford die upgrade (need ${JSON.stringify(costs.dieUpgrade)})`);
+  }
+  return produce(state, (draft) => {
+    const dp = draft.players[player.id]!;
+    Object.assign(dp, spend(dp, costs.dieUpgrade));
+    const d = dp.dice.find((x) => x.id === die.id)!;
+    d.range = next;
+    // Reroll with the new range immediately so the new face is valid.
+    // (The die stays in barracks; it will be properly rolled next round.)
+    // For now just null the face — it will re-roll at start of next round.
+    d.faceValue = null;
+    appendLog(draft, { kind: 'move', move });
+    advanceTurn(draft);
+  });
+}
+
+function applyExpandBarracks(
+  state: GameState,
+  costs: CostsConfig,
+  rng: CostsConfig extends object ? InstanceType<typeof RngClass> : never,
+): GameState {
+  const player = getActivePlayer(state);
+  if (player.dice.length >= player.barracksMax) {
+    throw new IllegalMove('Barracks already at faction maximum');
+  }
+  if (!canAfford(player, costs.barracksExpand)) {
+    throw new IllegalMove('Cannot afford barracks expansion');
+  }
+  const dieId = makeIdFactory(rng as InstanceType<typeof RngClass>, `expand`);
+  return produce(state, (draft) => {
+    const dp = draft.players[player.id]!;
+    Object.assign(dp, spend(dp, costs.barracksExpand));
+    const newDie = {
+      id: dieId(),
+      range: '1-3' as const,
+      faceValue: null,
+      ownerId: player.id,
+      location: { kind: 'barracks' as const },
+    };
+    dp.dice.push(newDie);
+    appendLog(draft, { kind: 'move', move: { kind: 'expand-barracks' } });
+    advanceTurn(draft);
+  });
 }

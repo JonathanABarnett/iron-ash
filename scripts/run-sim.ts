@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   parseCards,
+  parseCosts,
   parseFactions,
   parseRegions,
   parseRoundGoals,
@@ -68,7 +69,10 @@ function loadConfigs() {
   const cards = parseCards(
     JSON.parse(readFileSync(resolve(root, 'config/cards.json'), 'utf8')),
   );
-  return { factions, regions, rules, roundGoals, secretGoals, cards };
+  const costs = parseCosts(
+    JSON.parse(readFileSync(resolve(root, 'config/costs.json'), 'utf8')),
+  );
+  return { factions, regions, rules, roundGoals, secretGoals, cards, costs };
 }
 
 function main() {

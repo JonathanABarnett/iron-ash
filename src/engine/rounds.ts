@@ -65,6 +65,8 @@ export interface EndOfRoundContext {
   rules: RulesConfig;
   roundGoals: RoundGoalDefinition[];
   secretGoals: SecretGoalDefinition[];
+  /** Cost per extra card kept beyond HAND_LIMIT. Omit to discard for free (Phase 1 behaviour). */
+  cardKeepCost?: { gold: number; iron: number; essence: number };
 }
 
 /** End-of-round: score, advance threat track, possibly end game. */
@@ -85,8 +87,8 @@ export function endOfRound(state: GameState, ctx: EndOfRoundContext): GameState 
   // 3) Clean up merc dice (refunds unused) before regular dice return.
   next = clearMercDicePostRound(next);
 
-  // 3b) Hand cleanup: keep up to HAND_LIMIT, discard the rest.
-  next = endOfRoundHandCleanup(next);
+  // 3b) Hand cleanup: keep up to HAND_LIMIT free, pay per extra kept.
+  next = endOfRoundHandCleanup(next, ctx.cardKeepCost);
 
   // 4) Mark phase, log, return dice, reset passed, advance threat track, maybe end.
   next = produce(next, (draft) => {
