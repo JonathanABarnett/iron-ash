@@ -18,6 +18,7 @@ import type {
   PlayerId,
 } from '@engine/types';
 import { nextDieRange } from '@engine/types';
+import { FACTION_ABILITIES } from '@engine/factions/abilities';
 import { loadConfigs } from '@ui/configLoader';
 import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
 import { MapView } from '@ui/components/MapView';
@@ -667,6 +668,23 @@ function PlayersGrid({
                     + Expand ({player.dice.length}/{player.barracksMax})
                   </button>
                 )}
+                {/* Faction active ability */}
+                {pendingMoves?.some((m) => m.kind === 'use-active') && !player.activeUsedThisRound && (
+                  <button
+                    type="button"
+                    onClick={() => onChooseMove?.({ kind: 'use-active' })}
+                    title={FACTION_ABILITIES[player.factionId]?.activeDescription}
+                    className="rounded border border-violet-700 bg-violet-950/40 px-2 py-1 text-[10px] font-semibold text-violet-200 hover:bg-violet-900/60"
+                  >
+                    ✦ {FACTION_ABILITIES[player.factionId]?.activeLabel ?? 'Active'}
+                  </button>
+                )}
+              </div>
+            )}
+            {/* Used-active indicator */}
+            {player.activeUsedThisRound && (
+              <div className="mt-1 text-[10px] text-neutral-600 line-through">
+                Active used this round
               </div>
             )}
             {player.passedThisRound && (
@@ -844,6 +862,15 @@ function MoveSummary({ move, state }: { move: Move; state: GameState }) {
       return <div className="mt-1 text-[11px]">Draft {move.cardId}</div>;
     case 'play-card':
       return <div className="mt-1 text-[11px]">Play {move.cardId}</div>;
+    case 'use-active': {
+      const player = state.players[state.activePlayerId];
+      const ab = FACTION_ABILITIES[player?.factionId ?? 'warriors'];
+      return <div className="mt-1 text-[11px] text-violet-300">✦ {ab?.activeLabel}</div>;
+    }
+    case 'expand-barracks':
+      return <div className="mt-1 text-[11px]">Expand barracks</div>;
+    case 'upgrade-die':
+      return <div className="mt-1 text-[11px]">Upgrade die {move.dieId}</div>;
     case 'pass':
       return <div className="mt-1 text-[11px]">Pass</div>;
   }
@@ -884,6 +911,7 @@ function HumanActionMenu({
     { label: '📍 Place / Combine', color: 'border-purple-800 bg-purple-950/20', moves: visibleMoves.filter((m) => (m.kind === 'place' || m.kind === 'combine') && !state.regionDefs[m.regionId]?.isFortress) },
     { label: '⚡ Hire Merc', color: 'border-blue-800 bg-blue-950/20', moves: visibleMoves.filter((m) => m.kind === 'hire-merc') },
     { label: '🃏 Cards', color: 'border-teal-800 bg-teal-950/20', moves: visibleMoves.filter((m) => m.kind === 'draft-card' || m.kind === 'play-card') },
+    { label: '✦ Active Ability', color: 'border-violet-800 bg-violet-950/30', moves: visibleMoves.filter((m) => m.kind === 'use-active') },
     { label: '⏸ Pass', color: 'border-neutral-700 bg-neutral-900/40', moves: visibleMoves.filter((m) => m.kind === 'pass') },
   ].filter((g) => g.moves.length > 0);
 
@@ -994,6 +1022,15 @@ function HumanMoveLabel({
       return <span>Draft <span className="text-neutral-200">{move.cardId.replace('card-', '')}</span></span>;
     case 'play-card':
       return <span>Play <span className="text-neutral-200">{move.cardId.replace('card-', '')}</span></span>;
+    case 'use-active': {
+      const ability = FACTION_ABILITIES[player?.factionId ?? 'warriors'];
+      return (
+        <span>
+          <strong className="text-violet-300">{ability?.activeLabel}</strong>
+          <span className="ml-1 text-neutral-400">— {ability?.activeDescription}</span>
+        </span>
+      );
+    }
     case 'pass':
       return <span className="text-neutral-400">Pass (end turn)</span>;
   }

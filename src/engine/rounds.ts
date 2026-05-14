@@ -117,6 +117,7 @@ export function endOfRound(state: GameState, ctx: EndOfRoundContext): GameState 
         }
       }
       player.passedThisRound = false;
+        player.activeUsedThisRound = false;
     }
     for (const rt of Object.values(draft.regions)) {
       rt.placedDieIds = [];

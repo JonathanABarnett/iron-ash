@@ -28,6 +28,7 @@ import {
   playableCards,
 } from './cards';
 import { applyBattle, canBattle } from './battle';
+import { applyActive, canUseActive } from './factions/abilities';
 
 export class NotImplementedYet extends Error {
   constructor(feature: string) {
@@ -147,6 +148,11 @@ export function enumerate(state: GameState, ctx?: MoveContext): Move[] {
     }
   }
 
+  // use-active — once per round, if not yet used
+  if (canUseActive(state, player.id)) {
+    moves.push({ kind: 'use-active' });
+  }
+
   // pass is always legal
   moves.push({ kind: 'pass' });
 
@@ -187,6 +193,9 @@ export function apply(state: GameState, move: Move, ctx?: MoveContext): GameStat
     case 'expand-barracks': {
       if (!ctx?.costs || !ctx.rng) throw new IllegalMove('expand-barracks requires MoveContext.costs + rng');
       return applyExpandBarracks(state, ctx.costs, ctx.rng);
+    }
+    case 'use-active': {
+      return applyActiveMove(state, move);
     }
   }
 }
@@ -397,6 +406,18 @@ function applyExpandBarracks(
     };
     dp.dice.push(newDie);
     appendLog(draft, { kind: 'move', move: { kind: 'expand-barracks' } });
+    advanceTurn(draft);
+  });
+}
+
+function applyActiveMove(
+  state: GameState,
+  move: { kind: 'use-active'; dieId?: string; targetValue?: number; targetRegionId?: string },
+): GameState {
+  const playerId = state.activePlayerId;
+  const next = applyActive(state, playerId, move.dieId, move.targetValue, move.targetRegionId);
+  return produce(next, (draft) => {
+    appendLog(draft, { kind: 'move', move });
     advanceTurn(draft);
   });
 }

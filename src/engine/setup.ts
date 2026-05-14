@@ -69,6 +69,7 @@ export function createGame(args: CreateGameArgs): GameState {
       vp: 0,
       secretGoals: [],
       passedThisRound: false,
+      activeUsedThisRound: false,
       progress: {
         maxFortressesSimultaneous: 0,
         combinesThisGame: 0,

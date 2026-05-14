@@ -18,6 +18,7 @@ function mkPlayer(id: string, factionId: Player['factionId']): Player {
     vp: 0,
     secretGoals: [],
     passedThisRound: false,
+      activeUsedThisRound: false,
     progress: {
       maxFortressesSimultaneous: 0,
       combinesThisGame: 0,

@@ -98,6 +98,8 @@ export interface Player {
   secretGoals: SecretGoalId[];
   /** Set when the player has explicitly passed for the rest of this round. */
   passedThisRound: boolean;
+  /** True once the player has used their once-per-round active ability this round. */
+  activeUsedThisRound: boolean;
   /** Counters fed by the round/turn loop and queried by goal predicates. */
   progress: GoalProgress;
   /** arbitrary per-faction extras populated in Phase 2 */
@@ -194,6 +196,11 @@ export type Move =
   | { kind: 'upgrade-die'; dieId: DieId }
   /** Spend resources to unlock one additional barracks slot (new 1-3 die). */
   | { kind: 'expand-barracks' }
+  /**
+   * Use this faction's once-per-round active ability.
+   * Optional targeting params for abilities that need a die/value/region.
+   */
+  | { kind: 'use-active'; dieId?: DieId; targetValue?: number; targetRegionId?: RegionId }
   | { kind: 'pass' };
 
 /** The range tier above the given range, or null if already at max. */

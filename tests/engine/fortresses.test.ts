@@ -30,6 +30,7 @@ function mkPlayer(id: string, dice: Die[] = []): Player {
     vp: 0,
     secretGoals: [],
     passedThisRound: false,
+      activeUsedThisRound: false,
     progress: {
       maxFortressesSimultaneous: 0,
       combinesThisGame: 0,

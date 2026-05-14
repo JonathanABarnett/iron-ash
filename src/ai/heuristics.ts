@@ -44,11 +44,12 @@ export function estimateVPGain(move: Move, state: GameState): number {
     case 'play-card':
       return 0.5; // most card effects approximate ~0.5 VP equivalent
     case 'upgrade-die':
-      // Upgrades improve a die's future range — rough VP-equivalent.
       return 1.5;
     case 'expand-barracks':
-      // A new die slot increases future action economy.
       return 1.0;
+    case 'use-active':
+      // Active abilities are generally worth using — rough estimate.
+      return 1.2;
     case 'pass':
       return 0;
   }
@@ -183,6 +184,7 @@ export function roundGoalAlignment(
     case 'battle':
     case 'upgrade-die':
     case 'expand-barracks':
+    case 'use-active':
       return 0;
   }
 }
