@@ -6,6 +6,10 @@ import path from 'node:path';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    port: 5180,
+    strictPort: false, // fall back to next free port if 5180 is taken
+  },
   resolve: {
     alias: {
       '@engine': path.resolve(__dirname, 'src/engine'),

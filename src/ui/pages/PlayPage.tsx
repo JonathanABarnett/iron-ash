@@ -49,8 +49,14 @@ interface ActiveGame {
   humanPlayerId: PlayerId | null;
   /** True when it's the human's action turn — engine pauses until a move is submitted. */
   waitingForHuman: boolean;
-  /** Legal moves for the current human turn. */
+  /** All legal moves for the current human turn. */
   pendingMoves: Move[];
+  /**
+   * Die the human has pre-selected in their player panel.
+   * When set, the map only highlights regions reachable by that die and
+   * the action menu filters to moves using it.
+   */
+  selectedDieId: string | null;
 }
 
 export function PlayPage() {
@@ -94,6 +100,7 @@ export function PlayPage() {
         humanPlayerId,
         waitingForHuman: false,
         pendingMoves: [],
+        selectedDieId: null,
       });
       setAutoplay(false);
     } catch (e) {
@@ -132,6 +139,7 @@ export function PlayPage() {
           rngSnapshot: JSON.stringify(rng.snapshot()),
           waitingForHuman: true,
           pendingMoves: pending,
+          selectedDieId: null, // clear selection at start of each human turn
         };
       }
 
@@ -191,9 +199,21 @@ export function PlayPage() {
         rngSnapshot: JSON.stringify(rng.snapshot()),
         waitingForHuman: false,
         pendingMoves: [],
+        selectedDieId: null,
       };
       // Immediately advance past any non-human non-action steps (roll / end-of-round).
       return step(resumed);
+    });
+  }
+
+  /** Toggle die selection. Clicking the same die again clears the selection. */
+  function selectDie(dieId: string) {
+    setActive((prev) => {
+      if (!prev?.waitingForHuman) return prev;
+      return {
+        ...prev,
+        selectedDieId: prev.selectedDieId === dieId ? null : dieId,
+      };
     });
   }
 
@@ -288,17 +308,28 @@ export function PlayPage() {
               <HumanActionMenu
                 moves={active.pendingMoves}
                 state={active.state}
+                selectedDieId={active.selectedDieId}
                 onChoose={applyHumanMove}
+                onClearSelection={() =>
+                  setActive((p) => (p ? { ...p, selectedDieId: null } : p))
+                }
               />
             )}
             <MercPool state={active.state} />
-            <PlayersGrid state={active.state} />
+            <PlayersGrid
+              state={active.state}
+              humanPlayerId={active.humanPlayerId}
+              waitingForHuman={active.waitingForHuman}
+              selectedDieId={active.selectedDieId}
+              onSelectDie={selectDie}
+            />
             <MapView
               state={active.state}
               humanMoves={active.waitingForHuman ? active.pendingMoves : []}
+              selectedDieId={active.selectedDieId}
               onRegionClick={(_regionId, moves) => {
-                // If only one move for this region, apply it immediately.
-                // Otherwise it's already visible in the HumanActionMenu.
+                // Apply immediately when there's exactly one move (no ambiguity).
+                // Multiple moves → fall through to HumanActionMenu.
                 if (moves.length === 1) applyHumanMove(moves[0]!);
               }}
             />
@@ -449,18 +480,34 @@ function GameStatusBar({
   );
 }
 
-function PlayersGrid({ state }: { state: GameState }) {
+function PlayersGrid({
+  state,
+  humanPlayerId,
+  waitingForHuman,
+  selectedDieId,
+  onSelectDie,
+}: {
+  state: GameState;
+  humanPlayerId?: PlayerId | null;
+  waitingForHuman?: boolean;
+  selectedDieId?: string | null;
+  onSelectDie?: (dieId: string) => void;
+}) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {state.turnOrder.map((pid) => {
         const player = state.players[pid]!;
         const isActive = pid === state.activePlayerId && state.phase === 'action';
+        const isHuman = pid === humanPlayerId;
+        const isHumanTurn = isHuman && waitingForHuman;
         return (
           <div
             key={pid}
-            className={`rounded border p-3 text-sm ${
+            className={`rounded border p-3 text-sm transition ${
               isActive
-                ? 'border-purple-600 bg-purple-950/20'
+                ? isHuman && waitingForHuman
+                  ? 'border-teal-600 bg-teal-950/20'
+                  : 'border-purple-600 bg-purple-950/20'
                 : 'border-neutral-800 bg-neutral-900/40'
             }`}
           >
@@ -469,6 +516,11 @@ function PlayersGrid({ state }: { state: GameState }) {
                 <FactionEmblem factionId={player.factionId} size={28} />
                 <span className="font-medium">
                   {player.id} — {factionLabel(player.factionId)}
+                  {isHuman && (
+                    <span className="ml-1.5 rounded bg-teal-800 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-200">
+                      You
+                    </span>
+                  )}
                 </span>
               </span>
               <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs">
@@ -480,27 +532,50 @@ function PlayersGrid({ state }: { state: GameState }) {
             </div>
             <div className="mt-2 flex items-center gap-3 text-xs text-neutral-400">
               <span>
-                Dice: {player.dice.filter((d) => d.location.kind === 'barracks').length} in
-                barracks · {player.dice.filter((d) => d.location.kind === 'region').length}{' '}
-                placed · {player.dice.filter((d) => d.location.kind === 'garrison').length}{' '}
-                garrisoned
+                {player.dice.filter((d) => d.location.kind === 'barracks').length} in barracks ·{' '}
+                {player.dice.filter((d) => d.location.kind === 'region').length} placed ·{' '}
+                {player.dice.filter((d) => d.location.kind === 'garrison').length} garrisoned
               </span>
             </div>
-            <div className="mt-2 flex flex-wrap gap-1">
+
+            {/* Barracks dice — clickable on human's turn */}
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {player.dice
                 .filter((d) => d.location.kind === 'barracks' && d.faceValue !== null)
-                .map((d) => (
-                  <span
-                    key={d.id}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded bg-neutral-800 text-sm font-semibold text-neutral-100"
-                    title={`${d.range} die showing ${d.faceValue}`}
-                  >
-                    {d.faceValue}
-                  </span>
-                ))}
+                .map((d) => {
+                  const isSelected = d.id === selectedDieId;
+                  const clickable = isHumanTurn && !!onSelectDie;
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      disabled={!clickable}
+                      onClick={() => clickable && onSelectDie(d.id)}
+                      title={`${d.range} die • face: ${d.faceValue}${clickable ? ' — click to select' : ''}`}
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded text-sm font-bold transition ${
+                        isSelected
+                          ? 'bg-teal-600 text-white ring-2 ring-teal-400 ring-offset-1 ring-offset-neutral-900'
+                          : clickable
+                            ? 'cursor-pointer bg-neutral-700 text-neutral-100 hover:bg-neutral-600 hover:ring-1 hover:ring-teal-500'
+                            : 'bg-neutral-800 text-neutral-100'
+                      }`}
+                    >
+                      {d.faceValue}
+                    </button>
+                  );
+                })}
             </div>
+
+            {isHumanTurn && (
+              <p className="mt-1.5 text-[10px] text-teal-400/70">
+                Click a die to filter moves · click a glowing region to place
+              </p>
+            )}
+
             {player.hand.length > 0 && (
-              <div className="mt-2 text-xs text-neutral-400">Hand: {player.hand.length}</div>
+              <div className="mt-2 text-xs text-neutral-400">
+                Hand: {player.hand.length} card{player.hand.length !== 1 ? 's' : ''}
+              </div>
             )}
             {player.passedThisRound && (
               <div className="mt-1 text-xs text-amber-300">Passed for round</div>
@@ -685,24 +760,39 @@ function MoveSummary({ move, state }: { move: Move; state: GameState }) {
 function HumanActionMenu({
   moves,
   state,
+  selectedDieId,
   onChoose,
+  onClearSelection,
 }: {
   moves: Move[];
   state: GameState;
+  selectedDieId?: string | null;
   onChoose: (m: Move) => void;
+  onClearSelection?: () => void;
 }) {
   const player = state.players[state.activePlayerId];
   if (!player) return null;
 
+  // When a die is selected, filter moves to those that use that die.
+  const visibleMoves = selectedDieId
+    ? moves.filter(
+        (m) =>
+          (m.kind === 'place' && m.dieId === selectedDieId) ||
+          (m.kind === 'combine' && (m.dieIds[0] === selectedDieId || m.dieIds[1] === selectedDieId)) ||
+          (m.kind === 'battle' && m.attackerDieId === selectedDieId) ||
+          m.kind === 'pass',
+      )
+    : moves;
+
   // Group moves by kind for a structured display.
   type Group = { label: string; color: string; moves: Move[] };
   const groups: Group[] = [
-    { label: '⚔ Battle', color: 'border-red-800 bg-red-950/30', moves: moves.filter((m) => m.kind === 'battle') },
-    { label: '🏰 Garrison / Place', color: 'border-amber-800 bg-amber-950/20', moves: moves.filter((m) => (m.kind === 'place' || m.kind === 'combine') && state.regionDefs[m.regionId]?.isFortress) },
-    { label: '📍 Place / Combine', color: 'border-purple-800 bg-purple-950/20', moves: moves.filter((m) => (m.kind === 'place' || m.kind === 'combine') && !state.regionDefs[m.regionId]?.isFortress) },
-    { label: '⚡ Hire Merc', color: 'border-blue-800 bg-blue-950/20', moves: moves.filter((m) => m.kind === 'hire-merc') },
-    { label: '🃏 Cards', color: 'border-teal-800 bg-teal-950/20', moves: moves.filter((m) => m.kind === 'draft-card' || m.kind === 'play-card') },
-    { label: '⏸ Pass', color: 'border-neutral-700 bg-neutral-900/40', moves: moves.filter((m) => m.kind === 'pass') },
+    { label: '⚔ Battle', color: 'border-red-800 bg-red-950/30', moves: visibleMoves.filter((m) => m.kind === 'battle') },
+    { label: '🏰 Garrison / Place', color: 'border-amber-800 bg-amber-950/20', moves: visibleMoves.filter((m) => (m.kind === 'place' || m.kind === 'combine') && state.regionDefs[m.regionId]?.isFortress) },
+    { label: '📍 Place / Combine', color: 'border-purple-800 bg-purple-950/20', moves: visibleMoves.filter((m) => (m.kind === 'place' || m.kind === 'combine') && !state.regionDefs[m.regionId]?.isFortress) },
+    { label: '⚡ Hire Merc', color: 'border-blue-800 bg-blue-950/20', moves: visibleMoves.filter((m) => m.kind === 'hire-merc') },
+    { label: '🃏 Cards', color: 'border-teal-800 bg-teal-950/20', moves: visibleMoves.filter((m) => m.kind === 'draft-card' || m.kind === 'play-card') },
+    { label: '⏸ Pass', color: 'border-neutral-700 bg-neutral-900/40', moves: visibleMoves.filter((m) => m.kind === 'pass') },
   ].filter((g) => g.moves.length > 0);
 
   return (
@@ -712,7 +802,21 @@ function HumanActionMenu({
           Choose your action —{' '}
           <span className="text-neutral-300">{player.id} ({factionLabel(player.factionId)})</span>
         </h3>
-        <span className="text-xs text-neutral-400">{moves.length} legal moves</span>
+        <div className="flex items-center gap-2">
+          {selectedDieId && (
+            <button
+              type="button"
+              onClick={onClearSelection}
+              className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] hover:bg-neutral-800"
+              title="Show all moves"
+            >
+              ✕ Die filter
+            </button>
+          )}
+          <span className="text-xs text-neutral-400">
+            {visibleMoves.length}{selectedDieId ? `/${moves.length}` : ''} moves
+          </span>
+        </div>
       </div>
       <div className="space-y-3">
         {groups.map((g) => (

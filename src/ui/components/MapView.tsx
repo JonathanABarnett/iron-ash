@@ -73,13 +73,22 @@ const TERRAIN_BORDER: Record<string, string> = {
 interface MapViewProps {
   state: GameState;
   humanMoves?: Move[];
+  /** When set, only regions reachable by this specific die glow teal. */
+  selectedDieId?: string | null;
   onRegionClick?: (regionId: RegionId, moves: Move[]) => void;
 }
 
-export function MapView({ state, humanMoves = [], onRegionClick }: MapViewProps) {
-  // Pre-compute which region ids are reachable for the human this turn.
+export function MapView({ state, humanMoves = [], selectedDieId, onRegionClick }: MapViewProps) {
+  // When a die is selected, only show regions where that specific die can go.
+  // When no die is selected, show all reachable regions.
   const humanTargetRegions = new Set<string>();
   for (const m of humanMoves) {
+    const dieOk =
+      !selectedDieId ||
+      (m.kind === 'place' && m.dieId === selectedDieId) ||
+      (m.kind === 'combine' && m.dieIds.includes(selectedDieId as never)) ||
+      (m.kind === 'battle' && m.attackerDieId === selectedDieId);
+    if (!dieOk) continue;
     if (m.kind === 'place' || m.kind === 'combine') humanTargetRegions.add(m.regionId);
     if (m.kind === 'battle') humanTargetRegions.add(m.targetRegionId);
   }
