@@ -27,14 +27,6 @@ const ALL_FACTIONS: FactionId[] = [
   'merchants','rangers','paladins','beastmasters',
 ];
 
-const PRESETS: { label: string; icon: string; lineup: FactionId[]; human: FactionId | null }[] = [
-  { label: 'Me vs 1 AI',  icon: '🎮', lineup: ['warriors','mages'],                        human: 'warriors' },
-  { label: 'Me vs 2 AI',  icon: '🎮', lineup: ['warriors','mages','merchants'],             human: 'warriors' },
-  { label: 'Me vs 3 AI',  icon: '🎮', lineup: ['warriors','assassins','mages','merchants'], human: 'warriors' },
-  { label: 'Watch 2 AIs', icon: '👁',  lineup: ['warriors','mages'],                        human: null },
-  { label: 'Watch 3 AIs', icon: '👁',  lineup: ['warriors','mages','merchants'],             human: null },
-  { label: 'Watch 4 AIs', icon: '👁',  lineup: ['warriors','assassins','mages','merchants'], human: null },
-];
 
 interface AILogEntry {
   turn: number; round: number; playerId: PlayerId; move: Move; reasoning: AIReasoning;
@@ -258,6 +250,13 @@ export function PlayPage() {
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
+// Good default lineups per player count (balanced variety, well-tested combos)
+const COUNT_DEFAULTS: Record<number, FactionId[]> = {
+  2: ['warriors', 'mages'],
+  3: ['warriors', 'mages', 'merchants'],
+  4: ['warriors', 'assassins', 'mages', 'merchants'],
+};
+
 function SetupPanel({ lineup, humanFaction, difficulty, seed, error, onLineupChange, onHumanFactionChange, onDifficultyChange, onSeedChange, onStart, hasActiveGame }: {
   lineup: FactionId[]; humanFaction: FactionId | null; difficulty: Difficulty; seed: string; error: string | null;
   onLineupChange: (n: FactionId[]) => void; onHumanFactionChange: (f: FactionId | null) => void;
@@ -265,46 +264,112 @@ function SetupPanel({ lineup, humanFaction, difficulty, seed, error, onLineupCha
   onStart: () => void; hasActiveGame: boolean;
 }) {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10">
-      <h1 className="text-4xl font-bold tracking-tight text-white">Iron &amp; Ash</h1>
-      <p className="mt-1 text-sm text-neutral-400">Medieval dice-placement · asymmetric factions · up to 4 players</p>
+    <div className="mx-auto max-w-2xl px-6 py-12">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-5xl font-black tracking-tight text-white">Iron &amp; Ash</h1>
+        <p className="mt-2 text-neutral-400">Asymmetric dice-placement · 8 factions · 16 regions · 7 rounds</p>
+      </div>
 
-      <div className="mt-8">
-        <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500">Quick start</div>
-        <div className="flex flex-wrap gap-2">
-          {PRESETS.map((p) => {
-            const isActive = JSON.stringify([...lineup].sort()) === JSON.stringify([...p.lineup].sort()) && humanFaction === p.human;
+      {/* ── Player count — primary choice ── */}
+      <div className="mb-6">
+        <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500">How many players?</div>
+        <div className="grid grid-cols-3 gap-3">
+          {[2, 3, 4].map((n) => {
+            const active = lineup.length === n;
             return (
-              <button key={p.label} type="button"
-                onClick={() => { onLineupChange(p.lineup); onHumanFactionChange(p.human); }}
-                className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${isActive ? 'border-purple-500 bg-purple-900/40 text-purple-200' : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800'}`}
+              <button key={n} type="button"
+                onClick={() => {
+                  const defaults = COUNT_DEFAULTS[n] ?? COUNT_DEFAULTS[2]!;
+                  onLineupChange(defaults);
+                  // Keep human faction if it's in the new lineup, else pick first
+                  const keepHuman = humanFaction && defaults.includes(humanFaction) ? humanFaction : defaults[0]!;
+                  onHumanFactionChange(keepHuman);
+                }}
+                className={`rounded-2xl border-2 py-4 text-center transition ${
+                  active
+                    ? 'border-purple-500 bg-purple-900/30 shadow-lg shadow-purple-950/40'
+                    : 'border-neutral-800 bg-neutral-900/50 hover:border-neutral-600 hover:bg-neutral-800/60'
+                }`}
               >
-                <span className="mr-1.5">{p.icon}</span>{p.label}
+                <div className={`text-3xl font-black ${active ? 'text-white' : 'text-neutral-400'}`}>{n}</div>
+                <div className={`text-xs mt-0.5 font-medium ${active ? 'text-purple-300' : 'text-neutral-600'}`}>
+                  {n === 2 ? 'head-to-head' : n === 3 ? 'three-way' : 'free-for-all'}
+                </div>
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="mt-6">
-        <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500">Factions — {lineup.length}/4 &nbsp;·&nbsp; click to add/remove &nbsp;·&nbsp; YOU/AI toggles role</div>
+      {/* ── Play mode: human vs watch ── */}
+      <div className="mb-6">
+        <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500">Your role</div>
+        <div className="flex gap-2">
+          <button type="button"
+            onClick={() => { if (!humanFaction) onHumanFactionChange(lineup[0]!); }}
+            className={`flex-1 rounded-xl border py-2.5 text-sm font-semibold transition ${
+              humanFaction ? 'border-teal-600 bg-teal-900/30 text-teal-200 shadow shadow-teal-950/40' : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-600'
+            }`}
+          >
+            🎮 Play (control one faction)
+          </button>
+          <button type="button"
+            onClick={() => onHumanFactionChange(null)}
+            className={`flex-1 rounded-xl border py-2.5 text-sm font-semibold transition ${
+              !humanFaction ? 'border-purple-600 bg-purple-900/30 text-purple-200 shadow shadow-purple-950/40' : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-600'
+            }`}
+          >
+            👁 Watch (all AIs)
+          </button>
+        </div>
+      </div>
+
+      {/* ── Faction grid ── */}
+      <div className="mb-6">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
+            Factions in game ({lineup.length}) &nbsp;·&nbsp; click to swap
+          </span>
+          {humanFaction && (
+            <span className="text-[10px] text-teal-400/70">Teal border = YOU</span>
+          )}
+        </div>
         <div className="grid grid-cols-4 gap-2">
           {ALL_FACTIONS.map((id) => {
             const picked  = lineup.includes(id);
             const isHuman = humanFaction === id;
             return (
-              <div key={id} className={`relative overflow-hidden rounded-xl border-2 transition ${picked ? isHuman ? 'border-teal-500 bg-teal-950/30' : 'border-purple-500 bg-purple-950/20' : 'border-neutral-800 bg-neutral-900/60 opacity-50 hover:opacity-75 hover:border-neutral-600'}`}>
-                <button type="button" className="w-full p-3 text-left" onClick={() => {
-                  if (picked) { if (lineup.length <= 2) return; if (humanFaction === id) onHumanFactionChange(null); onLineupChange(lineup.filter((x) => x !== id)); }
-                  else { if (lineup.length >= 4) return; onLineupChange([...lineup, id]); }
+              <div key={id} className={`group relative overflow-hidden rounded-xl border-2 transition-all ${
+                picked
+                  ? isHuman
+                    ? 'border-teal-500 bg-teal-950/25 shadow shadow-teal-950/40'
+                    : 'border-purple-600/70 bg-purple-950/15'
+                  : 'border-neutral-800 bg-neutral-900/50 opacity-40 hover:opacity-70 hover:border-neutral-600 hover:bg-neutral-800/60'
+              }`}>
+                <button type="button" className="w-full p-3 pb-2 text-left" onClick={() => {
+                  if (picked) {
+                    if (lineup.length <= 2) return;
+                    if (humanFaction === id) onHumanFactionChange(null);
+                    onLineupChange(lineup.filter((x) => x !== id));
+                  } else {
+                    if (lineup.length >= 4) return;
+                    onLineupChange([...lineup, id]);
+                  }
                 }}>
-                  <FactionEmblem factionId={id} size={40} className="mb-2 rounded-lg" />
-                  <div className="text-xs font-semibold text-neutral-100 leading-tight">{factionLabel(id)}</div>
+                  <FactionEmblem factionId={id} size={44} className="mb-2 rounded-lg" />
+                  <div className="text-[11px] font-bold text-neutral-100 leading-tight">{factionLabel(id)}</div>
                 </button>
+                {/* YOU/AI badge — only show when picked */}
                 {picked && (
-                  <button type="button" onClick={() => onHumanFactionChange(isHuman ? null : id)}
-                    className={`absolute right-1.5 top-1.5 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase transition ${isHuman ? 'bg-teal-600 text-white hover:bg-teal-500' : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'}`}
-                  >{isHuman ? 'YOU' : 'AI'}</button>
+                  <button type="button"
+                    onClick={() => onHumanFactionChange(isHuman ? null : id)}
+                    className={`absolute right-1.5 top-1.5 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide transition ${
+                      isHuman ? 'bg-teal-500 text-white' : 'bg-neutral-700/80 text-neutral-400 hover:bg-neutral-600 hover:text-neutral-200'
+                    }`}
+                  >
+                    {isHuman ? 'YOU' : 'AI'}
+                  </button>
                 )}
               </div>
             );
@@ -312,24 +377,33 @@ function SetupPanel({ lineup, humanFaction, difficulty, seed, error, onLineupCha
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-end gap-4">
+      {/* ── Settings + Start ── */}
+      <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Difficulty</span>
-          <select value={difficulty} onChange={(e) => onDifficultyChange(e.target.value as Difficulty)} className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100">
-            <option value="easy">🟢 Easy</option>
-            <option value="medium">🟡 Medium</option>
-            <option value="hard">🔴 Hard</option>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">AI Difficulty</span>
+          <select value={difficulty} onChange={(e) => onDifficultyChange(e.target.value as Difficulty)}
+            className="rounded-xl border border-neutral-700 bg-neutral-800/80 px-3 py-2 text-sm text-neutral-100 focus:border-purple-500 focus:outline-none">
+            <option value="easy">🟢 Easy (30% noise)</option>
+            <option value="medium">🟡 Medium (10% noise)</option>
+            <option value="hard">🔴 Hard (3% noise)</option>
           </select>
         </label>
         <label className="flex flex-1 flex-col gap-1.5">
           <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Seed</span>
-          <input type="text" value={seed} onChange={(e) => onSeedChange(e.target.value)} className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm font-mono text-neutral-100" />
+          <input type="text" value={seed} onChange={(e) => onSeedChange(e.target.value)}
+            className="rounded-xl border border-neutral-700 bg-neutral-800/80 px-3 py-2 text-sm font-mono text-neutral-100 focus:border-purple-500 focus:outline-none" />
         </label>
-        <button type="button" onClick={onStart} className="rounded-xl bg-purple-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-purple-500 transition">
-          {hasActiveGame ? '⟳ Restart' : '▶ Start Game'}
+        <button type="button" onClick={onStart}
+          className="rounded-xl bg-purple-600 px-8 py-2.5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-purple-950/50 hover:bg-purple-500 transition-all hover:scale-[1.02] active:scale-[0.98]">
+          {hasActiveGame ? '⟳ Restart' : '▶ Start'}
         </button>
       </div>
-      {error && <div className="mt-4 rounded-lg border border-red-700 bg-red-950/40 px-4 py-3 text-sm text-red-200">{error}</div>}
+
+      {error && (
+        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+          {error}
+        </div>
+      )}
     </div>
   );
 }

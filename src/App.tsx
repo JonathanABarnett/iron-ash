@@ -43,7 +43,7 @@ function Sidebar() {
 
       {/* Footer */}
       <div className="mt-auto px-2 text-[10px] text-neutral-600">
-        <p>93 tests · TypeScript strict · 8 factions</p>
+        <p>93 tests · 8 factions · 16 regions</p>
         <p className="mt-0.5">
           <code>pnpm sim --games=200</code>
         </p>
