@@ -127,6 +127,41 @@ body::after {
 .animate-slide-up { animation: slide-up 0.3s ease-out; }
 .animate-fade-in  { animation: fade-in 0.25s ease-out; }
 
+@keyframes vp-float {
+  0%   { opacity: 1;   transform: translateY(0)    scale(1.1);  }
+  30%  { opacity: 1;   transform: translateY(-10px) scale(1.25); }
+  100% { opacity: 0;   transform: translateY(-32px) scale(0.9);  }
+}
+@keyframes resource-pop {
+  0%   { transform: scale(1);    }
+  35%  { transform: scale(1.45); }
+  65%  { transform: scale(0.90); }
+  100% { transform: scale(1);    }
+}
+@keyframes threat-pulse {
+  0%   { box-shadow: none; }
+  40%  { box-shadow: 0 0 0 3px rgba(239,68,68,0.5), 0 0 18px 4px rgba(239,68,68,0.25); }
+  100% { box-shadow: none; }
+}
+@keyframes battle-win-flash {
+  0%   { box-shadow: none; background-color: rgba(239,68,68,0); }
+  25%  { box-shadow: 0 0 20px 6px rgba(239,68,68,0.35); background-color: rgba(239,68,68,0.06); }
+  100% { box-shadow: none; background-color: rgba(239,68,68,0); }
+}
+@keyframes battle-loss-shake {
+  0%, 100% { transform: translateX(0)    rotate(0deg);   }
+  20%       { transform: translateX(-5px) rotate(-1.5deg); }
+  40%       { transform: translateX(5px)  rotate(1.5deg);  }
+  60%       { transform: translateX(-3px) rotate(-1deg);   }
+  80%       { transform: translateX(3px)  rotate(1deg);    }
+}
+
+.vp-float        { animation: vp-float 1.4s ease-out forwards; pointer-events: none; }
+.resource-pop    { animation: resource-pop 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+.threat-pulse    { animation: threat-pulse 0.7s ease-out; }
+.battle-win-anim { animation: battle-win-flash 0.9s ease-out; }
+.battle-loss-anim{ animation: battle-loss-shake 0.45s ease-out; }
+
 /* ── Scrollbar ───────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

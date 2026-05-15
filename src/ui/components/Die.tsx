@@ -28,12 +28,14 @@ interface DieProps {
   size?: number;
   isSelected?: boolean;
   isRolling?: boolean;
+  /** ms delay before the roll animation fires — use to stagger multiple dice */
+  rollDelay?: number;
   onClick?: (() => void) | undefined;
   disabled?: boolean;
   className?: string;
 }
 
-export function Die({ value, range, size = 32, isSelected = false, isRolling = false, onClick, disabled = false, className = '' }: DieProps) {
+export function Die({ value, range, size = 32, isSelected = false, isRolling = false, rollDelay = 0, onClick, disabled = false, className = '' }: DieProps) {
   const style = RANGE_STYLE[range] ?? RANGE_STYLE['1-3'];
   const prevValue = useRef(value);
   const [animClass, setAnimClass] = useState('');
@@ -68,6 +70,7 @@ export function Die({ value, range, size = 32, isSelected = false, isRolling = f
         boxShadow: isSelected
           ? `0 0 0 2px rgba(20,184,166,0.4), inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 8px ${style.glow}`
           : `inset 0 1px 0 rgba(255,255,255,0.07), 0 2px 6px ${style.glow}`,
+        animationDelay: isRolling && rollDelay > 0 ? `${rollDelay}ms` : undefined,
       }}
     >
       {/* Pips */}

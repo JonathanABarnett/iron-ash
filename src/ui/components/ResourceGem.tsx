@@ -115,10 +115,12 @@ const RES_STYLE: Record<Resource, { bg: string; border: string; text: string }> 
   essence: { bg: 'bg-violet-950/70',  border: 'border-violet-700/40', text: 'text-violet-200' },
 };
 
-export function ResourceCount({ resource, value, size = 14 }: { resource: Resource; value: number; size?: number }) {
+export function ResourceCount({
+  resource, value, size = 14, pulsed = false,
+}: { resource: Resource; value: number; size?: number; pulsed?: boolean }) {
   const s = RES_STYLE[resource];
   return (
-    <div className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 ${s.bg} ${s.border}`}>
+    <div className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 ${s.bg} ${s.border} ${pulsed ? 'resource-pop' : ''}`}>
       <ResourceGem resource={resource} size={size} />
       <span className={`tabular-nums font-bold text-[11px] ${s.text}`}>{value}</span>
     </div>

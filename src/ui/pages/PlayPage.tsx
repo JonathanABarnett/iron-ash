@@ -59,6 +59,18 @@ export function PlayPage() {
   const [playerDifficulties, setPlayerDifficulties] = useState<Difficulty[]>(['medium','medium','medium']);
   const [seed, setSeed]                             = useState('play-1');
 
+  // ── Animation state (ephemeral — never affects game logic) ─────────────────
+  const [justRolled, setJustRolled]               = useState(false);
+  const [vpGains, setVpGains]                     = useState<Record<string, number>>({});
+  const [threatPulse, setThreatPulse]             = useState(false);
+  const [resourcePulse, setResourcePulse]         = useState<Set<string>>(new Set());
+
+  // Auto-clear animation flags
+  useEffect(() => { if (!justRolled) return; const t = setTimeout(() => setJustRolled(false), 650); return () => clearTimeout(t); }, [justRolled]);
+  useEffect(() => { if (!Object.keys(vpGains).length) return; const t = setTimeout(() => setVpGains({}), 1400); return () => clearTimeout(t); }, [vpGains]);
+  useEffect(() => { if (!threatPulse) return; const t = setTimeout(() => setThreatPulse(false), 750); return () => clearTimeout(t); }, [threatPulse]);
+  useEffect(() => { if (!resourcePulse.size) return; const t = setTimeout(() => setResourcePulse(new Set()), 500); return () => clearTimeout(t); }, [resourcePulse]);
+
   /** Keep playerDifficulties in sync with lineup length. */
   function handleLineupChange(next: FactionId[]) {
     setLineup(next);
@@ -199,7 +211,42 @@ export function PlayPage() {
       }, delay);
       return () => window.clearTimeout(id);
     }
-    const id = window.setTimeout(() => { if (autoplayRef.current) setActive((p) => p ? step(p) : p); }, autoSpeed);
+    const id = window.setTimeout(() => {
+      if (!autoplayRef.current) return;
+      setActive((prev) => {
+        if (!prev) return prev;
+        const next = step(prev);
+
+        // ── Detect animation triggers ──────────────────────────────────────
+        const ps = prev.state, ns = next.state;
+
+        // 1. Roll animation: roll phase just completed → brief tumble on all dice
+        if (ps.phase === 'roll' && ns.phase === 'action') {
+          setJustRolled(true);
+          // Detect resource gains from passives (fired during rollPhase)
+          const pulsed = new Set<string>();
+          for (const [pid, pp] of Object.entries(ps.players)) {
+            const np = ns.players[pid];
+            if (!np) continue;
+            if (np.resources.iron > pp.resources.iron || np.resources.gold > pp.resources.gold || np.resources.essence > pp.resources.essence) pulsed.add(pid);
+          }
+          if (pulsed.size) setResourcePulse(pulsed);
+        }
+
+        // 2. Threat track increase → flash the bar
+        if (ns.threatTrack > ps.threatTrack) setThreatPulse(true);
+
+        // 3. VP gain → float indicators
+        const gains: Record<string, number> = {};
+        for (const [pid, np] of Object.entries(ns.players)) {
+          const prevVP = ps.players[pid]?.vp ?? 0;
+          if (np.vp > prevVP) gains[pid] = np.vp - prevVP;
+        }
+        if (Object.keys(gains).length) setVpGains(gains);
+
+        return next;
+      });
+    }, autoSpeed);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, autoplay]);
@@ -225,7 +272,7 @@ export function PlayPage() {
               Round <span className="text-purple-300">{active.state.round}</span>
               <span className="text-neutral-600">/{active.state.phase === 'finished' ? active.state.round : rules.totalRounds}</span>
             </span>
-            <ThreatBar track={active.state.threatTrack} threshold={rules.threatTrackThreshold} />
+            <ThreatBar track={active.state.threatTrack} threshold={rules.threatTrackThreshold} pulse={threatPulse} />
             <PhaseChip phase={active.state.phase} />
             <ActivePlayerChip state={active.state} humanPlayerId={active.humanPlayerId} waitingForHuman={active.waitingForHuman} />
             {active.state.freeForAll && <span className="rounded-md bg-amber-800/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">Free-for-all</span>}
@@ -276,7 +323,7 @@ export function PlayPage() {
           {/* ── Battle flash ── */}
           {active.lastBattle && (
             <div key={`${active.lastBattle.regionName}-${active.state.round}-${active.state.turn}`}
-              className="animate-fade-in mx-4 mt-2 flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold"
+              className={`animate-fade-in mx-4 mt-2 flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold ${active.lastBattle.won ? 'battle-win-anim' : 'battle-loss-anim'}`}
               style={{
                 background: active.lastBattle.won
                   ? 'rgba(239,68,68,0.12)'
@@ -342,6 +389,9 @@ export function PlayPage() {
                   onChooseMove={applyHumanMove}
                   configs={configs}
                   vpHistory={active.vpHistory[pid]}
+                  vpGain={vpGains[pid] ?? 0}
+                  isRolling={justRolled}
+                  resourcePulsed={resourcePulse.has(pid)}
                 />
               );
             })}
@@ -688,13 +738,15 @@ function SetupPanel({ lineup, humanFaction, difficulty, seed, error,
 
 // ─── Header chips ─────────────────────────────────────────────────────────────
 
-function ThreatBar({ track, threshold }: { track: number; threshold: number }) {
+function ThreatBar({ track, threshold, pulse = false }: { track: number; threshold: number; pulse?: boolean }) {
   const pct = Math.min(100, Math.round((track / threshold) * 100));
   const bar = pct >= 80 ? 'bg-red-500' : pct >= 50 ? 'bg-amber-500' : 'bg-emerald-500';
   return (
-    <div className="flex items-center gap-1.5" title={`Threat ${track}/${threshold}`}>
+    <div className={`flex items-center gap-1.5 rounded-lg px-1 ${pulse ? 'threat-pulse' : ''}`} title={`Threat ${track}/${threshold}`}>
       <span className="text-[10px] text-neutral-500">☠</span>
-      <div className="h-2 w-14 overflow-hidden rounded-full bg-neutral-800"><div className={`h-full rounded-full transition-all duration-300 ${bar}`} style={{ width: `${pct}%` }} /></div>
+      <div className="h-2 w-14 overflow-hidden rounded-full bg-neutral-800">
+        <div className={`h-full rounded-full transition-all duration-300 ${bar}`} style={{ width: `${pct}%` }} />
+      </div>
       <span className="text-[10px] tabular-nums text-neutral-400">{track}/{threshold}</span>
     </div>
   );
@@ -848,11 +900,17 @@ function VPSparkline({ history, width = 88, height = 18 }: { history: number[]; 
   );
 }
 
-function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieId, onSelectDie, pendingMoves, onChooseMove, configs, vpHistory }: {
+function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieId, onSelectDie, pendingMoves, onChooseMove, configs, vpHistory, vpGain = 0, isRolling = false, resourcePulsed = false }: {
   player: NonNullable<GameState['players'][string]>; isActive: boolean; isHuman: boolean; isLeader: boolean;
   waitingForHuman: boolean; selectedDieId: string | null; onSelectDie: (id: string) => void;
   pendingMoves: Move[]; onChooseMove: (m: Move) => void; configs: ReturnType<typeof loadConfigs>;
   vpHistory?: number[];
+  /** VP gained in the most recent step — drives float animation */
+  vpGain?: number;
+  /** Barracks dice should show roll tumble animation */
+  isRolling?: boolean;
+  /** Resources gained from passive this round — pulse gems */
+  resourcePulsed?: boolean;
 }) {
   const isHumanTurn = isHuman && waitingForHuman;
   const placed  = player.dice.filter((d) => d.location.kind === 'region').length;
@@ -900,18 +958,25 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
             {player.passedThisRound && <span className="ml-1 text-amber-500">passed</span>}
           </div>
         </div>
-        {/* VP medallion */}
-        <div className="shrink-0">
+        {/* VP medallion with float animation */}
+        <div className="relative shrink-0">
           <VPMedallion vp={player.vp} isLeader={isLeader} size="md" />
+          {vpGain > 0 && (
+            <div key={player.vp} // key change re-triggers animation
+              className="vp-float absolute -top-5 left-1/2 -translate-x-1/2 text-[11px] font-black text-emerald-400 whitespace-nowrap"
+              style={{ textShadow: '0 0 8px rgba(52,211,153,0.6)' }}>
+              +{vpGain} VP
+            </div>
+          )}
         </div>
       </div>
 
       {/* ── Resources + VP sparkline ── */}
       <div className="flex items-center justify-between gap-1.5 mb-2.5">
         <div className="flex items-center gap-1.5">
-          <ResourceCount resource="iron"    value={player.resources.iron}    size={13} />
-          <ResourceCount resource="gold"    value={player.resources.gold}    size={13} />
-          <ResourceCount resource="essence" value={player.resources.essence} size={13} />
+          <ResourceCount resource="iron"    value={player.resources.iron}    size={13} pulsed={resourcePulsed} />
+          <ResourceCount resource="gold"    value={player.resources.gold}    size={13} pulsed={resourcePulsed} />
+          <ResourceCount resource="essence" value={player.resources.essence} size={13} pulsed={resourcePulsed} />
         </div>
         {vpHistory && vpHistory.length >= 2 && (
           <div title={`VP trend: ${vpHistory.join(', ')}`}>
@@ -925,13 +990,15 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
         <div className="mb-2">
           <div className="mb-1 text-[9px] uppercase tracking-widest text-neutral-700">Barracks</div>
           <div className="flex flex-wrap gap-1.5">
-            {barracksDice.map((d) => (
+            {barracksDice.map((d, idx) => (
               <Die
                 key={d.id}
                 value={d.faceValue}
                 range={d.range}
                 size={30}
                 isSelected={d.id === selectedDieId}
+                isRolling={isRolling}
+                rollDelay={idx * 55}
                 onClick={isHumanTurn ? () => onSelectDie(d.id) : undefined}
               />
             ))}

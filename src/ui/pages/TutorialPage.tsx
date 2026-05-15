@@ -247,6 +247,10 @@ export function TutorialPage() {
   const [prevRound, setPrevRound]           = useState(0);
   const [showAllHints, setShowAllHints]     = useState(false);
   const [roundSummary, setRoundSummary]     = useState<{ round: number; vpDeltas: Record<string, number> } | null>(null);
+  const [justRolled, setJustRolled]         = useState(false);
+  const [vpGains, setVpGains]               = useState<Record<string, number>>({});
+  useEffect(() => { if (!justRolled) return; const t = setTimeout(() => setJustRolled(false), 650); return () => clearTimeout(t); }, [justRolled]);
+  useEffect(() => { if (!Object.keys(vpGains).length) return; const t = setTimeout(() => setVpGains({}), 1400); return () => clearTimeout(t); }, [vpGains]);
 
   const humanPid: PlayerId = 'p1';
   const autoplayRef = useRef(autoplay);
@@ -324,6 +328,14 @@ export function TutorialPage() {
       setGameState(state);
       if (endedRound) { setAutoplay(false); setPrevRound(gameState.round); }
       if (state.activePlayerId === humanPid && state.phase === 'action') setAutoplay(false);
+      // Animation triggers
+      if (gameState.phase === 'roll' && state.phase === 'action') setJustRolled(true);
+      const gains: Record<string, number> = {};
+      for (const [pid, np] of Object.entries(state.players)) {
+        const pv = gameState.players[pid]?.vp ?? 0;
+        if (np.vp > pv) gains[pid] = np.vp - pv;
+      }
+      if (Object.keys(gains).length) setVpGains(gains);
     }, delay);
     return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -586,7 +598,14 @@ export function TutorialPage() {
                     {player.passedThisRound && <span className="ml-1 text-amber-500">passed</span>}
                   </div>
                 </div>
-                <VPMedallion vp={player.vp} isLeader={maxVP > 0 && player.vp === maxVP} size="md" />
+                <div className="relative shrink-0">
+                  <VPMedallion vp={player.vp} isLeader={maxVP > 0 && player.vp === maxVP} size="md" />
+                  {(vpGains[pid] ?? 0) > 0 && (
+                    <div key={player.vp} className="vp-float absolute -top-5 left-1/2 -translate-x-1/2 text-[11px] font-black text-emerald-400 whitespace-nowrap" style={{ textShadow: '0 0 8px rgba(52,211,153,0.6)' }}>
+                      +{vpGains[pid]} VP
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="mb-2.5 flex items-center gap-1.5">
                 <ResourceCount resource="iron"    value={player.resources.iron}    size={13} />
@@ -597,9 +616,11 @@ export function TutorialPage() {
                 <div>
                   <div className="mb-1 text-[9px] uppercase tracking-widest text-neutral-700">Barracks</div>
                   <div className="flex flex-wrap gap-1.5">
-                    {barracksDice.slice(0, 6).map((d) => (
+                    {barracksDice.slice(0, 6).map((d, idx) => (
                       <Die key={d.id} value={d.faceValue} range={d.range} size={28}
                         isSelected={d.id === selectedDieId}
+                        isRolling={justRolled}
+                        rollDelay={idx * 55}
                         onClick={waitingForHuman && isHuman ? () => setSelectedDieId((prev) => prev === d.id ? null : d.id) : undefined}
                       />
                     ))}
