@@ -5,6 +5,9 @@ import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
 export default defineConfig({
+  // GitHub Pages serves from https://JonathanABarnett.github.io/iron-ash/
+  // Set base to repo name so all asset URLs resolve correctly.
+  base: '/iron-ash/',
   plugins: [react(), tailwindcss()],
   server: {
     port: 5180,

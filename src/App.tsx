@@ -28,7 +28,7 @@ const NAV_UTIL = [
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/iron-ash">
       <div className="flex min-h-screen" style={{ background: 'var(--color-bg)' }}>
 
         {/* Desktop sidebar */}
