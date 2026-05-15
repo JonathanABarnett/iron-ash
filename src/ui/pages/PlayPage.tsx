@@ -139,7 +139,7 @@ export function PlayPage() {
   const rules = configs.rules;
 
   return (
-    <main className="min-h-screen bg-neutral-950">
+    <main className="min-h-screen animate-fade-in" style={{ background: 'var(--color-bg)' }}>
       {!active && (
         <SetupPanel
           lineup={lineup} humanFaction={humanFaction} difficulty={difficulty} seed={seed} error={error}
@@ -287,11 +287,12 @@ function SetupPanel({ lineup, humanFaction, difficulty, seed, error, onLineupCha
   onStart: () => void; hasActiveGame: boolean;
 }) {
   return (
-    <div className="mx-auto max-w-2xl px-6 py-12">
-      {/* Header */}
+    <div className="mx-auto max-w-2xl px-6 py-10">
+      {/* Header — no redundant title, sidebar already shows it */}
       <div className="mb-8">
-        <h1 className="text-5xl font-black tracking-tight text-white">Iron &amp; Ash</h1>
-        <p className="mt-2 text-neutral-400">Asymmetric dice-placement · 8 factions · 16 regions · 7 rounds</p>
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-subtle)' }}>New game</div>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Configure your match</h1>
+        <p className="mt-1 text-sm" style={{ color: 'var(--color-muted)' }}>Pick a player count, choose factions, and start playing.</p>
       </div>
 
       {/* ── Player count — primary choice ── */}
@@ -305,18 +306,18 @@ function SetupPanel({ lineup, humanFaction, difficulty, seed, error, onLineupCha
                 onClick={() => {
                   const defaults = COUNT_DEFAULTS[n] ?? COUNT_DEFAULTS[2]!;
                   onLineupChange(defaults);
-                  // Keep human faction if it's in the new lineup, else pick first
                   const keepHuman = humanFaction && defaults.includes(humanFaction) ? humanFaction : defaults[0]!;
                   onHumanFactionChange(keepHuman);
                 }}
-                className={`rounded-2xl border-2 py-4 text-center transition ${
-                  active
-                    ? 'border-purple-500 bg-purple-900/30 shadow-lg shadow-purple-950/40'
-                    : 'border-neutral-800 bg-neutral-900/50 hover:border-neutral-600 hover:bg-neutral-800/60'
-                }`}
+                className="rounded-2xl py-4 text-center transition-all hover:scale-[1.02]"
+                style={{
+                  border: `2px solid ${active ? 'rgba(124,58,237,0.7)' : 'var(--color-border)'}`,
+                  background: active ? 'rgba(124,58,237,0.1)' : 'var(--color-surface-1)',
+                  boxShadow: active ? '0 0 16px rgba(124,58,237,0.2)' : 'none',
+                }}
               >
-                <div className={`text-3xl font-black ${active ? 'text-white' : 'text-neutral-400'}`}>{n}</div>
-                <div className={`text-xs mt-0.5 font-medium ${active ? 'text-purple-300' : 'text-neutral-600'}`}>
+                <div className="text-3xl font-black" style={{ color: active ? 'white' : 'var(--color-muted)' }}>{n}</div>
+                <div className="text-xs mt-0.5 font-medium" style={{ color: active ? '#a78bfa' : 'var(--color-subtle)' }}>
                   {n === 2 ? 'head-to-head' : n === 3 ? 'three-way' : 'free-for-all'}
                 </div>
               </button>
@@ -403,27 +404,30 @@ function SetupPanel({ lineup, humanFaction, difficulty, seed, error, onLineupCha
       {/* ── Settings + Start ── */}
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">AI Difficulty</span>
+          <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-subtle)' }}>AI Difficulty</span>
           <select value={difficulty} onChange={(e) => onDifficultyChange(e.target.value as Difficulty)}
-            className="rounded-xl border border-neutral-700 bg-neutral-800/80 px-3 py-2 text-sm text-neutral-100 focus:border-purple-500 focus:outline-none">
+            className="rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
+            style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
             <option value="easy">🟢 Easy (30% noise)</option>
             <option value="medium">🟡 Medium (10% noise)</option>
             <option value="hard">🔴 Hard (3% noise)</option>
           </select>
         </label>
         <label className="flex flex-1 flex-col gap-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Seed</span>
+          <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-subtle)' }}>Seed</span>
           <input type="text" value={seed} onChange={(e) => onSeedChange(e.target.value)}
-            className="rounded-xl border border-neutral-700 bg-neutral-800/80 px-3 py-2 text-sm font-mono text-neutral-100 focus:border-purple-500 focus:outline-none" />
+            className="rounded-xl px-3 py-2 text-sm font-mono text-white focus:outline-none"
+            style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }} />
         </label>
         <button type="button" onClick={onStart}
-          className="rounded-xl bg-purple-600 px-8 py-2.5 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-purple-950/50 hover:bg-purple-500 transition-all hover:scale-[1.02] active:scale-[0.98]">
+          className="rounded-xl px-8 py-2.5 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+          style={{ background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', boxShadow: '0 0 20px rgba(124,58,237,0.3)' }}>
           {hasActiveGame ? '⟳ Restart' : '▶ Start'}
         </button>
       </div>
 
       {error && (
-        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 px-4 py-3 text-sm text-red-200">
+        <div className="mt-4 rounded-xl px-4 py-3 text-sm" style={{ border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)', color: '#fca5a5' }}>
           {error}
         </div>
       )}
