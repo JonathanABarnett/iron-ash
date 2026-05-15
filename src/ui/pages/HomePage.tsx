@@ -64,20 +64,28 @@ export function HomePage() {
         </Link>
       </section>
 
-      {/* Stats bar */}
-      <section className="mt-6 flex flex-wrap gap-3">
+      {/* Stats bar + rulebook link */}
+      <section className="mt-6 flex flex-wrap items-center gap-3">
         {[
           ['8', 'Factions'],
           ['16', 'Regions'],
           ['7', 'Rounds'],
           ['3', 'Difficulties'],
-          ['84', 'Tests'],
+          ['93', 'Tests'],
         ].map(([n, label]) => (
           <div key={label} className="rounded-lg border border-neutral-800 bg-neutral-900/40 px-4 py-2 text-center">
             <div className="text-lg font-bold text-white">{n}</div>
             <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
           </div>
         ))}
+        <a
+          href="/docs/rulebook.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto rounded-xl border border-neutral-700 bg-neutral-900/60 px-4 py-2.5 text-xs font-semibold text-neutral-300 hover:border-neutral-500 hover:text-white transition"
+        >
+          📖 Rulebook
+        </a>
       </section>
 
       {/* Faction roster */}

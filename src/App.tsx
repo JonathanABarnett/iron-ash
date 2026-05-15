@@ -4,11 +4,13 @@ import { SimPage } from '@ui/pages/SimPage';
 import { PlayPage } from '@ui/pages/PlayPage';
 import { ConfigPage } from '@ui/pages/ConfigPage';
 import { ReplayPage } from '@ui/pages/ReplayPage';
+import { RulesPage } from '@ui/pages/RulesPage';
 
 const NAV_ITEMS = [
   { to: '/',       icon: '⚔',  label: 'Home'   },
   { to: '/play',   icon: '🎮',  label: 'Play'   },
   { to: '/sim',    icon: '📊',  label: 'Sim'    },
+  { to: '/rules',  icon: '📖',  label: 'Rules'  },
   { to: '/replay', icon: '▶',  label: 'Replay' },
   { to: '/config', icon: '⚙',  label: 'Config' },
 ] as const;
@@ -90,6 +92,7 @@ export default function App() {
               <Route path="/"       element={<HomePage />} />
               <Route path="/play"   element={<PlayPage />} />
               <Route path="/sim"    element={<SimPage />} />
+              <Route path="/rules"  element={<RulesPage />} />
               <Route path="/replay" element={<ReplayPage />} />
               <Route path="/config" element={<ConfigPage />} />
             </Routes>
