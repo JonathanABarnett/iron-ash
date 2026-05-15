@@ -20,8 +20,9 @@ import { FACTION_ABILITIES } from '@engine/factions/abilities';
 import { loadConfigs } from '@ui/configLoader';
 import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
 import { MapView } from '@ui/components/MapView';
-import { ResourceIcon } from '@ui/components/ResourceIcon';
 import { Die } from '@ui/components/Die';
+import { ResourceCount } from '@ui/components/ResourceGem';
+import { VPMedallion } from '@ui/components/VPMedallion';
 
 const ALL_FACTIONS: FactionId[] = [
   'warriors','assassins','mages','necromancers',
@@ -587,28 +588,17 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
             {player.passedThisRound && <span className="ml-1 text-amber-500">passed</span>}
           </div>
         </div>
-        {/* VP display */}
-        <div className="shrink-0 text-right">
-          {isLeader && <div className="text-sm leading-none mb-0.5">👑</div>}
-          <div className="text-2xl font-black tabular-nums leading-none" style={{
-            background: isLeader ? 'linear-gradient(135deg,#fbbf24,#f97316)' : 'linear-gradient(135deg,#e2e8f0,#94a3b8)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          }}>{player.vp}</div>
-          <div className="text-[8px] text-neutral-600 uppercase tracking-wider">VP</div>
+        {/* VP medallion */}
+        <div className="shrink-0">
+          <VPMedallion vp={player.vp} isLeader={isLeader} size="md" />
         </div>
       </div>
 
-      {/* ── Resources ── */}
+      {/* ── Resources (SVG gems) ── */}
       <div className="flex items-center gap-1.5 mb-2.5">
-        <div className="flex items-center gap-0.5 rounded-lg bg-slate-900/80 px-2 py-1 text-[10px] tabular-nums text-slate-300 border border-slate-700/40">
-          <ResourceIcon resource="iron" size={10}/><span className="ml-0.5 font-semibold">{player.resources.iron}</span>
-        </div>
-        <div className="flex items-center gap-0.5 rounded-lg bg-amber-950/60 px-2 py-1 text-[10px] tabular-nums text-amber-300 border border-amber-800/40">
-          <ResourceIcon resource="gold" size={10}/><span className="ml-0.5 font-semibold">{player.resources.gold}</span>
-        </div>
-        <div className="flex items-center gap-0.5 rounded-lg bg-violet-950/60 px-2 py-1 text-[10px] tabular-nums text-violet-300 border border-violet-800/40">
-          <ResourceIcon resource="essence" size={10}/><span className="ml-0.5 font-semibold">{player.resources.essence}</span>
-        </div>
+        <ResourceCount resource="iron"    value={player.resources.iron}    size={13} />
+        <ResourceCount resource="gold"    value={player.resources.gold}    size={13} />
+        <ResourceCount resource="essence" value={player.resources.essence} size={13} />
       </div>
 
       {/* ── Dice tray ── */}

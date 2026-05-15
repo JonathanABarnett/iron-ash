@@ -1,6 +1,7 @@
-// SVG map — rich terrain gradients, animated playable glows, player-coloured dice.
+// SVG map — rich terrain gradients, terrain illustrations, animated glows.
 
-import type { GameState, Move, PlayerId, RegionId } from '@engine/types';
+import type { GameState, Move, PlayerId, RegionId, Terrain } from '@engine/types';
+import { TerrainInlineSVG } from './TerrainIllustration';
 
 const GRID: Record<string, [col: number, row: number]> = {
   'iron-pass':       [0,0], 'black-citadel':   [1,0],
@@ -226,6 +227,18 @@ export function MapView({ state, humanMoves = [], selectedDieId, onRegionClick }
                   strokeWidth={0.3}
                   opacity={0.12}
                 />
+              )}
+
+              {/* Terrain illustration watermark — bottom-right, soft */}
+              {!isLocked && (
+                <g opacity={0.18} clipPath={`url(#clip-${id})`}>
+                  <TerrainInlineSVG
+                    terrain={region.terrain as Terrain}
+                    x={x + NODE_W - 46}
+                    y={y + NODE_H - 44}
+                    size={42}
+                  />
+                </g>
               )}
 
               {/* Fortress shimmer stripe */}
