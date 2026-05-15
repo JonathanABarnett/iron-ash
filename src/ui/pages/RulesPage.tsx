@@ -10,7 +10,8 @@ export function RulesPage() {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    fetch('/docs/rulebook.md')
+    // import.meta.env.BASE_URL is '/' locally and '/iron-ash/' on GitHub Pages
+    fetch(`${import.meta.env.BASE_URL}docs/rulebook.md`)
       .then((r) => {
         if (!r.ok) throw new Error('not found');
         return r.text();
