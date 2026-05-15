@@ -34,17 +34,36 @@ interface AILogEntry {
   turn: number; round: number; playerId: PlayerId; move: Move; reasoning: AIReasoning;
 }
 
+interface RoundSummary {
+  completedRound: number;
+  vpDeltas: Record<string, number>;              // playerId → VP gained this round
+  goalId: string | null;                         // active round goal
+  standings: Array<{ playerId: string; totalVP: number; factionId: FactionId }>;
+}
+
 interface ActiveGame {
   state: GameState; log: AILogEntry[]; rngSnapshot: string;
   humanPlayerId: PlayerId | null; waitingForHuman: boolean;
   pendingMoves: Move[]; selectedDieId: string | null;
+  roundSummary: RoundSummary | null;
 }
 
 export function PlayPage() {
-  const [lineup, setLineup]             = useState<FactionId[]>(['warriors','mages','merchants']);
-  const [humanFaction, setHumanFaction] = useState<FactionId | null>('warriors');
-  const [difficulty, setDifficulty]     = useState<Difficulty>('medium');
-  const [seed, setSeed]                 = useState('play-1');
+  const [lineup, setLineup]                         = useState<FactionId[]>(['warriors','mages','merchants']);
+  const [humanFaction, setHumanFaction]             = useState<FactionId | null>('warriors');
+  const [difficulty, setDifficulty]                 = useState<Difficulty>('medium'); // global default / fallback
+  const [playerDifficulties, setPlayerDifficulties] = useState<Difficulty[]>(['medium','medium','medium']);
+  const [seed, setSeed]                             = useState('play-1');
+
+  /** Keep playerDifficulties in sync with lineup length. */
+  function handleLineupChange(next: FactionId[]) {
+    setLineup(next);
+    setPlayerDifficulties((prev) => {
+      const updated = [...prev];
+      while (updated.length < next.length) updated.push(difficulty);
+      return updated.slice(0, next.length);
+    });
+  }
   const [active, setActive]             = useState<ActiveGame | null>(null);
   const [autoplay, setAutoplay]         = useState(false);
   const [autoSpeed, setAutoSpeed]       = useState(300); // ms between AI steps
@@ -80,7 +99,7 @@ export function PlayPage() {
       });
       const humanIdx      = humanFaction ? lineup.indexOf(humanFaction) : -1;
       const humanPlayerId = humanIdx >= 0 ? `p${humanIdx + 1}` : null;
-      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieId: null });
+      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieId: null, roundSummary: null });
       setAutoplay(false);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
@@ -92,22 +111,41 @@ export function PlayPage() {
     const rng = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
     let state = prev.state;
     let newLog = prev.log;
+    let roundSummary: RoundSummary | null = null;
     if (state.phase === 'finished') return prev;
     if (state.phase === 'roll') {
       state = rollPhase(state, { rng, cards: configs.cards });
     } else if (isRoundOver(state)) {
+      // Snapshot VP before end-of-round scoring so we can show per-round gains.
+      const prevVPs: Record<string, number> = {};
+      for (const [pid, p] of Object.entries(state.players)) prevVPs[pid] = p.vp;
+      const completedRound = state.round;
+      const goalSlot = state.roundGoals.find((g) => g.forRound === completedRound);
+
       state = endOfRound(state, { rules: configs.rules, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals, cardKeepCost: configs.costs.cardKeep, ...structuresCtx });
+
+      const vpDeltas: Record<string, number> = {};
+      for (const [pid, p] of Object.entries(state.players)) {
+        vpDeltas[pid] = p.vp - (prevVPs[pid] ?? 0);
+      }
+      const standings = Object.values(state.players)
+        .map((p) => ({ playerId: p.id, totalVP: p.vp, factionId: p.factionId }))
+        .sort((a, b) => b.totalVP - a.totalVP);
+      roundSummary = { completedRound, vpDeltas, goalId: goalSlot?.goalId ?? null, standings };
     } else {
       if (prev.humanPlayerId && state.activePlayerId === prev.humanPlayerId) {
         const pending = enumerate(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
         return { ...prev, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: true, pendingMoves: pending, selectedDieId: null };
       }
       const playerIdAtMove = state.activePlayerId, turnAtMove = state.turn, roundAtMove = state.round;
-      const { move, reasoning } = pickMove(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals, rng, difficulty });
+      // Per-player difficulty: p1→index 0, p2→index 1, etc.
+      const playerIdx = parseInt(state.activePlayerId.replace('p', ''), 10) - 1;
+      const activeDiff: Difficulty = playerDifficulties[playerIdx] ?? difficulty;
+      const { move, reasoning } = pickMove(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals, rng, difficulty: activeDiff });
       state  = apply(state, move, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
       newLog = [...prev.log.slice(-49), { turn: turnAtMove, round: roundAtMove, playerId: playerIdAtMove, move, reasoning }];
     }
-    return { ...prev, state, log: newLog, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [] };
+    return { ...prev, state, log: newLog, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], roundSummary };
   }
 
   function applyHumanMove(move: Move) {
@@ -131,6 +169,14 @@ export function PlayPage() {
     if (!active || !autoplay) return;
     if (active.state.phase === 'finished') { setAutoplay(false); return; }
     if (active.waitingForHuman) return;
+    if (active.roundSummary) {
+      // Auto-dismiss round summary after a brief pause, then continue autoplay.
+      const delay = Math.min(Math.max(autoSpeed * 4, 1800), 3500);
+      const id = window.setTimeout(() => {
+        if (autoplayRef.current) setActive((p) => p ? { ...p, roundSummary: null } : p);
+      }, delay);
+      return () => window.clearTimeout(id);
+    }
     const id = window.setTimeout(() => { if (autoplayRef.current) setActive((p) => p ? step(p) : p); }, autoSpeed);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,7 +189,8 @@ export function PlayPage() {
       {!active && (
         <SetupPanel
           lineup={lineup} humanFaction={humanFaction} difficulty={difficulty} seed={seed} error={error}
-          onLineupChange={setLineup} onHumanFactionChange={setHumanFaction} onDifficultyChange={setDifficulty}
+          onLineupChange={handleLineupChange} onHumanFactionChange={setHumanFaction} onDifficultyChange={setDifficulty}
+          playerDifficulties={playerDifficulties} onPlayerDifficultiesChange={setPlayerDifficulties}
           onSeedChange={setSeed} onStart={start} hasActiveGame={false}
         />
       )}
@@ -217,6 +264,15 @@ export function PlayPage() {
             <MapView state={active.state} humanMoves={active.waitingForHuman ? active.pendingMoves : []} selectedDieId={active.selectedDieId} onRegionClick={(_id, moves) => { if (moves.length === 1) applyHumanMove(moves[0]!); }} />
           </div>
 
+          {/* ── Round summary overlay ── */}
+          {active.roundSummary && (
+            <RoundSummaryOverlay
+              summary={active.roundSummary}
+              autoplay={autoplay}
+              onDismiss={() => setActive((p) => p ? { ...p, roundSummary: null } : p)}
+            />
+          )}
+
           {/* ── End-game ── */}
           {active.state.phase === 'finished' && (
             <div className="mx-4 mt-3"><EndGamePanel state={active.state} onExport={exportReplay} /></div>
@@ -280,8 +336,108 @@ const COUNT_DEFAULTS: Record<number, FactionId[]> = {
   4: ['warriors', 'assassins', 'mages', 'merchants'],
 };
 
-function SetupPanel({ lineup, humanFaction, difficulty, seed, error, onLineupChange, onHumanFactionChange, onDifficultyChange, onSeedChange, onStart, hasActiveGame }: {
+// ─── Round Summary Overlay ────────────────────────────────────────────────────
+
+function RoundSummaryOverlay({
+  summary, autoplay, onDismiss,
+}: { summary: RoundSummary; autoplay: boolean; onDismiss: () => void }) {
+  const isLastRound = summary.standings.length > 0; // always true; kept for future use
+  void isLastRound;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
+      style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)' }}
+    >
+      <div
+        className="w-full max-w-sm rounded-3xl overflow-hidden"
+        style={{
+          background: 'linear-gradient(155deg, rgba(18,12,30,0.98) 0%, rgba(22,14,36,0.98) 100%)',
+          border: '1px solid rgba(124,58,237,0.35)',
+          boxShadow: '0 0 80px rgba(124,58,237,0.18), 0 24px 64px rgba(0,0,0,0.7)',
+        }}
+      >
+        {/* Accent bar */}
+        <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #7c3aed, #06b6d4, #7c3aed)', backgroundSize: '200%' }} />
+
+        <div className="p-6">
+          {/* Header */}
+          <div className="mb-5 text-center">
+            <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-purple-400 mb-1">Round Complete</div>
+            <div className="text-4xl font-black text-white tabular-nums">{summary.completedRound}</div>
+            {summary.goalId && (
+              <div className="mt-1.5 inline-block rounded-full px-3 py-0.5 text-[11px] font-semibold"
+                style={{ background: 'rgba(124,58,237,0.18)', color: '#c4b5fd' }}>
+                🎯 {summary.goalId.replace(/-/g, ' ')}
+              </div>
+            )}
+          </div>
+
+          {/* Standings */}
+          <div className="space-y-2 mb-5">
+            {summary.standings.map(({ playerId, totalVP, factionId }, idx) => {
+              const delta = summary.vpDeltas[playerId] ?? 0;
+              const isLeader = idx === 0 && totalVP > 0;
+              return (
+                <div
+                  key={playerId}
+                  className="flex items-center gap-3 rounded-2xl px-3 py-2.5 transition-all"
+                  style={{
+                    background: isLeader
+                      ? 'rgba(124,58,237,0.14)'
+                      : 'rgba(255,255,255,0.03)',
+                    border: isLeader ? '1px solid rgba(124,58,237,0.25)' : '1px solid transparent',
+                  }}
+                >
+                  {/* Rank */}
+                  <div className="w-5 text-center text-[10px] font-black"
+                    style={{ color: idx === 0 ? '#a78bfa' : idx === 1 ? '#94a3b8' : '#6b7280' }}>
+                    {idx === 0 ? '👑' : idx + 1}
+                  </div>
+                  <FactionEmblem factionId={factionId} size={22} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-neutral-200 truncate">{factionLabel(factionId)}</div>
+                    <div className="text-[9px] text-neutral-600">{playerId}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-base font-black text-white tabular-nums">{totalVP} <span className="text-[10px] font-normal text-neutral-500">VP</span></div>
+                    {delta > 0
+                      ? <div className="text-[10px] font-bold text-emerald-400 tabular-nums">+{delta} this round</div>
+                      : <div className="text-[10px] text-neutral-700">+0</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Action */}
+          {autoplay ? (
+            <div className="text-center text-[10px] text-neutral-600 tracking-wide">Resuming automatically…</div>
+          ) : (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="w-full rounded-2xl py-2.5 text-sm font-bold tracking-wide transition-all hover:brightness-110 active:scale-[0.98]"
+              style={{ background: 'rgba(124,58,237,0.85)', color: 'white' }}
+            >
+              Continue to Round {summary.completedRound + 1} →
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Setup ────────────────────────────────────────────────────────────────────
+
+function SetupPanel({ lineup, humanFaction, difficulty, seed, error,
+  playerDifficulties, onPlayerDifficultiesChange,
+  onLineupChange, onHumanFactionChange, onDifficultyChange, onSeedChange, onStart, hasActiveGame,
+}: {
   lineup: FactionId[]; humanFaction: FactionId | null; difficulty: Difficulty; seed: string; error: string | null;
+  playerDifficulties: Difficulty[];
+  onPlayerDifficultiesChange: (d: Difficulty[]) => void;
   onLineupChange: (n: FactionId[]) => void; onHumanFactionChange: (f: FactionId | null) => void;
   onDifficultyChange: (d: Difficulty) => void; onSeedChange: (s: string) => void;
   onStart: () => void; hasActiveGame: boolean;
@@ -401,18 +557,67 @@ function SetupPanel({ lineup, humanFaction, difficulty, seed, error, onLineupCha
         </div>
       </div>
 
-      {/* ── Settings + Start ── */}
+      {/* ── Per-player difficulty ── */}
+      <div className="mb-6">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">AI Difficulty per player</span>
+          {/* Set-all shortcuts */}
+          <div className="flex gap-1">
+            {(['easy','medium','hard'] as Difficulty[]).map((d) => (
+              <button key={d} type="button"
+                onClick={() => { onDifficultyChange(d); onPlayerDifficultiesChange(lineup.map(() => d)); }}
+                className="rounded-lg px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide transition hover:brightness-125"
+                style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: d === 'easy' ? '#4ade80' : d === 'medium' ? '#facc15' : '#f87171' }}>
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+          {lineup.map((factionId, idx) => {
+            const isHuman = humanFaction === factionId;
+            const current = playerDifficulties[idx] ?? 'medium';
+            return (
+              <div key={factionId} className="flex items-center gap-3 px-4 py-2.5"
+                style={{ background: idx % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderBottom: idx < lineup.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                <FactionEmblem factionId={factionId} size={24} />
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold text-neutral-200">{factionLabel(factionId)}</span>
+                </div>
+                {isHuman ? (
+                  <span className="rounded-md bg-teal-800/60 px-2 py-0.5 text-[10px] font-bold text-teal-300">You</span>
+                ) : (
+                  <div className="flex gap-1">
+                    {(['easy','medium','hard'] as Difficulty[]).map((d) => {
+                      const active = current === d;
+                      const col = d === 'easy' ? '#4ade80' : d === 'medium' ? '#facc15' : '#f87171';
+                      return (
+                        <button key={d} type="button"
+                          onClick={() => {
+                            const next = [...playerDifficulties];
+                            next[idx] = d;
+                            onPlayerDifficultiesChange(next);
+                          }}
+                          className="rounded-lg px-2 py-0.5 text-[10px] font-bold capitalize transition-all"
+                          style={{
+                            background: active ? `${col}22` : 'transparent',
+                            border: `1px solid ${active ? col : 'rgba(255,255,255,0.08)'}`,
+                            color: active ? col : 'var(--color-muted)',
+                          }}>
+                          {d === 'easy' ? '🟢' : d === 'medium' ? '🟡' : '🔴'} {d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Seed + Start ── */}
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-subtle)' }}>AI Difficulty</span>
-          <select value={difficulty} onChange={(e) => onDifficultyChange(e.target.value as Difficulty)}
-            className="rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
-            style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
-            <option value="easy">🟢 Easy (30% noise)</option>
-            <option value="medium">🟡 Medium (10% noise)</option>
-            <option value="hard">🔴 Hard (3% noise)</option>
-          </select>
-        </label>
         <label className="flex flex-1 flex-col gap-1.5">
           <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--color-subtle)' }}>Seed</span>
           <input type="text" value={seed} onChange={(e) => onSeedChange(e.target.value)}

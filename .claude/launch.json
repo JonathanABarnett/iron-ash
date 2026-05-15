@@ -2,10 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "iron-ash-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "preview", "--port", "5181"],
+      "port": 5181
+    },
+    {
       "name": "iron-ash-dev",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
-      "port": 5173
+      "runtimeArgs": ["run", "dev"],
+      "port": 5180
     }
   ]
 }
