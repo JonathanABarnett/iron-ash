@@ -24,12 +24,15 @@ describe('PERSONALITIES', () => {
     }
   });
 
-  it('matches spec values for the 5 specified factions', () => {
+  it('matches spec values for stable factions (balance-adjusted factions noted)', () => {
+    // Core spec values — should not change without a new design decision.
     expect(PERSONALITIES.warriors.fortressPriority).toBe(0.9);
     expect(PERSONALITIES.warriors.battlePriority).toBe(0.9);
     expect(PERSONALITIES.merchants.enginePriority).toBe(0.9);
     expect(PERSONALITIES.merchants.mercenaryAffinity).toBe(0.8);
-    expect(PERSONALITIES.assassins.riskTolerance).toBe(0.8);
+    // Assassins riskTolerance was 0.8 in spec but tuned to 0.65 after balance pass
+    // (over-gambling post-Shadow-Step-nerf was hurting them).
+    expect(PERSONALITIES.assassins.riskTolerance).toBe(0.65);
     expect(PERSONALITIES.mages.combinationAffinity).toBe(0.8);
     expect(PERSONALITIES.necromancers.enginePriority).toBe(0.8);
   });
