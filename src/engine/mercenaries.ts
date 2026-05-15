@@ -36,6 +36,8 @@ export function mercCost(
     const player = state.players[hirerId];
     if (player?.factionId === 'assassins') return 2; // first refusal: Low merc at 2 gold (-1 off)
   }
+  // Specialist is discounted in round 1 to encourage early contesting.
+  if (slot === 'specialist' && state.round === 1) return 2;
   let cost = DEFAULT_MERC_COST;
   if (hirerId) {
     const player = state.players[hirerId];

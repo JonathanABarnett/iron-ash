@@ -34,7 +34,8 @@ export const PERSONALITIES: FactionWeightsTable = {
   assassins: W(0.5, 0.6, 0.5, 0.4, 0.65, 0.7, 0.6, 0.7),
   mages: W(0.6, 0.5, 0.7, 0.5, 0.4, 0.7, 0.8, 0.6),
   necromancers: W(0.7, 0.6, 0.8, 0.6, 0.5, 0.6, 0.5, 0.5),
-  merchants: W(0.4, 0.3, 0.9, 0.7, 0.3, 0.8, 0.5, 0.8),
+  // Merchants: mercenaryAffinity 0.8→0.6 — were winning at 43% by spamming mercs.
+  merchants: W(0.4, 0.3, 0.9, 0.7, 0.3, 0.8, 0.5, 0.6),
   // Rangers: goalFocus 0.8→0.5 — diverse resources made them win every round goal.
   // Neutral goal focus — they should be versatile, not hyper-goal-focused.
   rangers: W(0.5, 0.5, 0.7, 0.4, 0.5, 0.5, 0.5, 0.5),

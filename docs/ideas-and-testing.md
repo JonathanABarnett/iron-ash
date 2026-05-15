@@ -5,7 +5,30 @@ Updated after each sim run or testing session.
 
 ---
 
-## Current Status (session)
+## Current Status (latest)
+
+**Sim: 500 games, medium difficulty — CLEAN ✅**
+| Faction | Win% | Δ from mean | Status |
+|---|---|---|---|
+| Warriors | 30.1% | -2.4pp | ✅ |
+| Assassins | 39.2% | +6.7pp | ✅ |
+| Mages | 27.9% | -4.6pp | ✅ |
+| Necromancers | 27.0% | -5.5pp | ✅ |
+| Merchants | 40.4% | +7.9pp | ✅ |
+| Rangers | 34.8% | +2.3pp | ✅ |
+| Paladins | 31.8% | -0.7pp | ✅ |
+| Beastmasters | 29.1% | -3.4pp | ✅ |
+
+**Key metrics**
+- Round-7 reach: 41.0% ✅ (target 30-50%)
+- Fortress turnover: 57.0% ⚠ (target ≥60%, close)
+- Specialist R1 claim: 53% ✅ (was 36%, fixed by round-1 discount)
+- Specialist R2 claim: 32.4% ⚠ (target ≥40% — value-5 specialist underused)
+- Combine rate: 37.8% ✅
+
+---
+
+## Previous Status (before fixes)
 
 **Sim: 400 games, medium difficulty**
 | Faction | Win% | Δ from mean | Status |

@@ -29,7 +29,7 @@ describe('PERSONALITIES', () => {
     expect(PERSONALITIES.warriors.fortressPriority).toBe(0.9);
     expect(PERSONALITIES.warriors.battlePriority).toBe(0.9);
     expect(PERSONALITIES.merchants.enginePriority).toBe(0.9);
-    expect(PERSONALITIES.merchants.mercenaryAffinity).toBe(0.8);
+    expect(PERSONALITIES.merchants.mercenaryAffinity).toBe(0.6); // tuned from 0.8 — merc spamming caused 43% wins
     // Assassins riskTolerance was 0.8 in spec but tuned to 0.65 after balance pass
     // (over-gambling post-Shadow-Step-nerf was hurting them).
     expect(PERSONALITIES.assassins.riskTolerance).toBe(0.65);

@@ -75,8 +75,9 @@ export function applyGarrison(
     }
     rt.garrisonedDieIds = [];
     rt.heldRounds = 0;
-    // A fortress changing hands is a major escalation event — push threat track.
-    draft.threatTrack += 2;
+    // A fortress changing hands pushes the threat track.
+    // Reduced from 2→1 to reduce deterrence and improve fortress turnover.
+    draft.threatTrack += 1;
   }
 
   // Move attacker dice into garrison.
