@@ -1,16 +1,18 @@
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router';
-import { HomePage }   from '@ui/pages/HomePage';
-import { SimPage }    from '@ui/pages/SimPage';
-import { PlayPage }   from '@ui/pages/PlayPage';
-import { ConfigPage } from '@ui/pages/ConfigPage';
-import { ReplayPage } from '@ui/pages/ReplayPage';
-import { RulesPage }  from '@ui/pages/RulesPage';
+import { HomePage }      from '@ui/pages/HomePage';
+import { SimPage }       from '@ui/pages/SimPage';
+import { PlayPage }      from '@ui/pages/PlayPage';
+import { TutorialPage }  from '@ui/pages/TutorialPage';
+import { ConfigPage }    from '@ui/pages/ConfigPage';
+import { ReplayPage }    from '@ui/pages/ReplayPage';
+import { RulesPage }     from '@ui/pages/RulesPage';
 
 // ── Nav structure ─────────────────────────────────────────────────────────────
 
 const NAV_PRIMARY = [
-  { to: '/play',   icon: PlayIcon,    label: 'Play'     },
-  { to: '/sim',    icon: SimIcon,     label: 'Simulate' },
+  { to: '/tutorial', icon: TutorialIcon, label: 'Tutorial' },
+  { to: '/play',     icon: PlayIcon,     label: 'Play'     },
+  { to: '/sim',      icon: SimIcon,      label: 'Simulate' },
 ] as const;
 
 const NAV_SECONDARY = [
@@ -36,12 +38,13 @@ export default function App() {
         <div className="flex-1 md:ml-52">
           <div className="pb-20 md:pb-0">
             <Routes>
-              <Route path="/"       element={<HomePage />}   />
-              <Route path="/play"   element={<PlayPage />}   />
-              <Route path="/sim"    element={<SimPage />}    />
-              <Route path="/rules"  element={<RulesPage />}  />
-              <Route path="/replay" element={<ReplayPage />} />
-              <Route path="/config" element={<ConfigPage />} />
+              <Route path="/"          element={<HomePage />}      />
+              <Route path="/tutorial"  element={<TutorialPage />} />
+              <Route path="/play"      element={<PlayPage />}     />
+              <Route path="/sim"       element={<SimPage />}      />
+              <Route path="/rules"     element={<RulesPage />}    />
+              <Route path="/replay"    element={<ReplayPage />}   />
+              <Route path="/config"    element={<ConfigPage />}   />
             </Routes>
           </div>
         </div>
@@ -151,11 +154,11 @@ const navClass = 'block';
 // ── Mobile bottom nav ─────────────────────────────────────────────────────────
 
 const ALL_NAV = [
-  { to: '/',       icon: HomeIcon,    label: 'Home'     },
-  { to: '/play',   icon: PlayIcon,    label: 'Play'     },
-  { to: '/sim',    icon: SimIcon,     label: 'Sim'      },
-  { to: '/rules',  icon: RulesIcon,   label: 'Rules'    },
-  { to: '/config', icon: ConfigIcon,  label: 'Config'   },
+  { to: '/',          icon: HomeIcon,     label: 'Home'     },
+  { to: '/tutorial',  icon: TutorialIcon, label: 'Tutorial' },
+  { to: '/play',      icon: PlayIcon,     label: 'Play'     },
+  { to: '/sim',       icon: SimIcon,      label: 'Sim'      },
+  { to: '/rules',     icon: RulesIcon,    label: 'Rules'    },
 ];
 
 function MobileNav() {
@@ -178,6 +181,16 @@ function MobileNav() {
 }
 
 // ── Icons (inline SVG — no extra dependency) ─────────────────────────────────
+
+function TutorialIcon({ className = '' }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 5v4" strokeLinecap="round" />
+      <circle cx="8" cy="11.5" r="0.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
 
 function HomeIcon({ className = '' }) {
   return (

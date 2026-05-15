@@ -39,23 +39,29 @@ export function HomePage() {
 
           {/* CTAs */}
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link to="/play"
+            <Link to="/tutorial"
               className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
               style={{ background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', boxShadow: '0 0 20px rgba(124,58,237,0.3), inset 0 1px 0 rgba(255,255,255,0.1)' }}
             >
-              <span>▶</span> Start Playing
+              <span>🎓</span> Start Tutorial
+            </Link>
+            <Link to="/play"
+              className="inline-flex items-center gap-2 rounded-xl border px-5 py-2.5 text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
+              style={{ borderColor: 'rgba(124,58,237,0.4)', background: 'rgba(124,58,237,0.08)', color: '#c4b5fd' }}
+            >
+              <span>▶</span> Play Now
             </Link>
             <Link to="/sim"
               className="inline-flex items-center gap-2 rounded-xl border px-5 py-2.5 text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
               style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface-1)', color: 'var(--color-text)' }}
             >
-              <span>📊</span> Run Simulation
+              <span>📊</span> Simulate
             </Link>
             <Link to="/rules"
               className="inline-flex items-center gap-2 rounded-xl border px-5 py-2.5 text-sm font-semibold transition-all hover:scale-[1.02]"
               style={{ borderColor: 'rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.06)', color: '#fbbf24' }}
             >
-              <span>📖</span> Rules & FAQ
+              <span>📖</span> Rules
             </Link>
           </div>
 
