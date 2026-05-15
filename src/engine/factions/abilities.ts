@@ -78,7 +78,7 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
   rangers: {
     passiveStartOfRound: { gain: { iron: 1 } },
     activeLabel: 'Pathfinder',
-    activeDescription: 'Gain 2 iron, 2 gold, and 2 essence.',
+    activeDescription: 'Gain 1 of every resource (iron, gold, essence).',
     activeTargeting: 'none',
   },
   paladins: {
@@ -159,9 +159,10 @@ export function applyActive(
         break;
 
       case 'rangers':
-        // Pathfinder: +2 iron, +2 gold, +1 essence (tuned from +2/+2/+2 that was too strong).
-        dp.resources.iron += 2;
-        dp.resources.gold += 2;
+        // Pathfinder: +1 each — versatility, not power.
+        // Tried +2/+2/+1, +2/+1/+1 — both too strong (44-51% wins). Back to baseline.
+        dp.resources.iron += 1;
+        dp.resources.gold += 1;
         dp.resources.essence += 1;
         break;
 
@@ -245,8 +246,8 @@ export function applyActive(
           mercSource: 'specialist' as const, // reuse mercSource flag so it clears at end-of-round
           mercCost: 0,
         });
-        // Give it face 4 — more useful than 3, can reach most non-fortress regions.
-        dp.dice[dp.dice.length - 1]!.faceValue = 4;
+        // Give it face 5 — tuned up from 4 to make Wild Surge more impactful.
+        dp.dice[dp.dice.length - 1]!.faceValue = 5;
         break;
       }
     }

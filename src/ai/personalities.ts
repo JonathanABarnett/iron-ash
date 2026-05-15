@@ -35,8 +35,9 @@ export const PERSONALITIES: FactionWeightsTable = {
   mages: W(0.6, 0.5, 0.7, 0.5, 0.4, 0.7, 0.8, 0.6),
   necromancers: W(0.7, 0.6, 0.8, 0.6, 0.5, 0.6, 0.5, 0.5),
   merchants: W(0.4, 0.3, 0.9, 0.7, 0.3, 0.8, 0.5, 0.8),
-  // Rangers: goalFocus 0.7→0.8 — Pathfinder provides resources that support goal completion.
-  rangers: W(0.5, 0.4, 0.7, 0.5, 0.5, 0.8, 0.5, 0.5),
+  // Rangers: goalFocus 0.8→0.5 — diverse resources made them win every round goal.
+  // Neutral goal focus — they should be versatile, not hyper-goal-focused.
+  rangers: W(0.5, 0.5, 0.7, 0.4, 0.5, 0.5, 0.5, 0.5),
   // Paladins: minor defensive tweak — their active nerf not needed, just trim battlePriority.
   paladins: W(0.7, 0.6, 0.6, 0.4, 0.5, 0.6, 0.6, 0.6),
   // Beastmasters: enginePriority 0.7→0.6 — Wild Surge helps engine but they're not builders.

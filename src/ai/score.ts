@@ -80,7 +80,9 @@ export function scoreMove(move: Move, ctx: ScoreContext): ScoredCandidate {
     if (r?.isFortress) factionTilt *= 1 + w.fortressPriority;
   }
   if (move.kind === 'battle') factionTilt *= 1 + w.battlePriority;
-  if (move.kind === 'draft-card' || move.kind === 'play-card') {
+  // enginePriority covers all "improve your engine" actions: cards, upgrades, expansion
+  if (move.kind === 'draft-card' || move.kind === 'play-card' ||
+      move.kind === 'upgrade-die' || move.kind === 'expand-barracks') {
     factionTilt *= 1 + w.enginePriority;
   }
   if (move.kind === 'combine') factionTilt *= 1 + w.combinationAffinity;

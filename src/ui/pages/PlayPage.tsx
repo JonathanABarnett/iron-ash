@@ -47,6 +47,7 @@ export function PlayPage() {
   const [seed, setSeed]                 = useState('play-1');
   const [active, setActive]             = useState<ActiveGame | null>(null);
   const [autoplay, setAutoplay]         = useState(false);
+  const [autoSpeed, setAutoSpeed]       = useState(300); // ms between AI steps
   const [showLog, setShowLog]           = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const configs = useMemo(() => loadConfigs(), []);
@@ -130,7 +131,7 @@ export function PlayPage() {
     if (!active || !autoplay) return;
     if (active.state.phase === 'finished') { setAutoplay(false); return; }
     if (active.waitingForHuman) return;
-    const id = window.setTimeout(() => { if (autoplayRef.current) setActive((p) => p ? step(p) : p); }, 120);
+    const id = window.setTimeout(() => { if (autoplayRef.current) setActive((p) => p ? step(p) : p); }, autoSpeed);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, autoplay]);
@@ -163,6 +164,17 @@ export function PlayPage() {
             <div className="ml-auto flex items-center gap-1.5">
               <button type="button" onClick={stepOnce} disabled={active.state.phase === 'finished'} className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-medium hover:bg-neutral-800 disabled:opacity-40 transition">Step ›</button>
               <button type="button" onClick={() => setAutoplay((p) => !p)} disabled={active.state.phase === 'finished'} className={`rounded-lg px-3 py-1 text-xs font-bold disabled:opacity-40 transition ${autoplay ? 'bg-amber-600 text-white hover:bg-amber-500' : 'bg-purple-600 text-white hover:bg-purple-500'}`}>{autoplay ? '⏸ Pause' : '▶ Auto'}</button>
+              {/* Speed control — only visible during autoplay */}
+              {autoplay && (
+                <div className="flex items-center gap-1.5" title={`Step speed: ${autoSpeed}ms`}>
+                  <span className="text-[9px] text-neutral-500">🐢</span>
+                  <input type="range" min={80} max={2000} step={50} value={autoSpeed}
+                    onChange={(e) => setAutoSpeed(Number(e.target.value))}
+                    className="w-16 h-1 cursor-pointer accent-purple-500"
+                  />
+                  <span className="text-[9px] text-neutral-500">🐇</span>
+                </div>
+              )}
               <button type="button" onClick={() => setShowLog((p) => !p)} className={`rounded-lg px-3 py-1 text-xs font-medium transition ${showLog ? 'bg-neutral-700 text-white' : 'border border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-neutral-200'}`}>📋 Log</button>
               <button type="button" onClick={() => { if (window.confirm('Restart?')) setActive(null); }} className="rounded-lg border border-neutral-700 px-2.5 py-1 text-xs text-neutral-500 hover:text-neutral-200 transition" title="Restart">⟳</button>
             </div>

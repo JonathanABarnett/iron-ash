@@ -95,6 +95,9 @@ export function estimateResourceGain(
     case 'hire-merc':
       // Spending 3 gold for a die that may place; rough -1 VP swing.
       return -1;
+    case 'build-structure':
+      // Building a structure costs 3-5 resources; deduct opportunity cost.
+      return -1.0;
     default:
       return 0;
   }
