@@ -5,20 +5,24 @@
 // applyActive         — once-per-round special action (Phase 6, wired)
 //
 // Active ability design goals: immediate, deterministic, faction-flavoured.
-//   Warriors      Iron Discipline — gain 2 iron (economy fuel for fortresses)
-//   Assassins     Shadow Step     — set a barracks die face to any value ≤ its max (low mastery)
-//   Mages         Arcane Precision — set a barracks die face to ANY value in its range (exact values)
-//   Necromancers  Soul Recall     — return one placed die from a region back to barracks
-//   Merchants     Trade Deal      — gain 3 gold (pure economy)
-//   Rangers       Pathfinder      — gain 1 of every resource (versatility)
-//   Paladins      Sacred Seal     — gain 1 iron + 1 essence (hybrid synergy)
-//   Beastmasters  Wild Surge      — add a temporary 1-6 die to barracks for this round
+//   Warriors      Iron Discipline  — gain 2 iron
+//   Assassins     Shadow Step      — set a barracks die face to ≤3 (for restricted regions)
+//   Mages         Arcane Precision — set a barracks die to ANY value in its range
+//   Necromancers  Soul Recall      — return one placed die from a region back to barracks
+//   Merchants     Trade Deal       — gain 2 gold (tuned down from 3; Merchants have strong passive)
+//   Rangers       Pathfinder       — gain 1 iron + 1 gold + 1 essence (versatility)
+//   Paladins      Sacred Seal      — gain 1 iron + 1 essence (hybrid synergy)
+//   Beastmasters  Wild Surge       — add a temporary face-5 die (1-6 range) for this round
 //
-// Passive merc relationships (Phase 2E, wired in mercenaries.ts):
-//   Assassins     First Refusal    — Low merc die costs only 1 gold (normally 3)
-//   Mages         Arcane Analysis  — hired Low/High merc die is set to its maximum face value
-//   Necromancers  Soul Conversion  — used merc dice become permanent barracks dice at end of round
+// Passive merc relationships (wired in mercenaries.ts):
+//   Assassins     First Refusal    — Low merc costs 2 gold (normal 3; −1 discount)
+//   Mages         Arcane Analysis  — hired Low/High merc die is set to its MAXIMUM face value
+//   Necromancers  Soul Conversion  — used (placed) merc dice become permanent at end of round
 //   Merchants     Trade Commission — hiring any merc yields +1 essence (profitable contract)
+//   Warriors      Iron Discipline  — all mercs cost −1 gold (mercDiscount: 1)
+//
+// Undocumented mechanic (by design — discovery reward):
+//   Specialist merc costs 2 gold in round 1 only (normally 3).
 
 import { produce } from 'immer';
 import type { FactionId, GameState, PlayerId, Resource } from '../types';
@@ -48,7 +52,7 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
     passiveStartOfRound: { gain: { iron: 1 } },
     mercDiscount: 1,
     activeLabel: 'Iron Discipline',
-    activeDescription: 'Gain 2 iron immediately.',
+    activeDescription: 'Gain 2 iron immediately. (Passive: all mercs cost 1 less gold.)',
     activeTargeting: 'none',
   },
   assassins: {
@@ -90,7 +94,7 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
   beastmasters: {
     passiveStartOfRound: { gain: { essence: 1 } },
     activeLabel: 'Wild Surge',
-    activeDescription: 'Add a temporary wild 1-6 die to your barracks for this round.',
+    activeDescription: 'Add a temporary 1-6 die (face value 5) to your barracks for this round only.',
     activeTargeting: 'none',
   },
 };

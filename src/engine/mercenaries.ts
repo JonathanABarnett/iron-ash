@@ -1,13 +1,18 @@
-// Mercenary pool: Low/High dice rerolled each round, Specialist on a fixed
-// per-round countdown. Hiring costs 3 gold (waived during round-7 free-for-all).
-// Merc dice sit in the hirer's barracks for ONE round; whether used or not
-// they leave the game at end of round. Unused merc dice refund their cost.
+// Mercenary pool: Low (1-3) and High (3-6) dice rerolled each round.
+// Specialist: fixed face-value per the specialistSequence countdown, 1-6 range.
+// Standard hire cost: 3 gold (waived in round-7 free-for-all when allMercsFree).
+// Unused merc dice are removed at end of round and refund their cost.
 //
-// Faction merc relationships (Phase 2E):
-//   Assassins     — Low merc is free (first refusal: they always want it at 0 cost)
-//   Mages         — hired die is immediately rerolled (exact-value control)
-//   Necromancers  — used merc dice convert to permanent barracks dice at EOR
-//   Merchants     — garrisoned merc dice persist as permanent garrison at EOR
+// SPECIAL COSTS (all deterministic, no UI prompts needed):
+//   Specialist round 1 → 2 gold (discount encourages early contesting of value-6 die)
+//   Warriors           → −1 gold on all mercs (mercDiscount: 1)
+//   Assassins          → Low merc costs 2 gold, not 3 (First Refusal passive)
+//
+// FACTION MERC RELATIONSHIPS (passive bonuses, fire automatically on hire or EOR):
+//   Assassins     First Refusal    — Low merc costs 2 gold (−1 off)
+//   Mages         Arcane Analysis  — hired Low/High merc die is set to its MAX face (NOT random reroll)
+//   Necromancers  Soul Conversion  — used (placed/garrisoned) merc dice become permanent at EOR
+//   Merchants     Trade Commission — hiring any merc yields +1 essence
 
 import { produce } from 'immer';
 import type { Die, GameState, MercSource, PlayerId, RulesConfig } from './types';
@@ -34,9 +39,9 @@ export function mercCost(
   if (state.freeForAll && rules.freeForAllToggles.allMercsFree) return 0;
   if (hirerId && slot === 'low') {
     const player = state.players[hirerId];
-    if (player?.factionId === 'assassins') return 2; // first refusal: Low merc at 2 gold (-1 off)
+    if (player?.factionId === 'assassins') return 2; // First Refusal: 2 gold, not 3
   }
-  // Specialist is discounted in round 1 to encourage early contesting.
+  // Specialist is 2 gold in round 1 only (encourages early contesting of the value-6 die).
   if (slot === 'specialist' && state.round === 1) return 2;
   let cost = DEFAULT_MERC_COST;
   if (hirerId) {

@@ -71,11 +71,23 @@ Updated after each sim run or testing session.
 
 ## Fixes In Progress / Applied
 
-### Balance fixes (this session)
-- [ ] Watchtower cost: 3 iron → 4 iron (reduces iron-faction spam)
-- [ ] Rangers Pathfinder: +2/+2/+1 → +2/+1/+1 (net 4 resources, was 5)
-- [ ] AI: `estimateResourceGain` for build-structure returns `-cost × 0.35`
-- [ ] Mages: bump personality `enginePriority` to use Arcane Precision more
+### Balance fixes applied this session
+- [x] Watchtower restricted to plains/forest only (was all-terrain — favoured iron factions)
+- [x] Rangers Pathfinder: back to +1/+1/+1 baseline (versatility, not power)
+- [x] Rangers AI personality: goalFocus 0.8→0.5 (was hyper-chasing round goals)
+- [x] score.ts: enginePriority now tilts upgrade-die + expand-barracks (was cards only)
+- [x] Fortress usurp threat: +2 → +1 (less deterrence = more contested fortresses)
+- [x] Threat threshold: 10 → 8 (compensates for less usurp threat per event)
+- [x] Specialist round-1 cost: 3 gold → 2 gold (R1 claim rate 36% → 53%)
+- [x] Merchants mercenaryAffinity: 0.8 → 0.6 (was winning at 43% via merc spam)
+- [x] Beastmasters Wild Surge face: 4 → 5 (more impactful)
+- [x] **Rules audit: fixed misleading comments and descriptions in code**
+  - abilities.ts header: corrected all ability descriptions to match actual code
+  - Assassins First Refusal: "1 gold" → "2 gold"
+  - Mages Arcane Analysis: "rerolled" → "set to MAX face value (deterministic)"
+  - Trade Deal: "+3 gold" → "+2 gold"
+  - Warriors description: added note about −1 merc discount
+  - Beastmasters description: specified "face value 5" explicitly
 
 ### Previously applied balance changes
 - Assassins Shadow Step nerfed: any value → max ≤3 only
