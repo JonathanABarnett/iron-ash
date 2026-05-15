@@ -48,7 +48,7 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
   assassins: {
     passiveStartOfRound: { gain: { gold: 1 } },
     activeLabel: 'Shadow Step',
-    activeDescription: 'Set one barracks die to any face value within its range.',
+    activeDescription: 'Set one barracks die to a low face value (≤3) — perfect for restricted regions.',
     activeTargeting: 'die+value',
   },
   mages: {
@@ -72,7 +72,7 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
   rangers: {
     passiveStartOfRound: { gain: { iron: 1 } },
     activeLabel: 'Pathfinder',
-    activeDescription: 'Gain 1 iron, 1 gold, and 1 essence.',
+    activeDescription: 'Gain 2 iron, 2 gold, and 2 essence.',
     activeTargeting: 'none',
   },
   paladins: {
@@ -153,9 +153,10 @@ export function applyActive(
         break;
 
       case 'rangers':
-        dp.resources.iron += 1;
-        dp.resources.gold += 1;
-        dp.resources.essence += 1;
+        // Pathfinder: +2 of each resource (buffed from +1 each after balance pass).
+        dp.resources.iron += 2;
+        dp.resources.gold += 2;
+        dp.resources.essence += 2;
         break;
 
       case 'paladins':
@@ -163,9 +164,23 @@ export function applyActive(
         dp.resources.essence += 1;
         break;
 
-      case 'assassins':
+      case 'assassins': {
+        // Shadow Step: set a die to a LOW face value (≤3).
+        // AI fallback: set the highest-range barracks die to 2 (ideal for ≤2 regions).
+        if (!dieId || targetValue === undefined) {
+          const die = dp.dice.find((d) => d.location.kind === 'barracks' && d.faceValue !== null);
+          if (die) die.faceValue = 2;
+          break;
+        }
+        const die = dp.dice.find((d) => d.id === dieId);
+        if (die && die.location.kind === 'barracks') {
+          die.faceValue = Math.min(targetValue, 3);
+        }
+        break;
+      }
+
       case 'mages': {
-        // Set a barracks die to a chosen face value within its range.
+        // Arcane Precision: set a die to any legal value within its range.
         if (!dieId || targetValue === undefined) {
           // AI fallback: boost the first barracks die to its maximum face.
           const die = dp.dice.find((d) => d.location.kind === 'barracks' && d.faceValue !== null);
@@ -224,8 +239,8 @@ export function applyActive(
           mercSource: 'specialist' as const, // reuse mercSource flag so it clears at end-of-round
           mercCost: 0,
         });
-        // Give it a mid-range value so it can be used this round.
-        dp.dice[dp.dice.length - 1]!.faceValue = 3;
+        // Give it face 4 — more useful than 3, can reach most non-fortress regions.
+        dp.dice[dp.dice.length - 1]!.faceValue = 4;
         break;
       }
     }
