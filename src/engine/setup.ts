@@ -150,6 +150,7 @@ export function createGame(args: CreateGameArgs): GameState {
     rngSeed: seed,
     rngState: JSON.stringify(rng.snapshot()),
     log: [],
+    mercHireLog: [],
     freeForAll: false,
     lockedRegions: {},
   };

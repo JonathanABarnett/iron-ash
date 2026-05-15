@@ -131,15 +131,15 @@ export class StatsAccumulator {
           this.battleMoves += 1;
           break;
       }
-      // Approximation: every action turn was an "affordable" hire opportunity
-      // if we charge the active player at least 3 gold. We don't have the
-      // intermediate state here, so we count all actionable turns as the
-      // denominator (slightly overcounts — refined later if needed).
+      // Approximation: every action turn was an "affordable" hire opportunity.
       affordableInGame += 1;
+    }
 
-      // Specialist claim: count when a hire-merc move's slot is 'specialist'.
-      if (move.kind === 'hire-merc' && move.mercSlot === 'specialist') {
-        const idx = entry.round - 1;
+    // Specialist claim rates: read from mercHireLog (not the pruned main log).
+    // mercHireLog is never pruned and records only specialist hires.
+    for (const hire of final.mercHireLog) {
+      if (hire.slot === 'specialist') {
+        const idx = hire.round - 1;
         if (idx >= 0 && idx < this.specialistClaimsByRound.length) {
           this.specialistClaimsByRound[idx] = (this.specialistClaimsByRound[idx] ?? 0) + 1;
         }

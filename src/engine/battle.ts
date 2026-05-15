@@ -67,6 +67,7 @@ export function applyBattle(
   attackerId: PlayerId,
   attackerDieId: string,
   regionId: RegionId,
+  resourceCap = 8,
 ): { state: GameState; result: BattleResult } {
   const attacker = state.players[attackerId];
   if (!attacker) throw new Error(`Unknown attacker ${attackerId}`);
@@ -106,6 +107,9 @@ export function applyBattle(
       // VP + progress.
       draft.players[attackerId]!.vp += 1;
       draft.players[attackerId]!.progress.battlesWonThisGame += 1;
+      // War spoils: victors gain 1 iron — rewards aggression, especially for Warriors.
+      const dp = draft.players[attackerId]!;
+      dp.resources.iron = Math.min(dp.resources.iron + 1, resourceCap);
     } else {
       // Attacker loses: their die returns to barracks, face cleared.
       const die = draft.players[attackerId]!.dice.find((d) => d.id === attackerDieId)!;

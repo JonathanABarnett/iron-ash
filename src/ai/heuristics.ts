@@ -31,9 +31,9 @@ export function estimateVPGain(move: Move, state: GameState): number {
       return region.vp * 0.6;
     }
     case 'battle': {
-      // 1 VP for winning + threat-track tick is a hidden cost.
+      // 1 VP for winning + war spoils (+1 iron) + threat-track tick is a hidden cost.
       const winChance = estimateBattleWinChance(state, move);
-      return 1 * winChance;
+      return (1 + 0.4) * winChance; // 1 VP + ~0.4 iron-equivalent
     }
     case 'hire-merc':
       // A hired merc die is worth roughly one future placement.

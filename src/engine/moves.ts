@@ -201,7 +201,7 @@ export function apply(state: GameState, move: Move, ctx?: MoveContext): GameStat
       return applyHire(state, move, ctx);
     }
     case 'battle':
-      return applyBattleMove(state, move);
+      return applyBattleMove(state, move, ctx?.rules?.resourceCap ?? 8);
     case 'upgrade-die': {
       if (!ctx?.costs) throw new IllegalMove('upgrade-die requires MoveContext.costs');
       return applyUpgradeDie(state, move, ctx.costs);
@@ -223,12 +223,14 @@ export function apply(state: GameState, move: Move, ctx?: MoveContext): GameStat
 function applyBattleMove(
   state: GameState,
   move: { kind: 'battle'; attackerDieId: string; targetRegionId: string },
+  resourceCap = 8,
 ): GameState {
   const { state: next } = applyBattle(
     state,
     state.activePlayerId,
     move.attackerDieId,
     move.targetRegionId,
+    resourceCap,
   );
   return produce(next, (draft) => {
     appendLog(draft, { kind: 'move', move });

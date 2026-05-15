@@ -41,8 +41,9 @@ export function mercCost(
     const player = state.players[hirerId];
     if (player?.factionId === 'assassins') return 2; // First Refusal: 2 gold, not 3
   }
-  // Specialist is 2 gold in round 1 only (encourages early contesting of the value-6 die).
-  if (slot === 'specialist' && state.round === 1) return 2;
+  // Specialist is 2 gold in rounds 1-2 (R2 claim rate was 32%, target ≥40%).
+  // Value-5 in R2 is still compelling but at 3 gold the AI passed too often.
+  if (slot === 'specialist' && state.round <= 2) return 2;
   let cost = DEFAULT_MERC_COST;
   if (hirerId) {
     const player = state.players[hirerId];
@@ -152,6 +153,10 @@ export function applyHireMerc(
     drafted.dice.push(claimed);
     drafted.progress.mercsHiredThisGame += 1;
     draft.mercs.claimed[slot] = hirerId;
+    // Track specialist hires in a compact, non-prunable log for sim balance metrics.
+    if (slot === 'specialist') {
+      draft.mercHireLog.push({ round: state.round, slot, hirerId });
+    }
 
     // Merchants: Trade Commission — hiring a merc yields 1 essence (profitable contract).
     if (drafted.factionId === 'merchants') {

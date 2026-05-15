@@ -10,5 +10,10 @@
     "specialistChoosable": true,
     "waiveCardHandLimit": false
   },
-  "threatTrackThreshold": 8
+  "threatTrackThreshold": 8,
+  "threatTrackThresholdByPlayerCount": {
+    "2": 7,
+    "3": 8,
+    "4": 10
+  }
 }

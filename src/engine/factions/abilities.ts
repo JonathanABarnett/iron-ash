@@ -68,21 +68,23 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
     activeTargeting: 'die+value',
   },
   necromancers: {
+    // +gold reverted — gold+essence passive overcorrected to 60% in 1v1 (+10pp).
+    // Necromancers earn gold through regions/goals; their Soul Conversion mechanic is their edge.
     passiveStartOfRound: { gain: { essence: 1 } },
     activeLabel: 'Soul Recall',
-    activeDescription: 'Return one of your placed dice from any region back to barracks.',
+    activeDescription: 'Return one of your placed dice from any region back to barracks, then reposition it.',
     activeTargeting: 'region',
   },
   merchants: {
     passiveStartOfRound: { gain: { gold: 2 } },
     activeLabel: 'Trade Deal',
-    activeDescription: 'Gain 2 gold immediately.',
+    activeDescription: 'Gain 1 gold immediately — a profitable side contract.',
     activeTargeting: 'none',
   },
   rangers: {
     passiveStartOfRound: { gain: { iron: 1 } },
     activeLabel: 'Pathfinder',
-    activeDescription: 'Gain 1 of every resource (iron, gold, essence).',
+    activeDescription: 'Gain 1 gold and 1 essence — scout the valuable routes.',
     activeTargeting: 'none',
   },
   paladins: {
@@ -159,13 +161,13 @@ export function applyActive(
         break;
 
       case 'merchants':
-        dp.resources.gold += 2; // Trade Deal: +2 gold (tuned from +3 — Merchants are strong)
+        // Trade Deal: +1 gold (tuned from +2 — passive already gives +2/round; stacking was too strong).
+        dp.resources.gold += 1;
         break;
 
       case 'rangers':
-        // Pathfinder: +1 each — versatility, not power.
-        // Tried +2/+2/+1, +2/+1/+1 — both too strong (44-51% wins). Back to baseline.
-        dp.resources.iron += 1;
+        // Pathfinder: +1 gold + +1 essence (iron removed — stacked with +1 iron passive
+        // making Rangers resource-rich in 1v1 by +3/round; now 2/round, on par with Merchants).
         dp.resources.gold += 1;
         dp.resources.essence += 1;
         break;

@@ -31,6 +31,7 @@ export type LineupMode = 'random' | 'fixed-rotate' | 'all-combinations';
 
 export interface RunOptions {
   numGames: number;
+  /** Default difficulty applied to all players unless overridden by playerDifficulties. */
   difficulty: Difficulty;
   seed: string;
   /** How to pick player factions per game. */
@@ -38,6 +39,12 @@ export interface RunOptions {
   /** Used when lineupMode === 'fixed-rotate'; rotated each game. */
   fixedLineup?: FactionId[];
   configs: SimConfigs;
+  /**
+   * Per-position difficulty overrides. Index 0 = p1, index 1 = p2, etc.
+   * Positions beyond the array length fall back to `difficulty`.
+   * Example: ['hard', 'easy', 'easy'] gives p1=hard, p2=easy, p3=easy.
+   */
+  playerDifficulties?: Difficulty[];
 }
 
 export interface FactionStats {

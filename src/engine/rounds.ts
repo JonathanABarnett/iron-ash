@@ -150,7 +150,12 @@ export function endOfRound(state: GameState, ctx: EndOfRoundContext): GameState 
 
     // Threat track always ticks; faction abilities can push more in later phases.
     draft.threatTrack += 1;
-    const reachedThreshold = draft.threatTrack >= rules.threatTrackThreshold;
+    // Use per-player-count threshold if configured (scales pressure with player count).
+    const playerCount = draft.turnOrder.length;
+    const pcKey = String(playerCount) as '2' | '3' | '4';
+    const threshold =
+      rules.threatTrackThresholdByPlayerCount?.[pcKey] ?? rules.threatTrackThreshold;
+    const reachedThreshold = draft.threatTrack >= threshold;
     const lastRound = draft.round >= rules.totalRounds;
 
     if (lastRound || reachedThreshold) {
@@ -168,6 +173,10 @@ export function endOfRound(state: GameState, ctx: EndOfRoundContext): GameState 
         const v = rules.specialistSequence[idx];
         if (v !== undefined) draft.mercs.specialistValue = v;
       }
+      // Prune log entries from past rounds — round-goal measures only scan the current round,
+      // so old entries are dead weight. This prevents log array from growing unboundedly in sim.
+      const currentRound = draft.round;
+      draft.log = draft.log.filter((e) => e.round >= currentRound - 1);
     }
   });
   return next;

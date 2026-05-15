@@ -143,6 +143,10 @@ export const RulesConfigSchema = z.object({
     waiveCardHandLimit: z.boolean(),
   }),
   threatTrackThreshold: z.number().int().positive(),
+  /** Per-player-count threshold overrides (keys "2", "3", "4"). */
+  threatTrackThresholdByPlayerCount: z
+    .record(z.enum(['2', '3', '4']), z.number().int().positive())
+    .optional(),
 });
 
 const ResourceCostSchema = z.object({

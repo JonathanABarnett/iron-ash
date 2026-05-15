@@ -38,6 +38,8 @@ export function runOneGame(
   lineupMode: RunOptions['lineupMode'] = 'random',
   fixedLineup: FactionId[] | undefined = undefined,
   gameIndex = 0,
+  /** Per-position difficulties. Index 0=p1, 1=p2, … Falls back to `difficulty`. */
+  playerDifficulties?: RunOptions['playerDifficulties'],
 ): GameState {
   const { factions, regions, rules, roundGoals, secretGoals, cards } = configs;
   const setupRng = new Rng(`${seed}-lineup`);
@@ -63,6 +65,12 @@ export function runOneGame(
     secretGoals,
   });
 
+  // Build playerId → Difficulty map once (positions are stable after createGame).
+  const diffByPlayer: Record<string, RunOptions['difficulty']> = {};
+  for (let i = 0; i < lineup.length; i++) {
+    diffByPlayer[`p${i + 1}`] = playerDifficulties?.[i] ?? difficulty;
+  }
+
   const rng = Rng.fromSnapshot(JSON.parse(state.rngState));
   let totalTurns = 0;
 
@@ -81,6 +89,7 @@ export function runOneGame(
       });
       continue;
     }
+    const activeDifficulty = diffByPlayer[state.activePlayerId] ?? difficulty;
     const { move } = pickMove(state, {
       rules,
       cards,
@@ -89,7 +98,7 @@ export function runOneGame(
       roundGoals,
       secretGoals,
       rng,
-      difficulty,
+      difficulty: activeDifficulty,
       ...(configs.factionWeightOverrides
         ? { factionWeightOverrides: configs.factionWeightOverrides }
         : {}),
@@ -123,6 +132,7 @@ export function runSimulation(opts: RunOptions): SimulationResult {
       opts.lineupMode ?? 'random',
       opts.fixedLineup,
       i,
+      opts.playerDifficulties,
     );
     acc.record(final);
   }

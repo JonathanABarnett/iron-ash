@@ -298,6 +298,11 @@ export interface GameState {
   /** serialized RNG cursor; written when state is persisted */
   rngState: string;
   log: GameLogEntry[];
+  /**
+   * Compact merc-hire log — never pruned, survives the round-log cleanup.
+   * Only specialist hires are tracked here (for sim balance metrics).
+   */
+  mercHireLog: Array<{ round: number; slot: string; hirerId: string }>;
   /** whether the current round is the round-7 free-for-all */
   freeForAll: boolean;
   /**
@@ -322,6 +327,8 @@ export interface RulesConfig {
     waiveCardHandLimit: boolean;
   };
   threatTrackThreshold: number;
+  /** Optional per-player-count override. If present, supersedes `threatTrackThreshold`. */
+  threatTrackThresholdByPlayerCount?: Partial<Record<'2' | '3' | '4', number>>;
 }
 
 export interface ScoreBreakdown {
