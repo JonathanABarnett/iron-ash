@@ -24,6 +24,18 @@ import { Die } from '@ui/components/Die';
 import { ResourceCount } from '@ui/components/ResourceGem';
 import { VPMedallion } from '@ui/components/VPMedallion';
 
+/** Thematic accent colour per faction — used for card tinting and end-game display. */
+export const FACTION_COLORS: Record<FactionId, string> = {
+  warriors:     '#ef4444',  // red
+  assassins:    '#14b8a6',  // teal
+  mages:        '#a855f7',  // violet
+  necromancers: '#22c55e',  // green
+  merchants:    '#f59e0b',  // amber
+  rangers:      '#84cc16',  // lime
+  paladins:     '#fbbf24',  // gold
+  beastmasters: '#f97316',  // orange
+};
+
 const ALL_FACTIONS: FactionId[] = [
   'warriors','assassins','mages','necromancers',
   'merchants','rangers','paladins','beastmasters',
@@ -254,7 +266,7 @@ export function PlayPage() {
   const rules = configs.rules;
 
   return (
-    <main className="min-h-screen animate-fade-in" style={{ background: 'var(--color-bg)' }}>
+    <main className="relative min-h-screen animate-fade-in page-bg-dots" style={{ background: 'var(--color-bg)' }}>
       {!active && (
         <SetupPanel
           lineup={lineup} humanFaction={humanFaction} difficulty={difficulty} seed={seed} error={error}
@@ -913,22 +925,28 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
   resourcePulsed?: boolean;
 }) {
   const isHumanTurn = isHuman && waitingForHuman;
+  const fc = FACTION_COLORS[player.factionId] ?? '#7c3aed'; // faction accent colour
   const placed  = player.dice.filter((d) => d.location.kind === 'region').length;
   const garr    = player.dice.filter((d) => d.location.kind === 'garrison').length;
   const barracksDice = player.dice.filter((d) => d.location.kind === 'barracks' && d.faceValue !== null);
 
   return (
-    <div className={`w-56 shrink-0 rounded-2xl p-3 text-xs transition-all ${
-      isHumanTurn
-        ? 'glow-teal border border-teal-500/60 bg-teal-950/20 backdrop-blur-sm'
-        : isActive
-          ? 'border border-purple-500/50 bg-purple-950/15 backdrop-blur-sm'
-          : 'glass border-transparent'
-    }`}
-      style={isHumanTurn ? { boxShadow: '0 0 20px 4px rgba(20,184,166,0.15), inset 0 1px 0 rgba(255,255,255,0.05)' }
-           : isActive    ? { boxShadow: '0 0 15px 2px rgba(139,92,246,0.12), inset 0 1px 0 rgba(255,255,255,0.04)' }
-           : { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 8px rgba(0,0,0,0.4)' }}
+    <div className="relative w-56 shrink-0 rounded-2xl p-3 text-xs transition-all backdrop-blur-sm overflow-hidden"
+      style={{
+        border: `1px solid ${isHumanTurn ? 'rgba(20,184,166,0.5)' : `${fc}${isActive ? '55' : '1a'}`}`,
+        background: isHumanTurn
+          ? 'rgba(20,184,166,0.06)'
+          : `linear-gradient(145deg, ${fc}08 0%, rgba(9,9,11,0.7) 100%)`,
+        boxShadow: isHumanTurn
+          ? `0 0 24px 4px rgba(20,184,166,0.12), inset 0 1px 0 rgba(255,255,255,0.06)`
+          : isActive
+            ? `0 0 18px 3px ${fc}18, inset 0 1px 0 rgba(255,255,255,0.05)`
+            : `inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 12px rgba(0,0,0,0.45)`,
+      }}
     >
+      {/* Faction colour top accent bar */}
+      <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
+        style={{ background: `linear-gradient(90deg, ${fc}80, ${fc}20, transparent)` }} />
       {/* ── Header ── */}
       <div className="flex items-center gap-2 mb-2.5">
         {/* Faction emblem with ability tooltip */}
@@ -1067,37 +1085,127 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
 
 // ─── End game ─────────────────────────────────────────────────────────────────
 
+const SCORE_CATEGORIES: Array<{
+  key: keyof NonNullable<GameState['scoreBreakdown']>['perPlayer'][string]['parts'];
+  icon: string; label: string; color: string;
+}> = [
+  { key: 'roundGoals',           icon: '🎯', label: 'Goals',      color: '#a78bfa' },
+  { key: 'fortressesPerRound',   icon: '⏱',  label: 'Fortress VP', color: '#f59e0b' },
+  { key: 'regionControl',        icon: '🗺',  label: 'Regions',    color: '#34d399' },
+  { key: 'fortressEndGame',      icon: '🏰', label: 'Fort bonus', color: '#fbbf24' },
+  { key: 'secretGoals',          icon: '🔮', label: 'Secrets',    color: '#c084fc' },
+  { key: 'fullBarracksBonus',    icon: '🎲', label: 'Barracks',   color: '#94a3b8' },
+  { key: 'structures',           icon: '🏗',  label: 'Structures', color: '#67e8f9' },
+];
+
 function EndGamePanel({ state, onExport }: { state: GameState; onExport: () => void }) {
   const b = state.scoreBreakdown;
   if (!b) return null;
-  const ordered = state.turnOrder.map((pid) => b.perPlayer[pid]!).sort((a, x) => x.total - a.total);
+
+  const ordered = state.turnOrder
+    .map((pid) => ({ pid, player: state.players[pid]!, score: b.perPlayer[pid]! }))
+    .sort((a, x) => x.score.total - a.score.total);
+
+  const maxTotal = ordered[0]?.score.total ?? 1;
+  const winner   = ordered[0]!;
+  const winnerFc = FACTION_COLORS[winner.player.factionId] ?? '#7c3aed';
+
+  const medals = ['🥇', '🥈', '🥉', ''];
+
   return (
-    <div className="rounded-xl border border-purple-700 bg-purple-950/20 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base font-bold text-purple-200">🏆 {factionLabel(state.players[b.winnerId]!.factionId)} wins · {b.perPlayer[b.winnerId]!.total} VP</h3>
-        <button type="button" onClick={onExport} className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs hover:bg-neutral-800 transition">Export Replay</button>
+    <div className="rounded-3xl overflow-hidden animate-fade-in"
+      style={{
+        background: 'rgba(10,6,20,0.98)',
+        border: `1px solid ${winnerFc}30`,
+        boxShadow: `0 0 80px ${winnerFc}18, 0 24px 64px rgba(0,0,0,0.7)`,
+      }}>
+
+      {/* Winner hero */}
+      <div className="relative px-6 py-8 text-center overflow-hidden">
+        {/* Radial glow behind winner emblem */}
+        <div className="pointer-events-none absolute inset-0"
+          style={{ background: `radial-gradient(ellipse 60% 50% at 50% 40%, ${winnerFc}14 0%, transparent 70%)` }} />
+        {/* Shimmer line */}
+        <div className="absolute top-0 left-0 right-0 h-0.5"
+          style={{ background: `linear-gradient(90deg, transparent, ${winnerFc}80, transparent)` }} />
+
+        <div className="relative">
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.25em]" style={{ color: `${winnerFc}99` }}>
+            Victory
+          </div>
+          <div className="mb-4 flex justify-center">
+            <div className="relative">
+              <FactionEmblem factionId={winner.player.factionId} size={72} className="rounded-2xl" />
+              <div className="absolute -bottom-1 -right-1 text-xl">👑</div>
+            </div>
+          </div>
+          <div className="text-2xl font-black text-white mb-0.5">
+            {factionLabel(winner.player.factionId)}
+          </div>
+          <div className="text-4xl font-black tabular-nums" style={{ color: winnerFc }}>
+            {winner.score.total} <span className="text-xl font-bold opacity-60">VP</span>
+          </div>
+        </div>
       </div>
-      <table className="w-full text-left text-xs">
-        <thead className="text-[9px] uppercase tracking-wide text-neutral-500">
-          <tr><th className="pb-1">Player</th><th className="pb-1 text-right">Total</th><th className="pb-1 text-right">Goals</th><th className="pb-1 text-right">Regions</th><th className="pb-1 text-right">Fort</th><th className="pb-1 text-right">Secrets</th><th className="pb-1 text-right">Struct</th></tr>
-        </thead>
-        <tbody>
-          {ordered.map((p) => {
-            const pl = state.players[p.playerId]!;
-            return (
-              <tr key={p.playerId} className="border-t border-neutral-800">
-                <td className="py-1.5"><span className="inline-flex items-center gap-1.5">{p.playerId === b.winnerId && '🏆'}<FactionEmblem factionId={pl.factionId} size={18}/>{factionLabel(pl.factionId)}</span></td>
-                <td className="py-1.5 text-right font-bold tabular-nums text-white">{p.total}</td>
-                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.roundGoals}</td>
-                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.regionControl}</td>
-                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.fortressEndGame}</td>
-                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.secretGoals}</td>
-                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.structures}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+
+      {/* Player score cards */}
+      <div className="px-4 pb-4 space-y-3">
+        {ordered.map(({ pid, player, score }, rank) => {
+          const fc    = FACTION_COLORS[player.factionId] ?? '#7c3aed';
+          const isWin = rank === 0;
+          const pct   = Math.round((score.total / maxTotal) * 100);
+
+          return (
+            <div key={pid} className="rounded-2xl overflow-hidden"
+              style={{
+                background: `linear-gradient(135deg, ${fc}0a, rgba(255,255,255,0.02))`,
+                border: `1px solid ${fc}${isWin ? '35' : '18'}`,
+              }}>
+              {/* Header row */}
+              <div className="flex items-center gap-3 px-4 py-3">
+                <span className="text-lg">{medals[rank] ?? ''}</span>
+                <FactionEmblem factionId={player.factionId} size={32} className="rounded-xl shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-neutral-100">{factionLabel(player.factionId)}</div>
+                  {/* Total VP bar */}
+                  <div className="mt-1 h-1.5 w-full rounded-full bg-neutral-800/60">
+                    <div className="h-full rounded-full transition-all"
+                      style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${fc}, ${fc}80)` }} />
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-lg font-black tabular-nums text-white">{score.total}</div>
+                  <div className="text-[9px] text-neutral-600 uppercase tracking-wide">VP</div>
+                </div>
+              </div>
+
+              {/* Score breakdown */}
+              <div className="grid grid-cols-4 gap-px border-t border-white/[0.04]">
+                {SCORE_CATEGORIES.filter((c) => (score.parts[c.key] ?? 0) > 0).map((cat) => (
+                  <div key={cat.key} className="px-3 py-2 bg-black/20 text-center">
+                    <div className="text-sm">{cat.icon}</div>
+                    <div className="text-[10px] font-black tabular-nums" style={{ color: cat.color }}>
+                      {score.parts[cat.key]}
+                    </div>
+                    <div className="text-[8px] text-neutral-600 leading-none mt-0.5 truncate">{cat.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between px-4 pb-4 pt-1">
+        <div className="text-[10px] text-neutral-600">
+          {state.round} rounds · {state.turnOrder.length} players
+        </div>
+        <button type="button" onClick={onExport}
+          className="rounded-xl border border-neutral-700 px-4 py-1.5 text-xs font-semibold text-neutral-400 transition hover:bg-neutral-800 hover:text-neutral-200">
+          📥 Export Replay
+        </button>
+      </div>
     </div>
   );
 }
