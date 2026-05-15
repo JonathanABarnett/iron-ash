@@ -83,6 +83,9 @@ export function runOneGame(
       secretGoals,
       rng,
       difficulty,
+      ...(configs.factionWeightOverrides
+        ? { factionWeightOverrides: configs.factionWeightOverrides }
+        : {}),
     });
     state = apply(state, move, { rules, cards, costs: configs.costs, rng });
     totalTurns += 1;

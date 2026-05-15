@@ -2,11 +2,13 @@ import { BrowserRouter, NavLink, Route, Routes } from 'react-router';
 import { HomePage } from '@ui/pages/HomePage';
 import { SimPage } from '@ui/pages/SimPage';
 import { PlayPage } from '@ui/pages/PlayPage';
+import { ConfigPage } from '@ui/pages/ConfigPage';
 
 const NAV_ITEMS = [
-  { to: '/',     icon: '⚔',  label: 'Home'   },
-  { to: '/play', icon: '🎮',  label: 'Play'   },
-  { to: '/sim',  icon: '📊',  label: 'Sim'    },
+  { to: '/',       icon: '⚔',  label: 'Home'   },
+  { to: '/play',   icon: '🎮',  label: 'Play'   },
+  { to: '/sim',    icon: '📊',  label: 'Sim'    },
+  { to: '/config', icon: '⚙',  label: 'Config' },
 ] as const;
 
 function Sidebar() {
@@ -83,9 +85,10 @@ export default function App() {
         <div className="flex-1 md:ml-56">
           <div className="pb-20 md:pb-0">
             <Routes>
-              <Route path="/"     element={<HomePage />} />
-              <Route path="/play" element={<PlayPage />} />
-              <Route path="/sim"  element={<SimPage />} />
+              <Route path="/"       element={<HomePage />} />
+              <Route path="/play"   element={<PlayPage />} />
+              <Route path="/sim"    element={<SimPage />} />
+              <Route path="/config" element={<ConfigPage />} />
             </Routes>
           </div>
         </div>

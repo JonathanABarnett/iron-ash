@@ -5,12 +5,14 @@ import type {
   AIReasoning,
   CardDefinition,
   CostsConfig,
+  FactionId,
   GameState,
   Move,
   RoundGoalDefinition,
   RulesConfig,
   SecretGoalDefinition,
 } from '../engine/types';
+import type { FactionWeights } from './types';
 import { enumerate } from '../engine/moves';
 import type { Rng } from '../engine/rng';
 import { scoreMove } from './score';
@@ -26,6 +28,8 @@ export interface DecideContext {
   secretGoals: SecretGoalDefinition[];
   rng: Rng;
   difficulty: Difficulty;
+  /** Override AI personality weights (e.g. from the config editor). */
+  factionWeightOverrides?: Partial<Record<FactionId, Partial<FactionWeights>>>;
 }
 
 export interface DecideResult {
@@ -61,6 +65,7 @@ export function pickMove(state: GameState, ctx: DecideContext): DecideResult {
     roundGoals: ctx.roundGoals,
     secretGoals: goals,
     rules: ctx.rules,
+    ...(ctx.factionWeightOverrides ? { weightOverrides: ctx.factionWeightOverrides } : {}),
   };
   let scored: ScoredCandidate[] = moves.map((m) =>
     scoreMove(m, ctx.cards ? { ...scoreCtxBase, cards: ctx.cards } : scoreCtxBase),

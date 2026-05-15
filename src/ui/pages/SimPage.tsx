@@ -1,5 +1,6 @@
 import { runSimulation } from '@simulation/runner';
 import { useUIStore } from '@ui/store';
+import { useConfigStore } from '@ui/configStore';
 import { loadConfigs } from '@ui/configLoader';
 import { FactionWinChart } from '@ui/components/charts/FactionWinChart';
 import { SpecialistCurveChart } from '@ui/components/charts/SpecialistCurveChart';
@@ -16,13 +17,18 @@ export function SimPage() {
   const setRunState = useUIStore((s) => s.setRunState);
   const setResult = useUIStore((s) => s.setResult);
   const setError = useUIStore((s) => s.setError);
+  const configOverrides = useConfigStore((s) => s.overrides);
 
   function onRun() {
     setRunState('running');
     // Yield to the event loop so the "running" state paints before we block.
     setTimeout(() => {
       try {
-        const configs = loadConfigs();
+        const configs = loadConfigs({
+          rules: configOverrides.rules,
+          costs: configOverrides.costs,
+          factionWeightOverrides: configOverrides.factionWeights,
+        });
         const r = runSimulation({
           numGames: form.numGames,
           difficulty: form.difficulty,

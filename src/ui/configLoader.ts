@@ -21,18 +21,40 @@ import costsJson from '@config/costs.json';
 import type { CostsConfig } from '@engine/types';
 import type { SimConfigs } from '@simulation/types';
 
-export interface AppConfigs extends SimConfigs {
-  costs: CostsConfig;
-}
+export type AppConfigs = SimConfigs;
 
-export function loadConfigs(): AppConfigs {
+export function loadConfigs(overrides?: {
+  rules?: Partial<import('@engine/types').RulesConfig>;
+  costs?: Partial<{
+    dieUpgrade?: Partial<CostsConfig['dieUpgrade']>;
+    barracksExpand?: Partial<CostsConfig['barracksExpand']>;
+    cardKeep?: Partial<CostsConfig['cardKeep']>;
+  }>;
+  factionWeightOverrides?: SimConfigs['factionWeightOverrides'];
+}): AppConfigs {
+  const baseRules = parseRules(rulesJson);
+  const baseCosts = parseCosts(costsJson);
+
+  const rules = overrides?.rules
+    ? { ...baseRules, ...overrides.rules }
+    : baseRules;
+
+  const costs: CostsConfig = {
+    dieUpgrade: { ...baseCosts.dieUpgrade, ...(overrides?.costs?.dieUpgrade ?? {}) },
+    barracksExpand: { ...baseCosts.barracksExpand, ...(overrides?.costs?.barracksExpand ?? {}) },
+    cardKeep: { ...baseCosts.cardKeep, ...(overrides?.costs?.cardKeep ?? {}) },
+  };
+
   return {
     factions: parseFactions(factionsJson),
     regions: parseRegions(regionsJson),
-    rules: parseRules(rulesJson),
+    rules,
     roundGoals: parseRoundGoals(roundGoalsJson),
     secretGoals: parseSecretGoals(secretGoalsJson),
     cards: parseCards(cardsJson),
-    costs: parseCosts(costsJson),
+    costs,
+    ...(overrides?.factionWeightOverrides
+      ? { factionWeightOverrides: overrides.factionWeightOverrides }
+      : {}),
   };
 }

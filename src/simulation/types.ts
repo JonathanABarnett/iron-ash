@@ -10,6 +10,7 @@ import type {
   RulesConfig,
   SecretGoalDefinition,
 } from '../engine/types';
+import type { FactionWeights } from '../ai/types';
 import type { Difficulty } from '../ai/types';
 
 export interface SimConfigs {
@@ -20,6 +21,8 @@ export interface SimConfigs {
   secretGoals: SecretGoalDefinition[];
   cards: CardDefinition[];
   costs: CostsConfig;
+  /** Optional per-faction AI personality overrides. Absent keys use defaults from personalities.ts. */
+  factionWeightOverrides?: Partial<Record<FactionId, Partial<FactionWeights>>> | undefined;
 }
 
 export type LineupMode = 'random' | 'fixed-rotate' | 'all-combinations';

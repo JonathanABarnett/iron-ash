@@ -13,6 +13,7 @@ import type {
   SecretGoalDefinition,
 } from '../engine/types';
 import { weightsFor } from './personalities';
+import type { FactionWeights } from './types';
 import {
   estimateDenialValue,
   estimateResourceGain,
@@ -33,6 +34,8 @@ export interface ScoreContext {
   roundGoals: RoundGoalDefinition[];
   secretGoals: SecretGoalDefinition[];
   rules?: RulesConfig;
+  /** Per-faction weight overrides from the config editor. */
+  weightOverrides?: Partial<Record<FactionId, Partial<FactionWeights>>> | undefined;
 }
 
 const WEIGHTS = {
@@ -44,8 +47,11 @@ const WEIGHTS = {
 } as const;
 
 export function scoreMove(move: Move, ctx: ScoreContext): ScoredCandidate {
-  const { state, playerId, factionId, cards, roundGoals, secretGoals, rules } = ctx;
-  const w = weightsFor(factionId);
+  const { state, playerId, factionId, cards, roundGoals, secretGoals, rules, weightOverrides } = ctx;
+  const base = weightsFor(factionId);
+  const override = weightOverrides?.[factionId] ?? {};
+  // Merge: override wins, base fills the rest.
+  const w: FactionWeights = { ...base, ...override };
 
   let vpGain = estimateVPGain(move, state);
   // Specialist merc: weight by the spec's evaluateSpecialistHire (currentValue
