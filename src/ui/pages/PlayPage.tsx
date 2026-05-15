@@ -46,6 +46,10 @@ interface ActiveGame {
   humanPlayerId: PlayerId | null; waitingForHuman: boolean;
   pendingMoves: Move[]; selectedDieId: string | null;
   roundSummary: RoundSummary | null;
+  /** VP totals per player after each round, for sparkline display. */
+  vpHistory: Record<string, number[]>;
+  /** Cleared each step; set when the most recent step resolved a battle. */
+  lastBattle: { regionName: string; won: boolean; attackerPid: string } | null;
 }
 
 export function PlayPage() {
@@ -99,7 +103,7 @@ export function PlayPage() {
       });
       const humanIdx      = humanFaction ? lineup.indexOf(humanFaction) : -1;
       const humanPlayerId = humanIdx >= 0 ? `p${humanIdx + 1}` : null;
-      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieId: null, roundSummary: null });
+      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieId: null, roundSummary: null, vpHistory: {}, lastBattle: null });
       setAutoplay(false);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
@@ -112,6 +116,9 @@ export function PlayPage() {
     let state = prev.state;
     let newLog = prev.log;
     let roundSummary: RoundSummary | null = null;
+    let vpHistory = prev.vpHistory;
+    let lastBattle: ActiveGame['lastBattle'] = null; // cleared every step unless a battle fired
+
     if (state.phase === 'finished') return prev;
     if (state.phase === 'roll') {
       state = rollPhase(state, { rng, cards: configs.cards });
@@ -132,6 +139,13 @@ export function PlayPage() {
         .map((p) => ({ playerId: p.id, totalVP: p.vp, factionId: p.factionId }))
         .sort((a, b) => b.totalVP - a.totalVP);
       roundSummary = { completedRound, vpDeltas, goalId: goalSlot?.goalId ?? null, standings };
+
+      // Update VP history with post-round totals for sparklines.
+      const nextHistory = { ...vpHistory };
+      for (const [pid, p] of Object.entries(state.players)) {
+        nextHistory[pid] = [...(nextHistory[pid] ?? []), p.vp];
+      }
+      vpHistory = nextHistory;
     } else {
       if (prev.humanPlayerId && state.activePlayerId === prev.humanPlayerId) {
         const pending = enumerate(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
@@ -144,8 +158,16 @@ export function PlayPage() {
       const { move, reasoning } = pickMove(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals, rng, difficulty: activeDiff });
       state  = apply(state, move, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
       newLog = [...prev.log.slice(-49), { turn: turnAtMove, round: roundAtMove, playerId: playerIdAtMove, move, reasoning }];
+
+      // Detect battle outcome for flash animation.
+      if (move.kind === 'battle') {
+        const dieAfter = state.players[playerIdAtMove]?.dice.find((d) => d.id === move.attackerDieId);
+        const won = dieAfter?.location.kind === 'region';
+        const regionName = state.regionDefs[move.targetRegionId]?.name ?? move.targetRegionId;
+        lastBattle = { regionName, won, attackerPid: playerIdAtMove };
+      }
     }
-    return { ...prev, state, log: newLog, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], roundSummary };
+    return { ...prev, state, log: newLog, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], roundSummary, vpHistory, lastBattle };
   }
 
   function applyHumanMove(move: Move) {
@@ -251,12 +273,35 @@ export function PlayPage() {
             </div>
           )}
 
+          {/* ── Battle flash ── */}
+          {active.lastBattle && (
+            <div key={`${active.lastBattle.regionName}-${active.state.round}-${active.state.turn}`}
+              className="animate-fade-in mx-4 mt-2 flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold"
+              style={{
+                background: active.lastBattle.won
+                  ? 'rgba(239,68,68,0.12)'
+                  : 'rgba(107,114,128,0.10)',
+                border: `1px solid ${active.lastBattle.won ? 'rgba(239,68,68,0.3)' : 'rgba(107,114,128,0.2)'}`,
+              }}>
+              <span>{active.lastBattle.won ? '⚔' : '🛡'}</span>
+              <span style={{ color: active.lastBattle.won ? '#fca5a5' : '#9ca3af' }}>
+                {active.lastBattle.won
+                  ? `${active.state.players[active.lastBattle.attackerPid] ? factionLabel(active.state.players[active.lastBattle.attackerPid]!.factionId) : active.lastBattle.attackerPid} won the battle at ${active.lastBattle.regionName} — seized +1 VP +1 iron`
+                  : `${active.state.players[active.lastBattle.attackerPid] ? factionLabel(active.state.players[active.lastBattle.attackerPid]!.factionId) : active.lastBattle.attackerPid} attack on ${active.lastBattle.regionName} repelled`}
+              </span>
+            </div>
+          )}
+
           {/* ── Merc bar ── */}
           <div className="flex items-center gap-3 border-b border-neutral-800/60 bg-neutral-900/30 px-4 py-1.5 mt-2">
             <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-600">Mercs</span>
-            <MercSlot label="Low"  die={active.state.mercs.low}       claimedBy={active.state.mercs.claimed.low}       />
-            <MercSlot label="High" die={active.state.mercs.high}      claimedBy={active.state.mercs.claimed.high}      />
-            <MercSlot label={`Spec·${active.state.mercs.specialistValue}`} die={active.state.mercs.specialist} claimedBy={active.state.mercs.claimed.specialist} />
+            {(['low','high','specialist'] as const).map((slot) => {
+              const claimedBy = active.state.mercs.claimed[slot];
+              const claimerFactionId = claimedBy ? active.state.players[claimedBy]?.factionId : undefined;
+              const die = active.state.mercs[slot];
+              const label = slot === 'specialist' ? `Spec·${active.state.mercs.specialistValue}` : slot === 'low' ? 'Low' : 'High';
+              return <MercSlot key={slot} label={label} die={die} claimedBy={claimedBy} claimerFactionId={claimerFactionId} />;
+            })}
           </div>
 
           {/* ── Map ── */}
@@ -269,6 +314,7 @@ export function PlayPage() {
             <RoundSummaryOverlay
               summary={active.roundSummary}
               autoplay={autoplay}
+              totalRounds={rules.totalRounds}
               onDismiss={() => setActive((p) => p ? { ...p, roundSummary: null } : p)}
             />
           )}
@@ -295,6 +341,7 @@ export function PlayPage() {
                   pendingMoves={active.pendingMoves}
                   onChooseMove={applyHumanMove}
                   configs={configs}
+                  vpHistory={active.vpHistory[pid]}
                 />
               );
             })}
@@ -339,10 +386,9 @@ const COUNT_DEFAULTS: Record<number, FactionId[]> = {
 // ─── Round Summary Overlay ────────────────────────────────────────────────────
 
 function RoundSummaryOverlay({
-  summary, autoplay, onDismiss,
-}: { summary: RoundSummary; autoplay: boolean; onDismiss: () => void }) {
-  const isLastRound = summary.standings.length > 0; // always true; kept for future use
-  void isLastRound;
+  summary, autoplay, onDismiss, totalRounds,
+}: { summary: RoundSummary; autoplay: boolean; onDismiss: () => void; totalRounds: number }) {
+  const isLastRound = summary.completedRound >= totalRounds;
 
   return (
     <div
@@ -420,7 +466,7 @@ function RoundSummaryOverlay({
               className="w-full rounded-2xl py-2.5 text-sm font-bold tracking-wide transition-all hover:brightness-110 active:scale-[0.98]"
               style={{ background: 'rgba(124,58,237,0.85)', color: 'white' }}
             >
-              Continue to Round {summary.completedRound + 1} →
+              {isLastRound ? 'View Results →' : `Continue to Round ${summary.completedRound + 1} →`}
             </button>
           )}
         </div>
@@ -674,12 +720,29 @@ function ActivePlayerChip({ state, humanPlayerId, waitingForHuman }: { state: Ga
 
 // ─── Merc slot ────────────────────────────────────────────────────────────────
 
-function MercSlot({ label, die, claimedBy }: { label: string; die: { faceValue: number | null } | null; claimedBy?: string | undefined }) {
+function MercSlot({
+  label, die, claimedBy, claimerFactionId,
+}: {
+  label: string;
+  die: { faceValue: number | null } | null;
+  claimedBy?: string | undefined;
+  claimerFactionId?: FactionId | undefined;
+}) {
   return (
     <div className={`flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] ${claimedBy ? 'border-amber-700/60 bg-amber-950/30 text-amber-200' : die ? 'border-neutral-700 bg-neutral-900 text-neutral-300' : 'border-neutral-800 bg-neutral-950 text-neutral-600'}`}>
       <span className="font-medium">{label}</span>
-      {die?.faceValue !== null && die?.faceValue !== undefined && <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-xs font-bold">{die.faceValue}</span>}
-      {claimedBy ? <span className="text-amber-400/70">→ {claimedBy}</span> : !die && <span>—</span>}
+      {die?.faceValue !== null && die?.faceValue !== undefined && (
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-xs font-bold">{die.faceValue}</span>
+      )}
+      {claimedBy ? (
+        <span className="flex items-center gap-1 text-amber-400/80">
+          →{' '}
+          {claimerFactionId && <FactionEmblem factionId={claimerFactionId} size={12} className="rounded-sm" />}
+          <span>{claimerFactionId ? factionLabel(claimerFactionId) : claimedBy}</span>
+        </span>
+      ) : !die ? (
+        <span>—</span>
+      ) : null}
     </div>
   );
 }
@@ -769,10 +832,27 @@ function HumanMoveLabel({ move, state, player }: { move: Move; state: GameState;
 
 // ─── Compact player card ──────────────────────────────────────────────────────
 
-function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieId, onSelectDie, pendingMoves, onChooseMove, configs }: {
+function VPSparkline({ history, width = 88, height = 18 }: { history: number[]; width?: number; height?: number }) {
+  if (history.length < 2) return null;
+  const max = Math.max(...history, 1);
+  const pts = history
+    .map((v, i) => `${((i / (history.length - 1)) * width).toFixed(1)},${(height - (v / max) * (height - 2) - 1).toFixed(1)}`)
+    .join(' ');
+  return (
+    <svg width={width} height={height} style={{ overflow: 'visible' }} aria-hidden="true">
+      <polyline points={pts} fill="none" stroke="#7c3aed" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
+      {history.map((v, i) => (
+        <circle key={i} cx={((i / (history.length - 1)) * width).toFixed(1)} cy={(height - (v / max) * (height - 2) - 1).toFixed(1)} r={i === history.length - 1 ? 2.5 : 1.5} fill={i === history.length - 1 ? '#a78bfa' : '#7c3aed'} opacity="0.85" />
+      ))}
+    </svg>
+  );
+}
+
+function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieId, onSelectDie, pendingMoves, onChooseMove, configs, vpHistory }: {
   player: NonNullable<GameState['players'][string]>; isActive: boolean; isHuman: boolean; isLeader: boolean;
   waitingForHuman: boolean; selectedDieId: string | null; onSelectDie: (id: string) => void;
   pendingMoves: Move[]; onChooseMove: (m: Move) => void; configs: ReturnType<typeof loadConfigs>;
+  vpHistory?: number[];
 }) {
   const isHumanTurn = isHuman && waitingForHuman;
   const placed  = player.dice.filter((d) => d.location.kind === 'region').length;
@@ -793,11 +873,22 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
     >
       {/* ── Header ── */}
       <div className="flex items-center gap-2 mb-2.5">
-        <div className="relative shrink-0">
+        {/* Faction emblem with ability tooltip */}
+        <div className="relative shrink-0 group">
           <FactionEmblem factionId={player.factionId} size={34} className="rounded-xl" />
           {isActive && !isHumanTurn && (
             <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-purple-400 ring-2 ring-neutral-950 animate-pulse" />
           )}
+          {/* Ability tooltip — appears on hover */}
+          <div className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-56 rounded-2xl p-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+            style={{ background: 'rgba(12,8,22,0.97)', border: '1px solid rgba(124,58,237,0.3)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
+            <div className="mb-1 text-[10px] font-black text-purple-300 uppercase tracking-wide">
+              {FACTION_ABILITIES[player.factionId]?.activeLabel}
+            </div>
+            <div className="text-[10px] leading-relaxed text-neutral-400">
+              {FACTION_ABILITIES[player.factionId]?.activeDescription}
+            </div>
+          </div>
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 mb-0.5">
@@ -815,11 +906,18 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
         </div>
       </div>
 
-      {/* ── Resources (SVG gems) ── */}
-      <div className="flex items-center gap-1.5 mb-2.5">
-        <ResourceCount resource="iron"    value={player.resources.iron}    size={13} />
-        <ResourceCount resource="gold"    value={player.resources.gold}    size={13} />
-        <ResourceCount resource="essence" value={player.resources.essence} size={13} />
+      {/* ── Resources + VP sparkline ── */}
+      <div className="flex items-center justify-between gap-1.5 mb-2.5">
+        <div className="flex items-center gap-1.5">
+          <ResourceCount resource="iron"    value={player.resources.iron}    size={13} />
+          <ResourceCount resource="gold"    value={player.resources.gold}    size={13} />
+          <ResourceCount resource="essence" value={player.resources.essence} size={13} />
+        </div>
+        {vpHistory && vpHistory.length >= 2 && (
+          <div title={`VP trend: ${vpHistory.join(', ')}`}>
+            <VPSparkline history={vpHistory} />
+          </div>
+        )}
       </div>
 
       {/* ── Dice tray ── */}

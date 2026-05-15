@@ -144,7 +144,7 @@ Spend one action to send a barracks die to attack a **non-fortress** region occu
 
 - **Win condition**: your die's face value > (sum of all enemy dice on that region) + 1.
   *(Defender gets an implicit +1 bonus.)*
-- **Win**: all enemy dice are evicted to their barracks (face values cleared). Your die occupies the region. You gain **+1 VP**.
+- **Win**: all enemy dice are evicted to their barracks (face values cleared). Your die occupies the region. You gain **+1 VP** and **+1 iron** (war spoils — the victor claims the territory's resources).
 - **Lose**: your attacking die returns to barracks (face value cleared). No VP change.
 - **Regardless of outcome**: the threat track advances by **+1**.
 
@@ -170,9 +170,10 @@ Three slots:
 **Specialist countdown**: values 6, 5, 4, 3, 2, 1, 1 for rounds 1–7.
 
 **Cost discounts** (stack):
-- **Round 1 only**: Specialist costs **2 gold** (encouraging early contesting).
+- **Rounds 1–2**: Specialist costs **2 gold** (not 3) — value-6 and value-5 are hot commodities worth contesting early.
 - **Warriors** faction: all mercs cost **−1 gold** (minimum 0).
 - **Assassins** faction: Low merc costs **2 gold** (not 3).
+- **Necromancers** faction: all mercs cost **−1 gold** (funds Soul Conversion; same discount as Warriors).
 
 ---
 
@@ -505,10 +506,10 @@ Round 7 is intentionally chaotic — it rewards players who have been building u
 
 ### 💀 Necromancers
 
-**Passive**: +1 essence per round  
+**Passive**: +1 essence per round · all mercs cost **−1 gold** (minimum 0)  
 **Active — Soul Recall**: Return one of your placed (non-garrisoned) dice from any region back to barracks.  
 **Merc perk — Soul Conversion**: Any merc die you used this round (placed or garrisoned) becomes a **permanent barracks die** at end of round instead of being removed.  
-**Playstyle**: Attrition and recovery. Soul Recall lets you rescue dice from bad positions. Soul Conversion slowly grows your dice pool if you can afford mercs. Note: Necromancers lack a gold passive, making merc hiring harder — consider upgrading dice for gold via other means.  
+**Playstyle**: Attrition and recovery. Soul Recall lets you rescue dice from bad positions and redeploy efficiently. Soul Conversion slowly grows your dice pool — the merc discount makes this accessible every round. Chain: hire → place → Soul Conversion → permanent die → repeat.  
 **Starting**: 1×(1-6), 2×(1-3) | 1⚙ 0🪙 2💎 | cap 7
 
 ---
@@ -516,7 +517,7 @@ Round 7 is intentionally chaotic — it rewards players who have been building u
 ### 💰 Merchants
 
 **Passive**: +2 gold per round  
-**Active — Trade Deal**: Gain 2 gold immediately.  
+**Active — Trade Deal**: Gain 1 gold immediately.  
 **Merc perk — Trade Commission**: Hiring any merc yields +1 essence as a bonus.  
 **Playstyle**: Economy engine. Gold surplus buys cards, mercs, and barracks expansion. Market structures (3 gold, 2VP) align naturally. Strong engine, but lower fortress/battle priority; wins through VP accumulation not aggression.  
 **Starting**: 1×(1-6), 1×(1-3) | 0⚙ 3🪙 0💎 | cap 6

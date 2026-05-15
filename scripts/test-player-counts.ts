@@ -61,13 +61,14 @@ const LINEUPS: Record<number, FactionId[][]> = {
     ['necromancers',  'rangers',       'merchants'],
     ['warriors',      'paladins',      'assassins'],
   ],
-  // 4-player: rangers faces strong opponents (assassins, necromancers) in lineup 1.
-  // Each faction appears in exactly 2 of 4 lineups.
+  // 4-player: balanced so no faction only faces the weakest opponents.
+  // Beastmasters faces strong factions (mages, merchants, paladins, rangers) rather than
+  // always the weakest. Necromancers faces mid-tier factions for a fair reading.
   4: [
-    ['assassins',  'necromancers', 'rangers',   'beastmasters'],
-    ['warriors',   'mages',        'merchants', 'paladins'],
-    ['rangers',    'merchants',    'paladins',  'necromancers'],
-    ['warriors',   'assassins',    'mages',     'beastmasters'],
+    ['warriors',      'mages',        'beastmasters', 'necromancers'],
+    ['assassins',     'paladins',     'rangers',      'merchants'],
+    ['warriors',      'assassins',    'merchants',    'beastmasters'],
+    ['mages',         'paladins',     'rangers',      'necromancers'],
   ],
 };
 

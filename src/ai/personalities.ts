@@ -51,9 +51,9 @@ export const PERSONALITIES: FactionWeightsTable = {
   rangers: W(0.5, 0.5, 0.65, 0.4, 0.5, 0.35, 0.5, 0.5),
   // Paladins: minor defensive tweak — their active nerf not needed, just trim battlePriority.
   paladins: W(0.7, 0.6, 0.6, 0.4, 0.5, 0.6, 0.6, 0.6),
-  // Beastmasters: enginePriority 0.7→0.6 — Wild Surge helps engine but they're not builders.
-  // combinationAffinity 0.7→0.75 — Wild die is best used in combines.
-  beastmasters: W(0.5, 0.5, 0.6, 0.5, 0.6, 0.7, 0.75, 0.4),
+  // Beastmasters: combinationAffinity 0.75→0.6 — was 37% in 4-player (+12pp).
+  // Wild Surge combines are strong but shouldn't dominate every turn; balanced back.
+  beastmasters: W(0.5, 0.5, 0.6, 0.5, 0.6, 0.7, 0.6, 0.4),
 };
 
 export function weightsFor(factionId: FactionId): FactionWeights {

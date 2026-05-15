@@ -68,11 +68,13 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
     activeTargeting: 'die+value',
   },
   necromancers: {
-    // +gold reverted — gold+essence passive overcorrected to 60% in 1v1 (+10pp).
-    // Necromancers earn gold through regions/goals; their Soul Conversion mechanic is their edge.
     passiveStartOfRound: { gain: { essence: 1 } },
+    // mercDiscount: 1 — all mercs cost 1 less gold, same as Warriors.
+    // Cheaper mercs fund Soul Conversion (used mercs become permanent dice) without
+    // giving free income — the gold-passive approach overcorrected to 61% in 1v1.
+    mercDiscount: 1,
     activeLabel: 'Soul Recall',
-    activeDescription: 'Return one of your placed dice from any region back to barracks, then reposition it.',
+    activeDescription: 'Return one of your placed dice from any region back to barracks to reposition it. (Passive: all mercs cost 1 less gold — Soul Conversion turns used mercs into permanent dice.)',
     activeTargeting: 'region',
   },
   merchants: {
