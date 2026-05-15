@@ -21,6 +21,7 @@ import { loadConfigs } from '@ui/configLoader';
 import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
 import { MapView } from '@ui/components/MapView';
 import { ResourceIcon } from '@ui/components/ResourceIcon';
+import { Die } from '@ui/components/Die';
 
 const ALL_FACTIONS: FactionId[] = [
   'warriors','assassins','mages','necromancers',
@@ -148,7 +149,7 @@ export function PlayPage() {
       {active && (
         <>
           {/* ── Sticky header ── */}
-          <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-neutral-800/80 bg-neutral-950/95 px-4 py-2.5 backdrop-blur-sm">
+          <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-white/[0.06] bg-black/80 px-4 py-2.5 backdrop-blur-xl" style={{ boxShadow: '0 1px 0 rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.4)' }}>
             <span className="text-sm font-bold text-white">
               Round <span className="text-purple-300">{active.state.round}</span>
               <span className="text-neutral-600">/{active.state.phase === 'finished' ? active.state.round : rules.totalRounds}</span>
@@ -168,13 +169,22 @@ export function PlayPage() {
 
           {/* ── Human action banner ── */}
           {active.waitingForHuman && (
-            <div className="mx-4 mt-3 rounded-xl border-l-4 border-teal-500 bg-teal-950/25 p-4">
+            <div className="mx-4 mt-3 rounded-2xl p-4 glow-teal"
+              style={{
+                background: 'linear-gradient(135deg, rgba(20,184,166,0.08) 0%, rgba(6,182,212,0.04) 100%)',
+                border: '1px solid rgba(20,184,166,0.3)',
+                boxShadow: '0 0 30px 6px rgba(20,184,166,0.1), inset 0 1px 0 rgba(255,255,255,0.05)',
+              }}
+            >
               <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-bold text-teal-300">
+                <span className="text-sm font-black text-teal-300 uppercase tracking-wide">
                   ⚔ Your Turn — {active.humanPlayerId ? factionLabel(active.state.players[active.humanPlayerId]?.factionId ?? 'warriors') : ''}
                 </span>
                 {active.selectedDieId && (
-                  <button type="button" onClick={() => setActive((p) => p ? { ...p, selectedDieId: null } : p)} className="rounded border border-neutral-600 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800">✕ clear filter</button>
+                  <button type="button" onClick={() => setActive((p) => p ? { ...p, selectedDieId: null } : p)}
+                    className="rounded-lg border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 transition">
+                    ✕ clear filter
+                  </button>
                 )}
               </div>
               <HumanActionMenu moves={active.pendingMoves} state={active.state} selectedDieId={active.selectedDieId} onChoose={applyHumanMove} />
@@ -543,73 +553,138 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
   pendingMoves: Move[]; onChooseMove: (m: Move) => void; configs: ReturnType<typeof loadConfigs>;
 }) {
   const isHumanTurn = isHuman && waitingForHuman;
-  const barracks = player.dice.filter((d) => d.location.kind === 'barracks').length;
-  const placed   = player.dice.filter((d) => d.location.kind === 'region').length;
-  const garr     = player.dice.filter((d) => d.location.kind === 'garrison').length;
+  const placed  = player.dice.filter((d) => d.location.kind === 'region').length;
+  const garr    = player.dice.filter((d) => d.location.kind === 'garrison').length;
+  const barracksDice = player.dice.filter((d) => d.location.kind === 'barracks' && d.faceValue !== null);
 
   return (
-    <div className={`w-52 shrink-0 rounded-xl border-2 p-3 text-xs transition ${isHumanTurn ? 'border-teal-500 bg-teal-950/20 shadow-lg shadow-teal-950/30' : isActive ? 'border-purple-500 bg-purple-950/15' : 'border-neutral-800 bg-neutral-900/50'}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <FactionEmblem factionId={player.factionId} size={28} className="rounded-lg shrink-0" />
+    <div className={`w-56 shrink-0 rounded-2xl p-3 text-xs transition-all ${
+      isHumanTurn
+        ? 'glow-teal border border-teal-500/60 bg-teal-950/20 backdrop-blur-sm'
+        : isActive
+          ? 'border border-purple-500/50 bg-purple-950/15 backdrop-blur-sm'
+          : 'glass border-transparent'
+    }`}
+      style={isHumanTurn ? { boxShadow: '0 0 20px 4px rgba(20,184,166,0.15), inset 0 1px 0 rgba(255,255,255,0.05)' }
+           : isActive    ? { boxShadow: '0 0 15px 2px rgba(139,92,246,0.12), inset 0 1px 0 rgba(255,255,255,0.04)' }
+           : { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 8px rgba(0,0,0,0.4)' }}
+    >
+      {/* ── Header ── */}
+      <div className="flex items-center gap-2 mb-2.5">
+        <div className="relative shrink-0">
+          <FactionEmblem factionId={player.factionId} size={34} className="rounded-xl" />
+          {isActive && !isHumanTurn && (
+            <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-purple-400 ring-2 ring-neutral-950 animate-pulse" />
+          )}
+        </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1 truncate">
-            <span className="font-semibold text-neutral-100 truncate">{factionLabel(player.factionId)}</span>
-            {isHuman && <span className="shrink-0 rounded bg-teal-700 px-1 py-0.5 text-[8px] font-bold uppercase">YOU</span>}
-            {player.passedThisRound && <span className="shrink-0 text-[8px] text-amber-400">passed</span>}
+          <div className="flex items-center gap-1 mb-0.5">
+            <span className="font-bold text-neutral-100 truncate text-[11px]">{factionLabel(player.factionId)}</span>
+            {isHuman && <span className="shrink-0 rounded-md bg-teal-600 px-1 py-0.5 text-[8px] font-black uppercase tracking-wide">YOU</span>}
           </div>
-          <div className="text-[9px] text-neutral-500">{barracks}b·{placed}p·{garr}g</div>
+          <div className="text-[9px] text-neutral-600">
+            {barracksDice.length}d ready · {placed}p · {garr}g
+            {player.passedThisRound && <span className="ml-1 text-amber-500">passed</span>}
+          </div>
         </div>
+        {/* VP display */}
         <div className="shrink-0 text-right">
-          {isLeader && <div className="text-[9px] text-amber-400 leading-none">👑</div>}
-          <div className="text-xl font-bold tabular-nums text-white leading-none">{player.vp}</div>
-          <div className="text-[8px] text-neutral-600">VP</div>
+          {isLeader && <div className="text-sm leading-none mb-0.5">👑</div>}
+          <div className="text-2xl font-black tabular-nums leading-none" style={{
+            background: isLeader ? 'linear-gradient(135deg,#fbbf24,#f97316)' : 'linear-gradient(135deg,#e2e8f0,#94a3b8)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          }}>{player.vp}</div>
+          <div className="text-[8px] text-neutral-600 uppercase tracking-wider">VP</div>
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className="inline-flex items-center gap-0.5 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-200"><ResourceIcon resource="iron"    size={11}/>{player.resources.iron}</span>
-        <span className="inline-flex items-center gap-0.5 rounded bg-amber-900/60 px-1.5 py-0.5 text-[10px] tabular-nums text-amber-200"><ResourceIcon resource="gold"    size={11}/>{player.resources.gold}</span>
-        <span className="inline-flex items-center gap-0.5 rounded bg-violet-900/60 px-1.5 py-0.5 text-[10px] tabular-nums text-violet-200"><ResourceIcon resource="essence" size={11}/>{player.resources.essence}</span>
+      {/* ── Resources ── */}
+      <div className="flex items-center gap-1.5 mb-2.5">
+        <div className="flex items-center gap-0.5 rounded-lg bg-slate-900/80 px-2 py-1 text-[10px] tabular-nums text-slate-300 border border-slate-700/40">
+          <ResourceIcon resource="iron" size={10}/><span className="ml-0.5 font-semibold">{player.resources.iron}</span>
+        </div>
+        <div className="flex items-center gap-0.5 rounded-lg bg-amber-950/60 px-2 py-1 text-[10px] tabular-nums text-amber-300 border border-amber-800/40">
+          <ResourceIcon resource="gold" size={10}/><span className="ml-0.5 font-semibold">{player.resources.gold}</span>
+        </div>
+        <div className="flex items-center gap-0.5 rounded-lg bg-violet-950/60 px-2 py-1 text-[10px] tabular-nums text-violet-300 border border-violet-800/40">
+          <ResourceIcon resource="essence" size={10}/><span className="ml-0.5 font-semibold">{player.resources.essence}</span>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-1 mb-1.5">
-        {player.dice.filter((d) => d.location.kind === 'barracks' && d.faceValue !== null).map((d) => {
-          const sel = d.id === selectedDieId;
-          return (
-            <button key={d.id} type="button" disabled={!isHumanTurn} onClick={() => isHumanTurn && onSelectDie(d.id)}
-              title={`${d.range} · ${d.faceValue}${isHumanTurn ? ' — click to filter' : ''}`}
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold transition ${sel ? 'bg-teal-600 text-white ring-2 ring-teal-400 ring-offset-1 ring-offset-neutral-900' : isHumanTurn ? 'bg-neutral-700 text-neutral-100 hover:bg-neutral-600 cursor-pointer' : 'bg-neutral-800 text-neutral-200'}`}
-            >{d.faceValue}</button>
-          );
-        })}
-      </div>
+      {/* ── Dice tray ── */}
+      {barracksDice.length > 0 && (
+        <div className="mb-2">
+          <div className="mb-1 text-[9px] uppercase tracking-widest text-neutral-700">Barracks</div>
+          <div className="flex flex-wrap gap-1.5">
+            {barracksDice.map((d) => (
+              <Die
+                key={d.id}
+                value={d.faceValue}
+                range={d.range}
+                size={30}
+                isSelected={d.id === selectedDieId}
+                onClick={isHumanTurn ? () => onSelectDie(d.id) : undefined}
+              />
+            ))}
+          </div>
+          {isHumanTurn && <p className="mt-1 text-[9px] text-teal-400/60">Click die to filter · click glowing region</p>}
+        </div>
+      )}
 
-      {isHumanTurn && <p className="text-[9px] text-teal-400/60 mb-1.5">Click die · click glowing region</p>}
-
+      {/* ── Card hand ── */}
       {player.hand.length > 0 && (
         <div className="mb-1.5">
-          <div className="mb-1 text-[9px] uppercase tracking-wide text-neutral-600">Hand ({player.hand.length})</div>
+          <div className="mb-1 text-[9px] uppercase tracking-widest text-neutral-700">Hand ({player.hand.length})</div>
           <div className="flex flex-wrap gap-1">
             {player.hand.map((cardId) => {
               const cd = configs.cards.find((c) => c.id === cardId);
               const ok = isHumanTurn && pendingMoves.some((m) => m.kind === 'play-card' && m.cardId === cardId);
-              return <button key={cardId} type="button" disabled={!ok} onClick={() => ok && onChooseMove({ kind: 'play-card', cardId })} title={cd?.description} className={`rounded border px-1.5 py-0.5 text-[9px] transition ${ok ? 'border-teal-700 bg-teal-950/30 text-teal-200 hover:bg-teal-900/50 cursor-pointer' : 'border-neutral-800 bg-neutral-900/40 text-neutral-500'}`}>{cd?.name ?? cardId.replace('card-','')}</button>;
+              return (
+                <button key={cardId} type="button" disabled={!ok}
+                  onClick={() => ok && onChooseMove({ kind: 'play-card', cardId })}
+                  title={cd?.description}
+                  className={`rounded-lg border px-2 py-0.5 text-[9px] font-medium transition ${
+                    ok ? 'border-teal-600/60 bg-teal-950/40 text-teal-200 hover:bg-teal-900/50 cursor-pointer' : 'border-white/5 bg-white/[0.02] text-neutral-600'
+                  }`}
+                >
+                  {cd?.name ?? cardId.replace('card-','')}
+                </button>
+              );
             })}
           </div>
         </div>
       )}
 
+      {/* ── Economy actions ── */}
       {isHumanTurn && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 mt-1.5">
           {player.dice.filter((d) => d.location.kind === 'barracks' && nextDieRange(d.range)).map((d) => {
             const ok = pendingMoves.some((m) => m.kind === 'upgrade-die' && m.dieId === d.id);
-            return ok ? <button key={d.id} type="button" onClick={() => onChooseMove({ kind: 'upgrade-die', dieId: d.id })} className="rounded border border-amber-800 bg-amber-950/30 px-1.5 py-0.5 text-[9px] text-amber-200 hover:bg-amber-900/50">↑ {d.range}→{nextDieRange(d.range)}</button> : null;
+            return ok ? (
+              <button key={d.id} type="button" onClick={() => onChooseMove({ kind: 'upgrade-die', dieId: d.id })}
+                className="rounded-lg border border-amber-700/50 bg-amber-950/30 px-2 py-0.5 text-[9px] text-amber-300 hover:bg-amber-900/50 transition">
+                ↑ {d.range}→{nextDieRange(d.range)}
+              </button>
+            ) : null;
           })}
-          {pendingMoves.some((m) => m.kind === 'expand-barracks') && <button type="button" onClick={() => onChooseMove({ kind: 'expand-barracks' })} className="rounded border border-blue-800 bg-blue-950/30 px-1.5 py-0.5 text-[9px] text-blue-200 hover:bg-blue-900/50">+ Expand</button>}
-          {pendingMoves.some((m) => m.kind === 'use-active') && !player.activeUsedThisRound && <button type="button" onClick={() => onChooseMove({ kind: 'use-active' })} title={FACTION_ABILITIES[player.factionId]?.activeDescription} className="rounded border border-violet-700 bg-violet-950/40 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200 hover:bg-violet-900/60">✦ {FACTION_ABILITIES[player.factionId]?.activeLabel}</button>}
+          {pendingMoves.some((m) => m.kind === 'expand-barracks') && (
+            <button type="button" onClick={() => onChooseMove({ kind: 'expand-barracks' })}
+              className="rounded-lg border border-blue-700/50 bg-blue-950/30 px-2 py-0.5 text-[9px] text-blue-300 hover:bg-blue-900/50 transition">
+              + Expand
+            </button>
+          )}
+          {pendingMoves.some((m) => m.kind === 'use-active') && !player.activeUsedThisRound && (
+            <button type="button" onClick={() => onChooseMove({ kind: 'use-active' })}
+              title={FACTION_ABILITIES[player.factionId]?.activeDescription}
+              className="rounded-lg border border-violet-600/50 bg-violet-950/40 px-2 py-0.5 text-[9px] font-bold text-violet-300 hover:bg-violet-900/50 transition">
+              ✦ {FACTION_ABILITIES[player.factionId]?.activeLabel}
+            </button>
+          )}
         </div>
       )}
-      {player.activeUsedThisRound && <div className="mt-1 text-[9px] text-neutral-700 line-through">Active used</div>}
+      {player.activeUsedThisRound && (
+        <div className="mt-1 text-[9px] text-neutral-700 line-through opacity-50">Active used</div>
+      )}
     </div>
   );
 }
