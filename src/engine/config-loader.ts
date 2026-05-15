@@ -8,6 +8,7 @@ import {
   RoundGoalsConfigSchema,
   RulesConfigSchema,
   SecretGoalsConfigSchema,
+  StructuresConfigSchema,
   type ParsedCards,
   type ParsedCosts,
   type ParsedFactions,
@@ -15,6 +16,7 @@ import {
   type ParsedRoundGoals,
   type ParsedRules,
   type ParsedSecretGoals,
+  type ParsedStructures,
 } from '../shared/schemas';
 import type { ZodError } from 'zod';
 import type {
@@ -25,6 +27,7 @@ import type {
   RoundGoalDefinition,
   RulesConfig,
   SecretGoalDefinition,
+  StructureDefinition,
 } from './types';
 
 export function parseRegions(raw: unknown): Region[] {
@@ -81,6 +84,14 @@ export function parseCosts(raw: unknown): CostsConfig {
     throw new Error(`Invalid costs config:\n${formatZodError(result.error)}`);
   }
   return result.data as ParsedCosts as CostsConfig;
+}
+
+export function parseStructures(raw: unknown): StructureDefinition[] {
+  const result = StructuresConfigSchema.safeParse(raw);
+  if (!result.success) {
+    throw new Error(`Invalid structures config:\n${formatZodError(result.error)}`);
+  }
+  return result.data as ParsedStructures as StructureDefinition[];
 }
 
 function formatZodError(err: ZodError): string {

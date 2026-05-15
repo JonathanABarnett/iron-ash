@@ -19,6 +19,7 @@ function mkPlayer(overrides: Partial<Player> = {}): Player {
     secretGoals: [],
     passedThisRound: false,
       activeUsedThisRound: false,
+      hasCombineBonus: false,
     progress: {
       maxFortressesSimultaneous: 0,
       combinesThisGame: 0,
@@ -83,6 +84,7 @@ function mkState(players: Player[], regions: Region[], overrides: Partial<GameSt
     rngState: '',
     log: [],
     freeForAll: false,
+    lockedRegions: {},
     ...overrides,
   };
 }

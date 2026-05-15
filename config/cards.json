@@ -21,7 +21,7 @@
     "kind": "modifier",
     "cost": { "gold": 1 },
     "effect": { "kind": "modify-die", "delta": -1 },
-    "description": "-1 to a barracks die (for low-only regions)"
+    "description": "-1 to a barracks die (useful for low-only regions)"
   },
   {
     "id": "card-reroll",
@@ -36,31 +36,31 @@
     "name": "Tactical Synergy",
     "kind": "combine-bonus",
     "cost": { "iron": 1 },
-    "effect": { "kind": "gain-resource", "resource": "essence", "amount": 2 },
-    "description": "Placeholder: gain 2 essence (full combine-bonus mechanic comes later)"
+    "effect": { "kind": "combine-bonus" },
+    "description": "Your next combine adds +1 to the sum and ignores terrain requirements"
   },
   {
     "id": "card-lock",
     "name": "Sealed Ground",
     "kind": "lock",
     "cost": { "essence": 1 },
-    "effect": { "kind": "gain-vp", "amount": 1 },
-    "description": "Placeholder: gain 1 VP (full lock mechanic comes later)"
+    "effect": { "kind": "lock-region" },
+    "description": "Block opponents from a region this round; gain 1 VP if it stays uncontested"
   },
   {
     "id": "card-steal",
     "name": "Hand of the Thief",
     "kind": "steal",
     "cost": { "gold": 2 },
-    "effect": { "kind": "gain-resource", "resource": "gold", "amount": 1 },
-    "description": "Placeholder: gain 1 gold (full steal mechanic comes later)"
+    "effect": { "kind": "steal-resource" },
+    "description": "Take 1 resource from an opponent AND draw a card from the market for free"
   },
   {
     "id": "card-forced-march",
     "name": "Forced March",
     "kind": "forced-march",
     "cost": { "iron": 1 },
-    "effect": { "kind": "gain-vp", "amount": 1 },
-    "description": "Placeholder: gain 1 VP (full forced-march mechanic comes later)"
+    "effect": { "kind": "forced-march" },
+    "description": "Move one of your placed dice to an adjacent region, ignoring its value requirement"
   }
 ]

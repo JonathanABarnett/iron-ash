@@ -8,7 +8,12 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5180,
-    strictPort: false, // fall back to next free port if 5180 is taken
+    strictPort: false,
+    hmr: false, // disable HMR so preview screenshots don't wait on WebSocket
+  },
+  preview: {
+    port: 5181,
+    strictPort: false,
   },
   resolve: {
     alias: {

@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import { runSimulation } from '@simulation/runner';
 import { useUIStore } from '@ui/store';
 import { useConfigStore } from '@ui/configStore';
@@ -7,6 +8,7 @@ import { SpecialistCurveChart } from '@ui/components/charts/SpecialistCurveChart
 import { VPSourceChart } from '@ui/components/charts/VPSourceChart';
 import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
 import type { FactionId } from '@engine/types';
+import type { SimulationResult } from '@simulation/types';
 
 export function SimPage() {
   const form = useUIStore((s) => s.form);
@@ -18,6 +20,27 @@ export function SimPage() {
   const setResult = useUIStore((s) => s.setResult);
   const setError = useUIStore((s) => s.setError);
   const configOverrides = useConfigStore((s) => s.overrides);
+
+  // Baseline for side-by-side comparison.
+  const [baseline, setBaseline] = useState<SimulationResult | null>(null);
+  const [baselineLabel, setBaselineLabel] = useState<string>('');
+  const baselineRef = useRef<HTMLInputElement>(null);
+
+  function onLoadBaseline(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string) as SimulationResult;
+        setBaseline(data);
+        setBaselineLabel(file.name.replace(/\.json$/, ''));
+      } catch {
+        /* silently ignore bad files */
+      }
+    };
+    reader.readAsText(file);
+  }
 
   function onRun() {
     setRunState('running');
@@ -214,6 +237,39 @@ export function SimPage() {
               </ul>
             </Panel>
           )}
+
+          {/* Baseline compare */}
+          <Panel title="Compare vs baseline">
+            <div className="mb-3 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => baselineRef.current?.click()}
+                className="rounded border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs hover:bg-neutral-700"
+              >
+                {baseline ? 'Replace baseline…' : 'Load baseline JSON…'}
+              </button>
+              <input
+                ref={baselineRef}
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={onLoadBaseline}
+              />
+              {baseline && (
+                <span className="text-xs text-neutral-400">
+                  Baseline: {baselineLabel} ({baseline.gamesRun} games)
+                </span>
+              )}
+            </div>
+
+            {baseline ? (
+              <CompareTable current={result} baseline={baseline} />
+            ) : (
+              <p className="text-xs text-neutral-500">
+                Export a previous sim result and load it here to diff faction win rates and key metrics.
+              </p>
+            )}
+          </Panel>
         </section>
       )}
     </main>
@@ -258,6 +314,119 @@ function Panel({
         {title}
       </h3>
       {children}
+    </div>
+  );
+}
+
+// ── Sim compare table ───────────────────────────────────────────────────────
+
+const ALL_FACTIONS: FactionId[] = [
+  'warriors', 'assassins', 'mages', 'necromancers',
+  'merchants', 'rangers', 'paladins', 'beastmasters',
+];
+
+const METRICS: { label: string; key: keyof import('@simulation/types').RulePressure; fmt: (v: number) => string; warnDir?: 'hi' | 'lo' }[] = [
+  { label: 'avg game length', key: 'avgGameLength', fmt: (v) => v.toFixed(2) + ' rounds' },
+  { label: 'round-7 reach', key: 'round7ReachRate', fmt: (v) => (v * 100).toFixed(1) + '%', warnDir: 'hi' },
+  { label: 'fortress turnover', key: 'fortressTurnoverRate', fmt: (v) => (v * 100).toFixed(1) + '%', warnDir: 'lo' },
+  { label: 'merc hire rate', key: 'mercenaryHireRate', fmt: (v) => (v * 100).toFixed(2) + '%' },
+  { label: 'combine rate', key: 'combineActionRate', fmt: (v) => (v * 100).toFixed(1) + '%' },
+];
+
+function DiffBadge({ delta, warnDir }: { delta: number; warnDir?: 'hi' | 'lo' }) {
+  if (Math.abs(delta) < 0.001) return <span className="text-neutral-500">—</span>;
+  const isGood = warnDir === 'hi' ? delta > 0 : warnDir === 'lo' ? delta < 0 : false;
+  const isBad = warnDir === 'hi' ? delta < 0 : warnDir === 'lo' ? delta > 0 : false;
+  const color = isGood ? 'text-green-400' : isBad ? 'text-red-400' : 'text-neutral-300';
+  const sign = delta > 0 ? '+' : '';
+  const pct = delta * 100;
+  const formatted = Math.abs(pct) > 1 ? `${sign}${pct.toFixed(1)}%` : `${sign}${(delta * 1000).toFixed(1)}‰`;
+  return <span className={color}>{formatted}</span>;
+}
+
+function CompareTable({ current, baseline }: { current: SimulationResult; baseline: SimulationResult }) {
+  return (
+    <div className="space-y-4">
+      {/* Metric rows */}
+      <table className="w-full text-left text-xs">
+        <thead className="text-[10px] uppercase tracking-wide text-neutral-500">
+          <tr>
+            <th className="py-1">Metric</th>
+            <th className="py-1 text-right">Baseline</th>
+            <th className="py-1 text-right">Current</th>
+            <th className="py-1 text-right">Δ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {METRICS.map(({ label, key, fmt, warnDir }) => {
+            const bv = baseline.rulePressure[key] as number;
+            const cv = current.rulePressure[key] as number;
+            const delta = cv - bv;
+            return (
+              <tr key={label} className="border-t border-neutral-800">
+                <td className="py-1 text-neutral-400">{label}</td>
+                <td className="py-1 text-right tabular-nums text-neutral-400">{fmt(bv)}</td>
+                <td className="py-1 text-right tabular-nums">{fmt(cv)}</td>
+                <td className="py-1 text-right tabular-nums">
+                  <DiffBadge delta={delta} {...(warnDir ? { warnDir } : {})} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* Faction win rate diff */}
+      <table className="w-full text-left text-xs">
+        <thead className="text-[10px] uppercase tracking-wide text-neutral-500">
+          <tr>
+            <th className="py-1">Faction</th>
+            <th className="py-1 text-right">Base win%</th>
+            <th className="py-1 text-right">Current win%</th>
+            <th className="py-1 text-right">Δ</th>
+            <th className="py-1 text-right">Base avgVP</th>
+            <th className="py-1 text-right">Current avgVP</th>
+            <th className="py-1 text-right">Δ VP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ALL_FACTIONS.map((fid) => {
+            const bs = baseline.factionStats[fid];
+            const cs = current.factionStats[fid];
+            if (!bs || !cs || (bs.playCount === 0 && cs.playCount === 0)) return null;
+            const winDelta = cs.winRate - bs.winRate;
+            const vpDelta = cs.avgVP - bs.avgVP;
+            return (
+              <tr key={fid} className="border-t border-neutral-800">
+                <td className="py-1">
+                  <span className="inline-flex items-center gap-1.5">
+                    <FactionEmblem factionId={fid} size={20} />
+                    {factionLabel(fid)}
+                  </span>
+                </td>
+                <td className="py-1 text-right tabular-nums text-neutral-400">
+                  {(bs.winRate * 100).toFixed(1)}%
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  {(cs.winRate * 100).toFixed(1)}%
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  <DiffBadge delta={winDelta} />
+                </td>
+                <td className="py-1 text-right tabular-nums text-neutral-400">
+                  {bs.avgVP.toFixed(1)}
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  {cs.avgVP.toFixed(1)}
+                </td>
+                <td className="py-1 text-right tabular-nums">
+                  <DiffBadge delta={vpDelta} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

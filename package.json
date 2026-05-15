@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"tests/**/*.ts\" \"scripts/**/*.ts\" \"config/**/*.json\"",
-    "sim": "tsx scripts/run-sim.ts",
+    "sim": "node --max-old-space-size=2048 node_modules/tsx/dist/cli.mjs scripts/run-sim.ts",
     "check": "pnpm typecheck && pnpm test && pnpm lint"
   },
   "dependencies": {

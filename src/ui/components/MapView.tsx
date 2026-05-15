@@ -108,7 +108,6 @@ export function MapView({ state, humanMoves = [], selectedDieId, onRegionClick }
       <svg
         viewBox={`0 0 ${SVG_W} ${SVG_H}`}
         className="h-auto w-full"
-        style={{ minWidth: 560 }}
       >
         {/* Adjacency edges */}
         {edges.map(([a, b]) => {

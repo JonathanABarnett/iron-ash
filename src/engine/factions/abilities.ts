@@ -13,6 +13,12 @@
 //   Rangers       Pathfinder      — gain 1 of every resource (versatility)
 //   Paladins      Sacred Seal     — gain 1 iron + 1 essence (hybrid synergy)
 //   Beastmasters  Wild Surge      — add a temporary 1-6 die to barracks for this round
+//
+// Passive merc relationships (Phase 2E, wired in mercenaries.ts):
+//   Assassins     First Refusal    — Low merc die costs only 1 gold (normally 3)
+//   Mages         Arcane Analysis  — hired Low/High merc die is set to its maximum face value
+//   Necromancers  Soul Conversion  — used merc dice become permanent barracks dice at end of round
+//   Merchants     Trade Commission — hiring any merc yields +1 essence (profitable contract)
 
 import { produce } from 'immer';
 import type { FactionId, GameState, PlayerId, Resource } from '../types';
@@ -52,7 +58,7 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
     activeTargeting: 'die+value',
   },
   mages: {
-    passiveStartOfRound: { gain: { essence: 1 } },
+    passiveStartOfRound: { gain: { essence: 1, gold: 1 } },
     activeLabel: 'Arcane Precision',
     activeDescription: 'Set one barracks die to any face value within its range.',
     activeTargeting: 'die+value',
@@ -66,7 +72,7 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
   merchants: {
     passiveStartOfRound: { gain: { gold: 2 } },
     activeLabel: 'Trade Deal',
-    activeDescription: 'Gain 3 gold immediately.',
+    activeDescription: 'Gain 2 gold immediately.',
     activeTargeting: 'none',
   },
   rangers: {
@@ -149,14 +155,14 @@ export function applyActive(
         break;
 
       case 'merchants':
-        dp.resources.gold += 3;
+        dp.resources.gold += 2; // Trade Deal: +2 gold (tuned from +3 — Merchants are strong)
         break;
 
       case 'rangers':
-        // Pathfinder: +2 of each resource (buffed from +1 each after balance pass).
+        // Pathfinder: +2 iron, +2 gold, +1 essence (tuned from +2/+2/+2 that was too strong).
         dp.resources.iron += 2;
         dp.resources.gold += 2;
-        dp.resources.essence += 2;
+        dp.resources.essence += 1;
         break;
 
       case 'paladins':

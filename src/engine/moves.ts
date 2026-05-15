@@ -12,13 +12,14 @@ import type {
   Player,
   PlayerId,
   RulesConfig,
+  StructureDefinition,
   Terrain,
 } from './types';
-import { nextDieRange } from './types';
+import { nextDieRange, upgradeTerrainRequirement } from './types';
 import type { Rng } from './rng';
 import { Rng as RngClass, makeIdFactory } from './rng';
 import { canAfford, spend } from './resources';
-import { canCombineDice, canPlaceDie } from './map';
+import { canCombineDice, canPlaceDie, playerControlsTerrain } from './map';
 import { applyGarrison } from './fortresses';
 import { applyHireMerc, isSlotAvailable, mercCost } from './mercenaries';
 import {
@@ -29,6 +30,7 @@ import {
 } from './cards';
 import { applyBattle, canBattle } from './battle';
 import { applyActive, canUseActive } from './factions/abilities';
+import { applyBuildStructure, canBuildStructure } from './structures';
 
 export class NotImplementedYet extends Error {
   constructor(feature: string) {
@@ -63,6 +65,7 @@ export interface MoveContext {
   cards?: CardDefinition[];
   rng?: Rng;
   costs?: CostsConfig;
+  structures?: StructureDefinition[];
 }
 
 /** All legal moves for the active player given current state. */
@@ -98,14 +101,13 @@ export function enumerate(state: GameState, ctx?: MoveContext): Move[] {
     }
   }
 
-  // hire-merc — only if rules supplied (cost depends on rules + freeForAll + faction)
+  // hire-merc — check per-slot cost (Assassins get Low for free, etc.)
   if (ctx) {
-    const cost = mercCost(state, ctx.rules, player.id);
-    if (player.resources.gold >= cost) {
-      for (const slot of ['low', 'high', 'specialist'] as const) {
-        if (isSlotAvailable(state, slot)) {
-          moves.push({ kind: 'hire-merc', mercSlot: slot });
-        }
+    for (const slot of ['low', 'high', 'specialist'] as const) {
+      if (!isSlotAvailable(state, slot)) continue;
+      const slotCost = mercCost(state, ctx.rules, player.id, slot);
+      if (player.resources.gold >= slotCost) {
+        moves.push({ kind: 'hire-merc', mercSlot: slot });
       }
     }
   }
@@ -131,13 +133,16 @@ export function enumerate(state: GameState, ctx?: MoveContext): Move[] {
     }
   }
 
-  // upgrade-die — for each barracks die that has a next tier and player can afford
+  // upgrade-die — for each barracks die that has a next tier, player can afford,
+  // AND any advanced terrain requirement is satisfied (2-5→3-6 needs mountain/fortress).
   if (ctx?.costs && canAfford(player, ctx.costs.dieUpgrade)) {
     for (const die of player.dice) {
       if (die.location.kind !== 'barracks') continue;
-      if (nextDieRange(die.range) !== null) {
-        moves.push({ kind: 'upgrade-die', dieId: die.id });
-      }
+      const targetRange = nextDieRange(die.range);
+      if (!targetRange) continue;
+      const terrainReq = upgradeTerrainRequirement(targetRange);
+      if (terrainReq && !playerControlsTerrain(state, player.id, terrainReq)) continue;
+      moves.push({ kind: 'upgrade-die', dieId: die.id });
     }
   }
 
@@ -151,6 +156,17 @@ export function enumerate(state: GameState, ctx?: MoveContext): Move[] {
   // use-active — once per round, if not yet used
   if (canUseActive(state, player.id)) {
     moves.push({ kind: 'use-active' });
+  }
+
+  // build-structure — for each structure the player can afford on a region they occupy
+  if (ctx?.structures) {
+    for (const structure of ctx.structures) {
+      for (const region of Object.values(state.regionDefs)) {
+        if (canBuildStructure(state, player.id, region.id, structure)) {
+          moves.push({ kind: 'build-structure', structureId: structure.id, regionId: region.id });
+        }
+      }
+    }
   }
 
   // pass is always legal
@@ -182,7 +198,7 @@ export function apply(state: GameState, move: Move, ctx?: MoveContext): GameStat
     }
     case 'hire-merc': {
       if (!ctx) throw new IllegalMove('hire-merc requires MoveContext (rules)');
-      return applyHire(state, move, ctx.rules);
+      return applyHire(state, move, ctx);
     }
     case 'battle':
       return applyBattleMove(state, move);
@@ -196,6 +212,10 @@ export function apply(state: GameState, move: Move, ctx?: MoveContext): GameStat
     }
     case 'use-active': {
       return applyActiveMove(state, move);
+    }
+    case 'build-structure': {
+      if (!ctx?.structures) throw new IllegalMove('build-structure requires MoveContext.structures');
+      return applyBuildStructureMove(state, move, ctx.structures);
     }
   }
 }
@@ -230,11 +250,19 @@ function applyDraftMove(
 
 function applyPlayMove(
   state: GameState,
-  move: { kind: 'play-card'; cardId: string },
+  move: { kind: 'play-card'; cardId: string; targetDieId?: string; targetRegionId?: string },
   cards: CardDefinition[],
   rng: Rng,
 ): GameState {
-  const next = applyPlayCardEffect(state, state.activePlayerId, move.cardId, cards, rng);
+  const next = applyPlayCardEffect(
+    state,
+    state.activePlayerId,
+    move.cardId,
+    cards,
+    rng,
+    move.targetDieId,
+    move.targetRegionId,
+  );
   return produce(next, (draft) => {
     appendLog(draft, { kind: 'move', move });
     advanceTurn(draft);
@@ -244,9 +272,10 @@ function applyPlayMove(
 function applyHire(
   state: GameState,
   move: { kind: 'hire-merc'; mercSlot: 'low' | 'high' | 'specialist' },
-  rules: RulesConfig,
+  ctx: MoveContext,
 ): GameState {
-  const next = applyHireMerc(state, state.activePlayerId, move.mercSlot, rules);
+  // Pass rng so Mages can reroll the hired die (Arcane Analysis perk).
+  const next = applyHireMerc(state, state.activePlayerId, move.mercSlot, ctx.rules, ctx.rng);
   return produce(next, (draft) => {
     appendLog(draft, { kind: 'move', move });
     advanceTurn(draft);
@@ -307,6 +336,8 @@ function applyCombine(
       rt.placedDieIds.push(...move.dieIds);
     }
     draft.players[player.id]!.progress.combinesThisGame += 1;
+    // Consume combine bonus if it was active.
+    draft.players[player.id]!.hasCombineBonus = false;
     trackTerrainProgress(draft, player.id, region.terrain);
     appendLog(draft, { kind: 'move', move });
     advanceTurn(draft);
@@ -367,6 +398,12 @@ function applyUpgradeDie(
   if (!canAfford(player, costs.dieUpgrade)) {
     throw new IllegalMove(`Cannot afford die upgrade (need ${JSON.stringify(costs.dieUpgrade)})`);
   }
+  const terrainReq = upgradeTerrainRequirement(next);
+  if (terrainReq && !playerControlsTerrain(state, player.id, terrainReq)) {
+    throw new IllegalMove(
+      `Upgrading to ${next} requires controlling a ${terrainReq.join(' or ')} region`,
+    );
+  }
   return produce(state, (draft) => {
     const dp = draft.players[player.id]!;
     Object.assign(dp, spend(dp, costs.dieUpgrade));
@@ -416,6 +453,23 @@ function applyActiveMove(
 ): GameState {
   const playerId = state.activePlayerId;
   const next = applyActive(state, playerId, move.dieId, move.targetValue, move.targetRegionId);
+  return produce(next, (draft) => {
+    appendLog(draft, { kind: 'move', move });
+    advanceTurn(draft);
+  });
+}
+
+function applyBuildStructureMove(
+  state: GameState,
+  move: { kind: 'build-structure'; structureId: string; regionId: string },
+  structures: StructureDefinition[],
+): GameState {
+  const structure = structures.find((s) => s.id === move.structureId);
+  if (!structure) throw new IllegalMove(`Unknown structure: ${move.structureId}`);
+  if (!canBuildStructure(state, state.activePlayerId, move.regionId, structure)) {
+    throw new IllegalMove(`Cannot build ${move.structureId} on ${move.regionId}`);
+  }
+  const next = applyBuildStructure(state, state.activePlayerId, move.regionId, structure);
   return produce(next, (draft) => {
     appendLog(draft, { kind: 'move', move });
     advanceTurn(draft);

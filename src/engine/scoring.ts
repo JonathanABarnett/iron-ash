@@ -8,6 +8,7 @@ import type {
   RoundGoalDefinition,
   ScoreBreakdown,
   SecretGoalDefinition,
+  StructureDefinition,
 } from './types';
 import { ROUND_GOAL_MEASURES } from './round-goals';
 import { SECRET_GOAL_CHECKS } from './secret-goals';
@@ -64,6 +65,7 @@ export function scoreFortressPerRound(state: GameState): GameState {
 export function computeEndGameScore(
   state: GameState,
   secretGoals: SecretGoalDefinition[],
+  structures?: StructureDefinition[],
 ): ScoreBreakdown {
   const sgById = new Map(secretGoals.map((g) => [g.id, g]));
   const perPlayer: Record<PlayerId, PlayerScore> = {};
@@ -109,25 +111,38 @@ export function computeEndGameScore(
     }
     const bothSecretGoalsBonus = completedCount >= 2 ? 4 : 0;
 
+    // Structures: built structures award their VP to the builder.
+    let structureVP = 0;
+    if (structures) {
+      for (const rt of Object.values(state.regions)) {
+        if (rt.structure?.ownerId === pid) {
+          const def = structures.find((s) => s.id === rt.structure!.structureId);
+          if (def) structureVP += def.vp;
+        }
+      }
+    }
+
     const total =
       roundGoalsAndFortressPerRound +
       regionControl +
       fortressEndGame +
       fullBarracksBonus +
       secretGoalsScore +
-      bothSecretGoalsBonus;
+      bothSecretGoalsBonus +
+      structureVP;
 
     perPlayer[pid] = {
       playerId: pid,
       total,
       parts: {
         roundGoals: roundGoalsAndFortressPerRound,
-        fortressesPerRound: 0, // collapsed into roundGoals; tracked separately if/when needed
+        fortressesPerRound: 0,
         regionControl,
         fortressEndGame,
         fullBarracksBonus,
         secretGoals: secretGoalsScore,
         bothSecretGoalsBonus,
+        structures: structureVP,
       },
     };
   }

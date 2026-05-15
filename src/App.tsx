@@ -3,11 +3,13 @@ import { HomePage } from '@ui/pages/HomePage';
 import { SimPage } from '@ui/pages/SimPage';
 import { PlayPage } from '@ui/pages/PlayPage';
 import { ConfigPage } from '@ui/pages/ConfigPage';
+import { ReplayPage } from '@ui/pages/ReplayPage';
 
 const NAV_ITEMS = [
   { to: '/',       icon: '⚔',  label: 'Home'   },
   { to: '/play',   icon: '🎮',  label: 'Play'   },
   { to: '/sim',    icon: '📊',  label: 'Sim'    },
+  { to: '/replay', icon: '▶',  label: 'Replay' },
   { to: '/config', icon: '⚙',  label: 'Config' },
 ] as const;
 
@@ -41,7 +43,7 @@ function Sidebar() {
 
       {/* Footer */}
       <div className="mt-auto px-2 text-[10px] text-neutral-600">
-        <p>84 tests · TypeScript strict</p>
+        <p>93 tests · TypeScript strict · 8 factions</p>
         <p className="mt-0.5">
           <code>pnpm sim --games=200</code>
         </p>
@@ -88,6 +90,7 @@ export default function App() {
               <Route path="/"       element={<HomePage />} />
               <Route path="/play"   element={<PlayPage />} />
               <Route path="/sim"    element={<SimPage />} />
+              <Route path="/replay" element={<ReplayPage />} />
               <Route path="/config" element={<ConfigPage />} />
             </Routes>
           </div>

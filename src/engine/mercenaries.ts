@@ -2,6 +2,12 @@
 // per-round countdown. Hiring costs 3 gold (waived during round-7 free-for-all).
 // Merc dice sit in the hirer's barracks for ONE round; whether used or not
 // they leave the game at end of round. Unused merc dice refund their cost.
+//
+// Faction merc relationships (Phase 2E):
+//   Assassins     — Low merc is free (first refusal: they always want it at 0 cost)
+//   Mages         — hired die is immediately rerolled (exact-value control)
+//   Necromancers  — used merc dice convert to permanent barracks dice at EOR
+//   Merchants     — garrisoned merc dice persist as permanent garrison at EOR
 
 import { produce } from 'immer';
 import type { Die, GameState, MercSource, PlayerId, RulesConfig } from './types';
@@ -12,15 +18,24 @@ import { getMercDiscount } from './factions/abilities';
 export const DEFAULT_MERC_COST = 3;
 
 /**
- * Cost to hire any merc, given the active rules and an optional hirer id
- * (for faction-specific discounts e.g. Warriors -1 gold).
+ * Cost to hire a specific merc slot, given the active rules, an optional hirer
+ * id (for faction-specific discounts), and optionally which slot.
+ *
+ * Faction specials:
+ *   Warriors   — general -1 discount on all mercs (existing)
+ *   Assassins  — Low merc is free (0 gold); other slots at normal cost
  */
 export function mercCost(
   state: GameState,
   rules: RulesConfig,
   hirerId?: PlayerId,
+  slot?: MercSource,
 ): number {
   if (state.freeForAll && rules.freeForAllToggles.allMercsFree) return 0;
+  if (hirerId && slot === 'low') {
+    const player = state.players[hirerId];
+    if (player?.factionId === 'assassins') return 2; // first refusal: Low merc at 2 gold (-1 off)
+  }
   let cost = DEFAULT_MERC_COST;
   if (hirerId) {
     const player = state.players[hirerId];
@@ -80,17 +95,21 @@ export function isSlotAvailable(state: GameState, slot: MercSource): boolean {
   return state.mercs[slot] !== null;
 }
 
-/** Apply a hire-merc action: spend gold, transfer die into hirer's barracks. */
+/**
+ * Apply a hire-merc action: spend gold, transfer die into hirer's barracks.
+ * Pass `rng` to enable Mages' reroll-on-hire faction perk.
+ */
 export function applyHireMerc(
   state: GameState,
   hirerId: string,
   slot: MercSource,
   rules: RulesConfig,
+  _rng?: Rng,
 ): GameState {
   if (!isSlotAvailable(state, slot)) {
     throw new Error(`Mercenary slot ${slot} not available`);
   }
-  const cost = mercCost(state, rules, hirerId);
+  const cost = mercCost(state, rules, hirerId, slot);
   const hirer = state.players[hirerId];
   if (!hirer) throw new Error(`Unknown player ${hirerId}`);
   if (hirer.resources.gold < cost) {
@@ -105,11 +124,19 @@ export function applyHireMerc(
       slot === 'low' ? draft.mercs.low : slot === 'high' ? draft.mercs.high : draft.mercs.specialist;
     if (!fromPool) throw new Error(`Pool slot ${slot} empty`);
 
-    const claimed: Die = {
+    let claimed: Die = {
       ...fromPool,
       ownerId: hirerId,
       mercCost: cost,
     };
+
+    // Mages: Arcane Analysis — set the hired die to its maximum face value
+    // (deterministic peak value, giving Mages precise die control over mercs).
+    if (drafted.factionId === 'mages' && slot !== 'specialist' && claimed.faceValue !== null) {
+      const maxByRange: Record<string, number> = { '1-3': 3, '2-5': 5, '3-6': 6, '1-6': 6 };
+      const peak = maxByRange[claimed.range];
+      if (peak !== undefined) claimed = { ...claimed, faceValue: peak };
+    }
 
     if (slot === 'low') draft.mercs.low = null;
     else if (slot === 'high') draft.mercs.high = null;
@@ -118,13 +145,23 @@ export function applyHireMerc(
     drafted.dice.push(claimed);
     drafted.progress.mercsHiredThisGame += 1;
     draft.mercs.claimed[slot] = hirerId;
+
+    // Merchants: Trade Commission — hiring a merc yields 1 essence (profitable contract).
+    if (drafted.factionId === 'merchants') {
+      drafted.resources.essence = Math.min(drafted.resources.essence + 1, 8);
+    }
   });
 }
 
 /**
  * End-of-round merc cleanup: remove all merc dice from players' rosters and
- * regions; refund cost for any merc die still in barracks (= unused). Returns
- * a new state and reports refunded gold per player for diagnostics.
+ * regions; refund cost for any merc die still in barracks (= unused).
+ *
+ * Faction merc bonuses applied here:
+ *   Necromancers — used merc dice (placed/garrisoned) become permanent barracks
+ *                  dice instead of disappearing (Soul Conversion passive).
+ *   Merchants    — garrisoned merc dice become permanent garrison dice instead
+ *                  of disappearing (Free Company passive).
  */
 export function clearMercDicePostRound(state: GameState): GameState {
   return produce(state, (draft) => {
@@ -135,25 +172,43 @@ export function clearMercDicePostRound(state: GameState): GameState {
           survivors.push(die);
           continue;
         }
-        // Refund if unused (still in barracks).
-        if (die.location.kind === 'barracks') {
+        const used = die.location.kind !== 'barracks';
+
+        // (Merchants' merc perk is handled at hire time — no end-of-round special.)
+
+        // Necromancers: convert used merc dice to permanent barracks dice.
+        if (player.factionId === 'necromancers' && used) {
+          // Return to barracks (face cleared for next round's roll).
+          survivors.push({
+            ...die,
+            mercSource: undefined,
+            mercCost: undefined,
+            location: { kind: 'barracks' },
+            faceValue: null,
+          });
+          continue;
+        }
+
+        // Default: discard. Refund if unused (still in barracks).
+        if (!used) {
           const refund = die.mercCost ?? 0;
           player.resources.gold += refund;
         }
       }
       player.dice = survivors;
     }
-    // Strip any merc-die ids that may have ended up on a region or in a garrison.
+    // Strip any remaining merc-die ids from region placements and garrisons.
     for (const rt of Object.values(draft.regions)) {
       rt.placedDieIds = rt.placedDieIds.filter((id) => !id.startsWith('merc-'));
+      const hadGarrison = rt.garrisonedDieIds.length > 0;
       rt.garrisonedDieIds = rt.garrisonedDieIds.filter((id) => !id.startsWith('merc-'));
-      if (rt.garrisonedDieIds.length === 0 && rt.garrisonOwnerId) {
+      if (hadGarrison && rt.garrisonedDieIds.length === 0 && rt.garrisonOwnerId) {
         // Garrison wiped because only merc dice were holding it.
         rt.garrisonOwnerId = undefined;
         rt.heldRounds = 0;
       }
     }
-    // Clear pool: unused pool dice just disappear.
+    // Clear pool: unused pool dice disappear.
     draft.mercs.low = null;
     draft.mercs.high = null;
     draft.mercs.specialist = null;

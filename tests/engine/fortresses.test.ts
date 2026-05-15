@@ -31,6 +31,7 @@ function mkPlayer(id: string, dice: Die[] = []): Player {
     secretGoals: [],
     passedThisRound: false,
       activeUsedThisRound: false,
+      hasCombineBonus: false,
     progress: {
       maxFortressesSimultaneous: 0,
       combinesThisGame: 0,
@@ -78,6 +79,7 @@ function mkState(): GameState {
     rngState: '',
     log: [],
     freeForAll: false,
+    lockedRegions: {},
   };
 }
 

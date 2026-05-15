@@ -72,13 +72,20 @@ export function runOneGame(
       continue;
     }
     if (isRoundOver(state)) {
-      state = endOfRound(state, { rules, roundGoals, secretGoals, cardKeepCost: configs.costs.cardKeep });
+      state = endOfRound(state, {
+        rules,
+        roundGoals,
+        secretGoals,
+        cardKeepCost: configs.costs.cardKeep,
+        structures: configs.structures,
+      });
       continue;
     }
     const { move } = pickMove(state, {
       rules,
       cards,
       costs: configs.costs,
+      structures: configs.structures,
       roundGoals,
       secretGoals,
       rng,
@@ -87,7 +94,13 @@ export function runOneGame(
         ? { factionWeightOverrides: configs.factionWeightOverrides }
         : {}),
     });
-    state = apply(state, move, { rules, cards, costs: configs.costs, rng });
+    state = apply(state, move, {
+      rules,
+      cards,
+      costs: configs.costs,
+      ...(configs.structures.length ? { structures: configs.structures } : {}),
+      rng,
+    });
     totalTurns += 1;
   }
   if (state.phase !== 'finished') {

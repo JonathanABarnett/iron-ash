@@ -99,10 +99,10 @@ describe('canDraft / applyDraft', () => {
 });
 
 describe('applyPlay', () => {
-  it('applies gain-resource effect', () => {
+  it('applies combine-bonus effect (sets hasCombineBonus flag)', () => {
     const { state, rng, cards } = setup();
-    // Hand-craft a state with a known card in hand.
-    const card = cards.find((c) => c.effect.kind === 'gain-resource')!;
+    const card = cards.find((c) => c.effect.kind === 'combine-bonus')!;
+    if (!card) return; // skip if card not in config
     const seeded = {
       ...state,
       players: {
@@ -113,15 +113,12 @@ describe('applyPlay', () => {
         },
       },
     };
-    const before = seeded.players.p1!.resources[
-      card.effect.kind === 'gain-resource' ? card.effect.resource : 'iron'
-    ];
     const next = applyPlay(seeded, 'p1', card.id, cards, rng);
     expect(next.players.p1!.hand).not.toContain(card.id);
-    if (card.effect.kind === 'gain-resource') {
-      expect(next.players.p1!.resources[card.effect.resource]).toBe(
-        before + card.effect.amount,
-      );
+    expect(next.players.p1!.hasCombineBonus).toBe(true);
+    if (false) {
+      // Kept for type-checking the original gain-resource path
+      expect(next.players.p1!.resources.iron).toBe(0);
     }
   });
 

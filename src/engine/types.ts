@@ -75,6 +75,20 @@ export interface RegionRuntime {
   garrisonOwnerId?: PlayerId | undefined;
   /** how many rounds the current garrison has held — for VP accrual */
   heldRounds: number;
+  /** Built structure, if any. One structure per region; owner keeps VP at end-game. */
+  structure?: { structureId: string; ownerId: PlayerId } | undefined;
+}
+
+/** Static definition of a buildable structure (from config/structures.json). */
+export interface StructureDefinition {
+  id: string;
+  name: string;
+  description: string;
+  cost: Partial<Record<Resource, number>>;
+  /** VP awarded to the builder at end of game. */
+  vp: number;
+  /** Terrain types this structure can be built on. */
+  allowedTerrains: Terrain[];
 }
 
 export interface FactionDefinition {
@@ -100,6 +114,8 @@ export interface Player {
   passedThisRound: boolean;
   /** True once the player has used their once-per-round active ability this round. */
   activeUsedThisRound: boolean;
+  /** Combine Bonus card effect: next combine this round adds +1 and ignores terrain requirement. */
+  hasCombineBonus: boolean;
   /** Counters fed by the round/turn loop and queried by goal predicates. */
   progress: GoalProgress;
   /** arbitrary per-faction extras populated in Phase 2 */
@@ -174,7 +190,15 @@ export type CardEffect =
   | { kind: 'gain-resource'; resource: Resource; amount: number }
   | { kind: 'gain-vp'; amount: number }
   | { kind: 'reroll-die' }
-  | { kind: 'modify-die'; delta: number };
+  | { kind: 'modify-die'; delta: number }
+  /** Move one of your placed dice to an adjacent region; ignore that region's value requirement. */
+  | { kind: 'forced-march' }
+  /** Lock a region — opponents cannot place there this round; gain 1 VP if uncontested at end of round. */
+  | { kind: 'lock-region' }
+  /** Steal 1 of a resource from a random opponent; draw a card from the market for free. */
+  | { kind: 'steal-resource'; resource?: Resource }
+  /** Your next combine action this round adds +1 to the sum and ignores terrain restrictions. */
+  | { kind: 'combine-bonus' };
 
 export interface CardDefinition {
   id: CardId;
@@ -189,7 +213,8 @@ export type Move =
   | { kind: 'place'; dieId: DieId; regionId: RegionId }
   | { kind: 'combine'; dieIds: [DieId, DieId]; regionId: RegionId }
   | { kind: 'draft-card'; cardId: CardId }
-  | { kind: 'play-card'; cardId: CardId }
+  /** Play a card from hand. Targeting fields required by Forced March and Lock. */
+  | { kind: 'play-card'; cardId: CardId; targetDieId?: DieId; targetRegionId?: RegionId }
   | { kind: 'hire-merc'; mercSlot: 'low' | 'high' | 'specialist' }
   | { kind: 'battle'; attackerDieId: DieId; targetRegionId: RegionId }
   /** Spend Iron + Gold to advance this die's range one tier (1-3→2-5→3-6). */
@@ -201,6 +226,8 @@ export type Move =
    * Optional targeting params for abilities that need a die/value/region.
    */
   | { kind: 'use-active'; dieId?: DieId; targetValue?: number; targetRegionId?: RegionId }
+  /** Spend resources to construct a structure on a region you currently occupy. */
+  | { kind: 'build-structure'; structureId: string; regionId: RegionId }
   | { kind: 'pass' };
 
 /** The range tier above the given range, or null if already at max. */
@@ -208,6 +235,18 @@ export function nextDieRange(range: DieRange): DieRange | null {
   if (range === '1-3') return '2-5';
   if (range === '2-5') return '3-6';
   return null; // '3-6' and '1-6' cannot be upgraded
+}
+
+/**
+ * Terrain requirement for upgrading a die to the given target range.
+ * Returns null when there is no terrain requirement (upgrade is always legal).
+ *
+ * Design: 2-5 → 3-6 ("elite" tier) requires the player to hold a mountain
+ * or fortress — elite forces are tempered in hard terrain.
+ */
+export function upgradeTerrainRequirement(targetRange: DieRange): Terrain[] | null {
+  if (targetRange === '3-6') return ['mountain', 'fortress'];
+  return null;
 }
 
 export interface CostsConfig {
@@ -261,6 +300,12 @@ export interface GameState {
   log: GameLogEntry[];
   /** whether the current round is the round-7 free-for-all */
   freeForAll: boolean;
+  /**
+   * Regions locked by a Lock card this round. Key = regionId, value = locking playerId.
+   * Opponents cannot place/combine/garrison there; cleared at end of round.
+   * Locking player gains 1 VP if no opponent dice land there.
+   */
+  lockedRegions: Partial<Record<RegionId, PlayerId>>;
   winnerId?: PlayerId | undefined;
 }
 
@@ -295,5 +340,6 @@ export interface PlayerScore {
     fullBarracksBonus: number;
     secretGoals: number;
     bothSecretGoalsBonus: number;
+    structures: number;
   };
 }

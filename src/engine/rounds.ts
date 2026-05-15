@@ -9,6 +9,7 @@ import type {
   RoundGoalDefinition,
   RulesConfig,
   SecretGoalDefinition,
+  StructureDefinition,
 } from './types';
 import { Rng } from './rng';
 import {
@@ -67,6 +68,8 @@ export interface EndOfRoundContext {
   secretGoals: SecretGoalDefinition[];
   /** Cost per extra card kept beyond HAND_LIMIT. Omit to discard for free (Phase 1 behaviour). */
   cardKeepCost?: { gold: number; iron: number; essence: number };
+  /** Structure definitions — used to score structures at end-of-game. */
+  structures?: StructureDefinition[];
 }
 
 /** End-of-round: score, advance threat track, possibly end game. */
@@ -118,11 +121,32 @@ export function endOfRound(state: GameState, ctx: EndOfRoundContext): GameState 
       }
       player.passedThisRound = false;
         player.activeUsedThisRound = false;
+        player.hasCombineBonus = false;
     }
     for (const rt of Object.values(draft.regions)) {
       rt.placedDieIds = [];
       if (rt.garrisonedDieIds.length > 0) rt.heldRounds += 1;
     }
+
+    // Award 1 VP to any player whose locked region was uncontested by opponents.
+    for (const [regionId, lockOwnerId] of Object.entries(draft.lockedRegions)) {
+      if (!lockOwnerId) continue;
+      const rt = draft.regions[regionId];
+      if (!rt) continue;
+      // Contested = any die belonging to a different player placed there.
+      const hasOpponent = rt.placedDieIds.some((id) => {
+        for (const player of Object.values(draft.players)) {
+          if (player.id === lockOwnerId) continue;
+          if (player.dice.some((d) => d.id === id)) return true;
+        }
+        return false;
+      });
+      if (!hasOpponent) {
+        draft.players[lockOwnerId]!.vp += 1;
+      }
+    }
+    // Clear locked regions.
+    draft.lockedRegions = {};
 
     // Threat track always ticks; faction abilities can push more in later phases.
     draft.threatTrack += 1;
@@ -131,7 +155,7 @@ export function endOfRound(state: GameState, ctx: EndOfRoundContext): GameState 
 
     if (lastRound || reachedThreshold) {
       draft.phase = 'finished';
-      draft.scoreBreakdown = computeEndGameScore(draft, secretGoals);
+      draft.scoreBreakdown = computeEndGameScore(draft, secretGoals, ctx.structures);
       draft.winnerId = draft.scoreBreakdown.winnerId;
     } else {
       draft.round += 1;

@@ -70,6 +70,7 @@ export function createGame(args: CreateGameArgs): GameState {
       secretGoals: [],
       passedThisRound: false,
       activeUsedThisRound: false,
+      hasCombineBonus: false,
       progress: {
         maxFortressesSimultaneous: 0,
         combinesThisGame: 0,
@@ -150,5 +151,6 @@ export function createGame(args: CreateGameArgs): GameState {
     rngState: JSON.stringify(rng.snapshot()),
     log: [],
     freeForAll: false,
+    lockedRegions: {},
   };
 }

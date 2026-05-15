@@ -21,6 +21,7 @@ function emptyState(round = 1): GameState {
     rngState: '',
     log: [],
     freeForAll: false,
+    lockedRegions: {},
   };
 }
 

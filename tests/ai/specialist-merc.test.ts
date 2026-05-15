@@ -36,6 +36,7 @@ function emptyState(round: number): GameState {
     rngState: '',
     log: [],
     freeForAll: false,
+    lockedRegions: {},
   };
 }
 

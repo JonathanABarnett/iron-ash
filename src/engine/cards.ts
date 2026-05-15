@@ -84,6 +84,8 @@ export function applyPlay(
   cardId: CardId,
   cards: CardDefinition[],
   rng: Rng,
+  targetDieId?: string,
+  targetRegionId?: string,
 ): GameState {
   const card = cards.find((c) => c.id === cardId);
   if (!card) throw new Error(`Unknown card ${cardId}`);
@@ -94,7 +96,7 @@ export function applyPlay(
     const player = draft.players[playerId]!;
     const idx = player.hand.indexOf(cardId);
     if (idx >= 0) player.hand.splice(idx, 1);
-    applyEffect(draft, playerId, card.effect, rng);
+    applyEffect(draft, playerId, card.effect, rng, targetDieId, targetRegionId);
   });
 }
 
@@ -103,6 +105,8 @@ function applyEffect(
   playerId: PlayerId,
   effect: CardEffect,
   rng: Rng,
+  targetDieId?: string,
+  targetRegionId?: string,
 ): void {
   const player = draft.players[playerId]!;
   switch (effect.kind) {
@@ -134,7 +138,145 @@ function applyEffect(
       die.faceValue = next;
       break;
     }
+
+    case 'combine-bonus':
+      // Flag cleared at end of round; affects the next combine action this round.
+      player.hasCombineBonus = true;
+      break;
+
+    case 'lock-region': {
+      // Lock target region; opponents can't place there this round.
+      // Auto-target: pick the highest-VP region that already has our die on it,
+      // OR the highest-VP region with no current enemy dice.
+      const regionId = targetRegionId ?? pickBestLockTarget(draft, playerId);
+      if (regionId) {
+        draft.lockedRegions[regionId] = playerId;
+      }
+      break;
+    }
+
+    case 'steal-resource': {
+      // Take 1 of target resource from a random opponent who has it.
+      // Auto-pick: opponent with most resources of the effect's resource type.
+      const resource = effect.resource ?? pickStealResource(draft, playerId, rng);
+      if (!resource) break;
+      let richest: { id: string; amount: number } | null = null;
+      for (const [pid, opp] of Object.entries(draft.players)) {
+        if (pid === playerId) continue;
+        const amt = opp.resources[resource];
+        if (amt > 0 && (!richest || amt > richest.amount)) {
+          richest = { id: pid, amount: amt };
+        }
+      }
+      if (richest) {
+        draft.players[richest.id]!.resources[resource] -= 1;
+        player.resources[resource] += 1;
+      }
+      // Draw a free card from the market as the second half of Steal.
+      if (draft.market.length > 0) {
+        const drawnId = draft.market[0]!;
+        draft.market.splice(0, 1);
+        player.hand.push(drawnId);
+      }
+      break;
+    }
+
+    case 'forced-march': {
+      // Move one placed die to an adjacent region, ignoring requirements.
+      // Auto-target: pick placed die with highest value, move to best adjacent region.
+      const dieId = targetDieId ?? pickForcedMarchDie(draft, playerId);
+      if (!dieId) break;
+      const die = player.dice.find((d) => d.id === dieId);
+      if (!die || die.location.kind !== 'region') break;
+      const fromRegionId = die.location.regionId;
+      const toRegionId = targetRegionId ?? pickForcedMarchTarget(draft, fromRegionId, playerId);
+      if (!toRegionId) break;
+      const fromRt = draft.regions[fromRegionId]!;
+      const toRt = draft.regions[toRegionId]!;
+      fromRt.placedDieIds = fromRt.placedDieIds.filter((id) => id !== dieId);
+      die.location = { kind: 'region', regionId: toRegionId };
+      toRt.placedDieIds.push(dieId);
+      break;
+    }
   }
+}
+
+// ── Auto-targeting helpers ──────────────────────────────────────────────────
+
+function pickBestLockTarget(draft: GameState, playerId: string): string | null {
+  // Prefer: a region we have dice on (protect our position), highest VP.
+  let best: { id: string; vp: number } | null = null;
+  for (const [regionId, region] of Object.entries(draft.regionDefs)) {
+    if (draft.lockedRegions[regionId]) continue; // already locked
+    const rt = draft.regions[regionId];
+    if (!rt) continue;
+    const weHaveDie = rt.placedDieIds.some((id) =>
+      draft.players[playerId]?.dice.some((d) => d.id === id),
+    );
+    if (weHaveDie && (!best || region.vp > best.vp)) {
+      best = { id: regionId, vp: region.vp };
+    }
+  }
+  // Fallback: highest-VP uncontested unlocked region.
+  if (!best) {
+    for (const [regionId, region] of Object.entries(draft.regionDefs)) {
+      if (draft.lockedRegions[regionId]) continue;
+      if (!best || region.vp > best.vp) best = { id: regionId, vp: region.vp };
+    }
+  }
+  return best?.id ?? null;
+}
+
+function pickStealResource(
+  draft: GameState,
+  playerId: string,
+  rng: Rng,
+): import('./types').Resource | null {
+  const resources: import('./types').Resource[] = ['iron', 'gold', 'essence'];
+  // Pick the resource where opponents collectively have the most.
+  let best: { resource: import('./types').Resource; total: number } | null = null;
+  for (const r of resources) {
+    let total = 0;
+    for (const [pid, opp] of Object.entries(draft.players)) {
+      if (pid !== playerId) total += opp.resources[r];
+    }
+    if (total > 0 && (!best || total > best.total)) best = { resource: r, total };
+  }
+  return best?.resource ?? rng.pick(resources);
+}
+
+function pickForcedMarchDie(draft: GameState, playerId: string): string | null {
+  const player = draft.players[playerId];
+  if (!player) return null;
+  // Pick the placed die with the highest face value (most valuable to move).
+  let best: { id: string; val: number } | null = null;
+  for (const die of player.dice) {
+    if (die.location.kind !== 'region') continue;
+    if (die.faceValue === null) continue;
+    if (!best || die.faceValue > best.val) best = { id: die.id, val: die.faceValue };
+  }
+  return best?.id ?? null;
+}
+
+function pickForcedMarchTarget(
+  draft: GameState,
+  fromRegionId: string,
+  playerId: string,
+): string | null {
+  const fromRegion = draft.regionDefs[fromRegionId];
+  if (!fromRegion) return null;
+  // Pick the adjacent region with the highest VP where we don't already have a die.
+  let best: { id: string; vp: number } | null = null;
+  for (const adjId of fromRegion.adjacency) {
+    const adjRegion = draft.regionDefs[adjId];
+    if (!adjRegion) continue;
+    const rt = draft.regions[adjId];
+    if (!rt) continue;
+    // Don't march to locked regions.
+    if (draft.lockedRegions[adjId] && draft.lockedRegions[adjId] !== playerId) continue;
+    if (!best || adjRegion.vp > best.vp) best = { id: adjId, vp: adjRegion.vp };
+  }
+  return best?.id ?? null;
 }
 
 /**

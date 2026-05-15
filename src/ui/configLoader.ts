@@ -10,6 +10,7 @@ import {
   parseRoundGoals,
   parseRules,
   parseSecretGoals,
+  parseStructures,
 } from '@engine/config-loader';
 import factionsJson from '@config/factions.json';
 import regionsJson from '@config/regions.json';
@@ -18,6 +19,7 @@ import roundGoalsJson from '@config/round-goals.json';
 import secretGoalsJson from '@config/secret-goals.json';
 import cardsJson from '@config/cards.json';
 import costsJson from '@config/costs.json';
+import structuresJson from '@config/structures.json';
 import type { CostsConfig } from '@engine/types';
 import type { SimConfigs } from '@simulation/types';
 
@@ -53,6 +55,7 @@ export function loadConfigs(overrides?: {
     secretGoals: parseSecretGoals(secretGoalsJson),
     cards: parseCards(cardsJson),
     costs,
+    structures: parseStructures(structuresJson),
     ...(overrides?.factionWeightOverrides
       ? { factionWeightOverrides: overrides.factionWeightOverrides }
       : {}),

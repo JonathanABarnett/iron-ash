@@ -19,6 +19,7 @@ function mkPlayer(id: string, factionId: Player['factionId']): Player {
     secretGoals: [],
     passedThisRound: false,
       activeUsedThisRound: false,
+      hasCombineBonus: false,
     progress: {
       maxFortressesSimultaneous: 0,
       combinesThisGame: 0,
@@ -53,6 +54,7 @@ function mkState(players: Player[]): GameState {
     rngState: '',
     log: [],
     freeForAll: false,
+    lockedRegions: {},
   };
 }
 

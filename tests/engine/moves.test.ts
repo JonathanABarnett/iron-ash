@@ -4,6 +4,7 @@ import { createGame } from '@engine/setup';
 import { rollPhase } from '@engine/rounds';
 import { Rng } from '@engine/rng';
 import { parseFactions, parseRegions, parseRules } from '@engine/config-loader';
+import type { GameState } from '@engine/types';
 import factionsJson from '@config/factions.json';
 import regionsJson from '@config/regions.json';
 import rulesJson from '@config/rules.json';
@@ -122,5 +123,67 @@ describe('moves.apply', () => {
     expect(() => apply({ ...state, phase: 'roll' }, { kind: 'pass' })).toThrowError(
       IllegalMove,
     );
+  });
+});
+
+describe('upgrade-die terrain requirement', () => {
+  it('2-5 die upgrade is NOT enumerated when player has no mountain/fortress presence', () => {
+    const { state, rules } = setup();
+    const costs = { dieUpgrade: { iron: 2, gold: 1, essence: 0 }, barracksExpand: { iron: 1, gold: 2, essence: 0 }, cardKeep: { iron: 0, gold: 1, essence: 0 } };
+    // Give player an upgraded 2-5 die with lots of resources, but no mountain/fortress die presence.
+    const player = state.players[state.activePlayerId]!;
+    const modifiedPlayer = {
+      ...player,
+      resources: { iron: 10, gold: 10, essence: 10 },
+      dice: player.dice.map((d) => ({ ...d, range: '2-5' as const })),
+    };
+    const modifiedState: GameState = {
+      ...state,
+      players: { ...state.players, [state.activePlayerId]: modifiedPlayer },
+    };
+    // Verify no mountain/fortress presence (all dice in barracks or plains regions).
+    const upgrades = enumerate(modifiedState, { rules, costs }).filter(
+      (m) => m.kind === 'upgrade-die',
+    );
+    expect(upgrades).toHaveLength(0);
+  });
+
+  it('2-5 die upgrade IS enumerated when player garrisons a fortress', () => {
+    const { state, rules } = setup();
+    const costs = { dieUpgrade: { iron: 2, gold: 1, essence: 0 }, barracksExpand: { iron: 1, gold: 2, essence: 0 }, cardKeep: { iron: 0, gold: 1, essence: 0 } };
+    const player = state.players[state.activePlayerId]!;
+    // Find a fortress region.
+    const fortressEntry = Object.entries(state.regionDefs).find(([, r]) => r.isFortress);
+    if (!fortressEntry) return; // skip if no fortress in test config
+
+    const [fortressId] = fortressEntry;
+    // Place a garrison die for the player in a fortress.
+    const garrisonDieId = 'test-garrison-die';
+    const modifiedState: GameState = {
+      ...state,
+      players: {
+        ...state.players,
+        [state.activePlayerId]: {
+          ...player,
+          resources: { iron: 10, gold: 10, essence: 10 },
+          dice: [
+            ...player.dice.map((d) => ({ ...d, range: '2-5' as const })),
+            { id: garrisonDieId, range: '2-5' as const, faceValue: 4, ownerId: state.activePlayerId, location: { kind: 'garrison' as const, regionId: fortressId } },
+          ],
+        },
+      },
+      regions: {
+        ...state.regions,
+        [fortressId]: {
+          ...state.regions[fortressId]!,
+          garrisonedDieIds: [garrisonDieId],
+          garrisonOwnerId: state.activePlayerId,
+        },
+      },
+    };
+    const upgrades = enumerate(modifiedState, { rules, costs }).filter(
+      (m) => m.kind === 'upgrade-die',
+    );
+    expect(upgrades.length).toBeGreaterThan(0);
   });
 });

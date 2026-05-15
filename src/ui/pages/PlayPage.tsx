@@ -1,7 +1,11 @@
-// Interactive game viewer — Phase 5c: human player input added.
-// A faction can be marked "You" in the lineup picker; when it's that player's
-// turn the AI is bypassed, autoplay pauses, and a grouped action menu appears.
-// All other turns continue to auto-play as before.
+// Iron & Ash — Play page.
+// Layout when active:
+//   sticky header — round / threat bar / phase / active player / controls
+//   human action  — teal banner (only when waitingForHuman)
+//   merc bar      — compact single line
+//   map           — full-width SVG (no sidebar competition)
+//   player strip  — horizontal compact cards
+//   AI log        — collapsible bottom section
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Rng } from '@engine/rng';
@@ -10,13 +14,7 @@ import { apply, enumerate } from '@engine/moves';
 import { endOfRound, isRoundOver, rollPhase } from '@engine/rounds';
 import { pickMove } from '@ai/decide';
 import type { Difficulty } from '@ai/types';
-import type {
-  AIReasoning,
-  FactionId,
-  GameState,
-  Move,
-  PlayerId,
-} from '@engine/types';
+import type { AIReasoning, FactionId, GameState, Move, PlayerId } from '@engine/types';
 import { nextDieRange } from '@engine/types';
 import { FACTION_ABILITIES } from '@engine/factions/abilities';
 import { loadConfigs } from '@ui/configLoader';
@@ -25,1060 +23,551 @@ import { MapView } from '@ui/components/MapView';
 import { ResourceIcon } from '@ui/components/ResourceIcon';
 
 const ALL_FACTIONS: FactionId[] = [
-  'warriors',
-  'assassins',
-  'mages',
-  'necromancers',
-  'merchants',
-  'rangers',
-  'paladins',
-  'beastmasters',
+  'warriors','assassins','mages','necromancers',
+  'merchants','rangers','paladins','beastmasters',
+];
+
+const PRESETS: { label: string; icon: string; lineup: FactionId[]; human: FactionId | null }[] = [
+  { label: 'Me vs 1 AI',  icon: '🎮', lineup: ['warriors','mages'],                        human: 'warriors' },
+  { label: 'Me vs 2 AI',  icon: '🎮', lineup: ['warriors','mages','merchants'],             human: 'warriors' },
+  { label: 'Me vs 3 AI',  icon: '🎮', lineup: ['warriors','assassins','mages','merchants'], human: 'warriors' },
+  { label: 'Watch 2 AIs', icon: '👁',  lineup: ['warriors','mages'],                        human: null },
+  { label: 'Watch 3 AIs', icon: '👁',  lineup: ['warriors','mages','merchants'],             human: null },
+  { label: 'Watch 4 AIs', icon: '👁',  lineup: ['warriors','assassins','mages','merchants'], human: null },
 ];
 
 interface AILogEntry {
-  turn: number;
-  round: number;
-  playerId: PlayerId;
-  move: Move;
-  reasoning: AIReasoning;
+  turn: number; round: number; playerId: PlayerId; move: Move; reasoning: AIReasoning;
 }
 
 interface ActiveGame {
-  state: GameState;
-  log: AILogEntry[];
-  rngSnapshot: string;
-  /** ID of the human-controlled player, if any. */
-  humanPlayerId: PlayerId | null;
-  /** True when it's the human's action turn — engine pauses until a move is submitted. */
-  waitingForHuman: boolean;
-  /** All legal moves for the current human turn. */
-  pendingMoves: Move[];
-  /**
-   * Die the human has pre-selected in their player panel.
-   * When set, the map only highlights regions reachable by that die and
-   * the action menu filters to moves using it.
-   */
-  selectedDieId: string | null;
+  state: GameState; log: AILogEntry[]; rngSnapshot: string;
+  humanPlayerId: PlayerId | null; waitingForHuman: boolean;
+  pendingMoves: Move[]; selectedDieId: string | null;
 }
 
 export function PlayPage() {
-  const [lineup, setLineup] = useState<FactionId[]>([
-    'warriors',
-    'mages',
-    'merchants',
-  ]);
+  const [lineup, setLineup]             = useState<FactionId[]>(['warriors','mages','merchants']);
   const [humanFaction, setHumanFaction] = useState<FactionId | null>('warriors');
-  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
-  const [seed, setSeed] = useState('play-1');
-  const [active, setActive] = useState<ActiveGame | null>(null);
-  const [autoplay, setAutoplay] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const [difficulty, setDifficulty]     = useState<Difficulty>('medium');
+  const [seed, setSeed]                 = useState('play-1');
+  const [active, setActive]             = useState<ActiveGame | null>(null);
+  const [autoplay, setAutoplay]         = useState(false);
+  const [showLog, setShowLog]           = useState(false);
+  const [error, setError]               = useState<string | null>(null);
   const configs = useMemo(() => loadConfigs(), []);
+
+  function exportReplay() {
+    if (!active || active.state.phase !== 'finished') return;
+    const payload = {
+      version: 1 as const, seed,
+      lineup: lineup.map((factionId, i) => ({ playerId: `p${i + 1}`, factionId })),
+      difficulty, timestamp: new Date().toISOString(), finalState: active.state,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `replay-${seed}-${Date.now()}.json`; a.click();
+    URL.revokeObjectURL(url);
+  }
 
   function start() {
     try {
       setError(null);
       const state = createGame({
         seed,
-        players: lineup.map((factionId, i) => ({
-          id: `p${i + 1}`,
-          factionId,
-          isAI: true, // engine treats all as AI; UI intercepts the human's turns
-        })),
-        regions: configs.regions,
-        factions: configs.factions,
-        rules: configs.rules,
-        roundGoals: configs.roundGoals,
+        players:     lineup.map((factionId, i) => ({ id: `p${i + 1}`, factionId, isAI: true })),
+        regions:     configs.regions,
+        factions:    configs.factions,
+        rules:       configs.rules,
+        roundGoals:  configs.roundGoals,
         secretGoals: configs.secretGoals,
       });
-      // Derive the human player's id from the chosen faction (order in lineup = p1, p2, …).
-      const humanIdx = humanFaction ? lineup.indexOf(humanFaction) : -1;
+      const humanIdx      = humanFaction ? lineup.indexOf(humanFaction) : -1;
       const humanPlayerId = humanIdx >= 0 ? `p${humanIdx + 1}` : null;
-      setActive({
-        state,
-        log: [],
-        rngSnapshot: state.rngState,
-        humanPlayerId,
-        waitingForHuman: false,
-        pendingMoves: [],
-        selectedDieId: null,
-      });
+      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieId: null });
       setAutoplay(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
 
-  function step(prev: ActiveGame): ActiveGame {
-    // If already waiting for the human, nothing to advance.
-    if (prev.waitingForHuman) return prev;
+  const structuresCtx = configs.structures.length ? { structures: configs.structures } : {};
 
+  function step(prev: ActiveGame): ActiveGame {
+    if (prev.waitingForHuman) return prev;
     const rng = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
     let state = prev.state;
     let newLog = prev.log;
-
     if (state.phase === 'finished') return prev;
-
     if (state.phase === 'roll') {
       state = rollPhase(state, { rng, cards: configs.cards });
     } else if (isRoundOver(state)) {
-      state = endOfRound(state, {
-        rules: configs.rules,
-        roundGoals: configs.roundGoals,
-        secretGoals: configs.secretGoals,
-        cardKeepCost: configs.costs.cardKeep,
-      });
+      state = endOfRound(state, { rules: configs.rules, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals, cardKeepCost: configs.costs.cardKeep, ...structuresCtx });
     } else {
-      // Human turn: pause and expose legal moves.
       if (prev.humanPlayerId && state.activePlayerId === prev.humanPlayerId) {
-        const pending = enumerate(state, {
-          rules: configs.rules,
-          cards: configs.cards,
-        costs: configs.costs,
-          rng,
-        });
-        return {
-          ...prev,
-          rngSnapshot: JSON.stringify(rng.snapshot()),
-          waitingForHuman: true,
-          pendingMoves: pending,
-          selectedDieId: null, // clear selection at start of each human turn
-        };
+        const pending = enumerate(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
+        return { ...prev, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: true, pendingMoves: pending, selectedDieId: null };
       }
-
-      // AI turn.
-      const playerIdAtMove = state.activePlayerId;
-      const turnAtMove = state.turn;
-      const roundAtMove = state.round;
-      const { move, reasoning } = pickMove(state, {
-        rules: configs.rules,
-        cards: configs.cards,
-        costs: configs.costs,
-        roundGoals: configs.roundGoals,
-        secretGoals: configs.secretGoals,
-        rng,
-        difficulty,
-      });
-      state = apply(state, move, {
-        rules: configs.rules,
-        cards: configs.cards,
-        costs: configs.costs,
-        rng,
-      });
-      newLog = [
-        ...prev.log.slice(-49),
-        {
-          turn: turnAtMove,
-          round: roundAtMove,
-          playerId: playerIdAtMove,
-          move,
-          reasoning,
-        },
-      ];
+      const playerIdAtMove = state.activePlayerId, turnAtMove = state.turn, roundAtMove = state.round;
+      const { move, reasoning } = pickMove(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals, rng, difficulty });
+      state  = apply(state, move, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
+      newLog = [...prev.log.slice(-49), { turn: turnAtMove, round: roundAtMove, playerId: playerIdAtMove, move, reasoning }];
     }
-
-    return {
-      ...prev,
-      state,
-      log: newLog,
-      rngSnapshot: JSON.stringify(rng.snapshot()),
-      waitingForHuman: false,
-      pendingMoves: [],
-    };
+    return { ...prev, state, log: newLog, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [] };
   }
 
-  /** Apply the human's chosen move, clear the waiting state, then advance. */
   function applyHumanMove(move: Move) {
     setActive((prev) => {
       if (!prev || !prev.waitingForHuman) return prev;
-      const rng = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
-      const state = apply(prev.state, move, {
-        rules: configs.rules,
-        cards: configs.cards,
-        costs: configs.costs,
-        rng,
-      });
-      // Resume normal step cycle from the new state.
-      const resumed: ActiveGame = {
-        ...prev,
-        state,
-        rngSnapshot: JSON.stringify(rng.snapshot()),
-        waitingForHuman: false,
-        pendingMoves: [],
-        selectedDieId: null,
-      };
-      // Immediately advance past any non-human non-action steps (roll / end-of-round).
-      return step(resumed);
+      const rng   = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
+      const state = apply(prev.state, move, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
+      return step({ ...prev, state, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], selectedDieId: null });
     });
   }
 
-  /** Toggle die selection. Clicking the same die again clears the selection. */
   function selectDie(dieId: string) {
-    setActive((prev) => {
-      if (!prev?.waitingForHuman) return prev;
-      return {
-        ...prev,
-        selectedDieId: prev.selectedDieId === dieId ? null : dieId,
-      };
-    });
+    setActive((prev) => !prev?.waitingForHuman ? prev : { ...prev, selectedDieId: prev.selectedDieId === dieId ? null : dieId });
   }
 
-  function stepOnce() {
-    setActive((prev) => (prev ? step(prev) : prev));
-  }
+  function stepOnce() { setActive((prev) => prev ? step(prev) : prev); }
 
-  // Auto-play: step every N ms until finished, paused, or waiting for human.
   const autoplayRef = useRef(autoplay);
   autoplayRef.current = autoplay;
   useEffect(() => {
     if (!active || !autoplay) return;
-    if (active.state.phase === 'finished') {
-      setAutoplay(false);
-      return;
-    }
-    // Pause for human — don't advance, let the action menu handle it.
+    if (active.state.phase === 'finished') { setAutoplay(false); return; }
     if (active.waitingForHuman) return;
-    const id = window.setTimeout(() => {
-      if (!autoplayRef.current) return;
-      setActive((prev) => (prev ? step(prev) : prev));
-    }, 80);
+    const id = window.setTimeout(() => { if (autoplayRef.current) setActive((p) => p ? step(p) : p); }, 120);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, autoplay]);
 
-  return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Iron &amp; Ash — Play</h1>
-      <p className="mt-1 text-sm text-neutral-400">
-        Pick a faction, mark it <strong className="text-teal-300">YOU</strong>, then play against AI opponents.
-        All AI turns auto-step with scoring reasoning shown.
-      </p>
+  const rules = configs.rules;
 
-      {/* Setup */}
-      <section className="mt-6 rounded border border-neutral-800 bg-neutral-900/40 p-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <LineupPicker
-          value={lineup}
-          humanFaction={humanFaction}
-          onChange={setLineup}
-          onSetHuman={setHumanFaction}
+  return (
+    <main className="min-h-screen bg-neutral-950">
+      {!active && (
+        <SetupPanel
+          lineup={lineup} humanFaction={humanFaction} difficulty={difficulty} seed={seed} error={error}
+          onLineupChange={setLineup} onHumanFactionChange={setHumanFaction} onDifficultyChange={setDifficulty}
+          onSeedChange={setSeed} onStart={start} hasActiveGame={false}
         />
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-neutral-400">
-            Difficulty
-            <select
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value as Difficulty)}
-              className="rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-100"
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-neutral-400">
-            Seed
-            <input
-              type="text"
-              value={seed}
-              onChange={(e) => setSeed(e.target.value)}
-              className="rounded bg-neutral-800 px-3 py-2 text-sm font-mono text-neutral-100"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={start}
-            className="rounded bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500"
-          >
-            {active ? 'Restart' : 'Start game'}
-          </button>
-        </div>
-        {error && (
-          <div className="mt-3 rounded border border-red-700 bg-red-950/40 px-3 py-2 text-xs text-red-200">
-            {error}
-          </div>
-        )}
-      </section>
+      )}
 
       {active && (
-        <section className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
-          <div className="space-y-4">
-            <GameStatusBar
-              state={active.state}
-              humanPlayerId={active.humanPlayerId}
-              waitingForHuman={active.waitingForHuman}
-              onStep={stepOnce}
-              autoplay={autoplay}
-              onToggleAutoplay={() => setAutoplay((p) => !p)}
-            />
-            {active.waitingForHuman && (
-              <HumanActionMenu
-                moves={active.pendingMoves}
-                state={active.state}
-                selectedDieId={active.selectedDieId}
-                onChoose={applyHumanMove}
-                onClearSelection={() =>
-                  setActive((p) => (p ? { ...p, selectedDieId: null } : p))
-                }
-              />
-            )}
-            <MercPool state={active.state} />
-            <PlayersGrid
-              state={active.state}
-              humanPlayerId={active.humanPlayerId}
-              waitingForHuman={active.waitingForHuman}
-              selectedDieId={active.selectedDieId}
-              onSelectDie={selectDie}
-              pendingMoves={active.pendingMoves}
-              onChooseMove={applyHumanMove}
-              configs={configs}
-            />
-            <MapView
-              state={active.state}
-              humanMoves={active.waitingForHuman ? active.pendingMoves : []}
-              selectedDieId={active.selectedDieId}
-              onRegionClick={(_regionId, moves) => {
-                // Apply immediately when there's exactly one move (no ambiguity).
-                // Multiple moves → fall through to HumanActionMenu.
-                if (moves.length === 1) applyHumanMove(moves[0]!);
-              }}
-            />
-            {active.state.phase === 'finished' && <EndGamePanel state={active.state} />}
+        <>
+          {/* ── Sticky header ── */}
+          <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-neutral-800/80 bg-neutral-950/95 px-4 py-2.5 backdrop-blur-sm">
+            <span className="text-sm font-bold text-white">
+              Round <span className="text-purple-300">{active.state.round}</span>
+              <span className="text-neutral-600">/{active.state.phase === 'finished' ? active.state.round : rules.totalRounds}</span>
+            </span>
+            <ThreatBar track={active.state.threatTrack} threshold={rules.threatTrackThreshold} />
+            <PhaseChip phase={active.state.phase} />
+            <ActivePlayerChip state={active.state} humanPlayerId={active.humanPlayerId} waitingForHuman={active.waitingForHuman} />
+            {active.state.freeForAll && <span className="rounded-md bg-amber-800/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">Free-for-all</span>}
+            {(() => { const s = active.state.roundGoals.find((g) => g.forRound === active.state.round); return s ? <span className="text-[10px] text-neutral-500">Goal: <span className="text-neutral-300">{s.goalId}</span></span> : null; })()}
+            <div className="ml-auto flex items-center gap-1.5">
+              <button type="button" onClick={stepOnce} disabled={active.state.phase === 'finished'} className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-medium hover:bg-neutral-800 disabled:opacity-40 transition">Step ›</button>
+              <button type="button" onClick={() => setAutoplay((p) => !p)} disabled={active.state.phase === 'finished'} className={`rounded-lg px-3 py-1 text-xs font-bold disabled:opacity-40 transition ${autoplay ? 'bg-amber-600 text-white hover:bg-amber-500' : 'bg-purple-600 text-white hover:bg-purple-500'}`}>{autoplay ? '⏸ Pause' : '▶ Auto'}</button>
+              <button type="button" onClick={() => setShowLog((p) => !p)} className={`rounded-lg px-3 py-1 text-xs font-medium transition ${showLog ? 'bg-neutral-700 text-white' : 'border border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-neutral-200'}`}>📋 Log</button>
+              <button type="button" onClick={() => { if (window.confirm('Restart?')) setActive(null); }} className="rounded-lg border border-neutral-700 px-2.5 py-1 text-xs text-neutral-500 hover:text-neutral-200 transition" title="Restart">⟳</button>
+            </div>
           </div>
-          <AILogPanel entries={active.log} state={active.state} />
-        </section>
+
+          {/* ── Human action banner ── */}
+          {active.waitingForHuman && (
+            <div className="mx-4 mt-3 rounded-xl border-l-4 border-teal-500 bg-teal-950/25 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm font-bold text-teal-300">
+                  ⚔ Your Turn — {active.humanPlayerId ? factionLabel(active.state.players[active.humanPlayerId]?.factionId ?? 'warriors') : ''}
+                </span>
+                {active.selectedDieId && (
+                  <button type="button" onClick={() => setActive((p) => p ? { ...p, selectedDieId: null } : p)} className="rounded border border-neutral-600 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800">✕ clear filter</button>
+                )}
+              </div>
+              <HumanActionMenu moves={active.pendingMoves} state={active.state} selectedDieId={active.selectedDieId} onChoose={applyHumanMove} />
+            </div>
+          )}
+
+          {/* ── Merc bar ── */}
+          <div className="flex items-center gap-3 border-b border-neutral-800/60 bg-neutral-900/30 px-4 py-1.5 mt-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-600">Mercs</span>
+            <MercSlot label="Low"  die={active.state.mercs.low}       claimedBy={active.state.mercs.claimed.low}       />
+            <MercSlot label="High" die={active.state.mercs.high}      claimedBy={active.state.mercs.claimed.high}      />
+            <MercSlot label={`Spec·${active.state.mercs.specialistValue}`} die={active.state.mercs.specialist} claimedBy={active.state.mercs.claimed.specialist} />
+          </div>
+
+          {/* ── Map ── */}
+          <div className="px-4 pt-2">
+            <MapView state={active.state} humanMoves={active.waitingForHuman ? active.pendingMoves : []} selectedDieId={active.selectedDieId} onRegionClick={(_id, moves) => { if (moves.length === 1) applyHumanMove(moves[0]!); }} />
+          </div>
+
+          {/* ── End-game ── */}
+          {active.state.phase === 'finished' && (
+            <div className="mx-4 mt-3"><EndGamePanel state={active.state} onExport={exportReplay} /></div>
+          )}
+
+          {/* ── Player strip ── */}
+          <div className="flex gap-2.5 overflow-x-auto px-4 py-3">
+            {active.state.turnOrder.map((pid) => {
+              const maxVP = Math.max(...Object.values(active.state.players).map((p) => p?.vp ?? 0));
+              return (
+                <CompactPlayerCard
+                  key={pid}
+                  player={active.state.players[pid]!}
+                  isActive={pid === active.state.activePlayerId && active.state.phase === 'action'}
+                  isHuman={pid === active.humanPlayerId}
+                  isLeader={maxVP > 0 && (active.state.players[pid]?.vp ?? 0) === maxVP}
+                  waitingForHuman={active.waitingForHuman}
+                  selectedDieId={active.selectedDieId}
+                  onSelectDie={selectDie}
+                  pendingMoves={active.pendingMoves}
+                  onChooseMove={applyHumanMove}
+                  configs={configs}
+                />
+              );
+            })}
+          </div>
+
+          {/* ── AI log ── */}
+          {showLog && (
+            <div className="border-t border-neutral-800 bg-neutral-900/30 px-4 py-3 mt-1">
+              <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-neutral-600">AI Reasoning Log</div>
+              <div className="max-h-52 overflow-y-auto space-y-0.5">
+                {active.log.length === 0 && <div className="text-xs text-neutral-600">No moves yet.</div>}
+                {active.log.slice(-20).slice().reverse().map((entry, i) => {
+                  const p = active.state.players[entry.playerId];
+                  const top = entry.reasoning.candidates[0]?.score;
+                  return (
+                    <div key={i} className="flex items-center gap-2 rounded px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800/40">
+                      <span className="shrink-0 tabular-nums text-neutral-600">R{entry.round}T{entry.turn}</span>
+                      {p && <FactionEmblem factionId={p.factionId} size={12} />}
+                      <span className="font-mono text-neutral-300 truncate flex-1"><MoveSummaryInline move={entry.move} state={active.state} /></span>
+                      {top !== undefined && <span className="shrink-0 tabular-nums text-neutral-600">{top.toFixed(1)}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </main>
   );
 }
 
-function LineupPicker({
-  value,
-  humanFaction,
-  onChange,
-  onSetHuman,
-}: {
-  value: FactionId[];
-  humanFaction: FactionId | null;
-  onChange: (next: FactionId[]) => void;
-  onSetHuman: (f: FactionId | null) => void;
+// ─── Setup ────────────────────────────────────────────────────────────────────
+
+function SetupPanel({ lineup, humanFaction, difficulty, seed, error, onLineupChange, onHumanFactionChange, onDifficultyChange, onSeedChange, onStart, hasActiveGame }: {
+  lineup: FactionId[]; humanFaction: FactionId | null; difficulty: Difficulty; seed: string; error: string | null;
+  onLineupChange: (n: FactionId[]) => void; onHumanFactionChange: (f: FactionId | null) => void;
+  onDifficultyChange: (d: Difficulty) => void; onSeedChange: (s: string) => void;
+  onStart: () => void; hasActiveGame: boolean;
 }) {
-  function toggle(id: FactionId) {
-    if (value.includes(id)) {
-      if (value.length <= 2) return;
-      if (humanFaction === id) onSetHuman(null);
-      onChange(value.filter((x) => x !== id));
-    } else {
-      if (value.length >= 4) return;
-      onChange([...value, id]);
-    }
-  }
   return (
-    <div className="flex flex-col gap-1.5 text-xs uppercase tracking-wide text-neutral-400">
-      <span>Lineup ({value.length}/4)</span>
-      <div className="flex flex-wrap gap-1">
-        {ALL_FACTIONS.map((id) => {
-          const picked = value.includes(id);
-          const isHuman = humanFaction === id;
-          return (
-            <div key={id} className="flex overflow-hidden rounded border border-neutral-700">
-              <button
-                type="button"
-                onClick={() => toggle(id)}
-                className={`flex items-center gap-1 px-2 py-1 text-xs normal-case tracking-normal transition ${
-                  picked
-                    ? 'bg-purple-950/50 text-purple-100'
-                    : 'bg-neutral-900 text-neutral-400 hover:bg-neutral-800'
-                }`}
-                title={`Toggle ${factionLabel(id)}`}
+    <div className="mx-auto max-w-2xl px-6 py-10">
+      <h1 className="text-4xl font-bold tracking-tight text-white">Iron &amp; Ash</h1>
+      <p className="mt-1 text-sm text-neutral-400">Medieval dice-placement · asymmetric factions · up to 4 players</p>
+
+      <div className="mt-8">
+        <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500">Quick start</div>
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map((p) => {
+            const isActive = JSON.stringify([...lineup].sort()) === JSON.stringify([...p.lineup].sort()) && humanFaction === p.human;
+            return (
+              <button key={p.label} type="button"
+                onClick={() => { onLineupChange(p.lineup); onHumanFactionChange(p.human); }}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${isActive ? 'border-purple-500 bg-purple-900/40 text-purple-200' : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800'}`}
               >
-                <FactionEmblem factionId={id} size={20} />
-                <span>{factionLabel(id)}</span>
+                <span className="mr-1.5">{p.icon}</span>{p.label}
               </button>
-              {picked && (
-                <button
-                  type="button"
-                  onClick={() => onSetHuman(isHuman ? null : id)}
-                  title={isHuman ? 'Switch to AI' : 'Play as this faction'}
-                  className={`px-2 py-1 text-[10px] font-bold transition ${
-                    isHuman
-                      ? 'bg-teal-700 text-white hover:bg-teal-600'
-                      : 'bg-neutral-800 text-neutral-500 hover:text-neutral-200'
-                  }`}
-                >
-                  {isHuman ? 'YOU' : 'AI'}
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-neutral-500">Factions — {lineup.length}/4 &nbsp;·&nbsp; click to add/remove &nbsp;·&nbsp; YOU/AI toggles role</div>
+        <div className="grid grid-cols-4 gap-2">
+          {ALL_FACTIONS.map((id) => {
+            const picked  = lineup.includes(id);
+            const isHuman = humanFaction === id;
+            return (
+              <div key={id} className={`relative overflow-hidden rounded-xl border-2 transition ${picked ? isHuman ? 'border-teal-500 bg-teal-950/30' : 'border-purple-500 bg-purple-950/20' : 'border-neutral-800 bg-neutral-900/60 opacity-50 hover:opacity-75 hover:border-neutral-600'}`}>
+                <button type="button" className="w-full p-3 text-left" onClick={() => {
+                  if (picked) { if (lineup.length <= 2) return; if (humanFaction === id) onHumanFactionChange(null); onLineupChange(lineup.filter((x) => x !== id)); }
+                  else { if (lineup.length >= 4) return; onLineupChange([...lineup, id]); }
+                }}>
+                  <FactionEmblem factionId={id} size={40} className="mb-2 rounded-lg" />
+                  <div className="text-xs font-semibold text-neutral-100 leading-tight">{factionLabel(id)}</div>
                 </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function GameStatusBar({
-  state,
-  humanPlayerId,
-  waitingForHuman,
-  onStep,
-  autoplay,
-  onToggleAutoplay,
-}: {
-  state: GameState;
-  humanPlayerId: PlayerId | null;
-  waitingForHuman: boolean;
-  onStep: () => void;
-  autoplay: boolean;
-  onToggleAutoplay: () => void;
-}) {
-  const goalSlot = state.roundGoals.find((s) => s.forRound === state.round);
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded border border-neutral-800 bg-neutral-900/40 p-3 text-sm">
-      <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs uppercase tracking-wide">
-        Round {state.round} / {state.phase === 'finished' ? state.round : '7'}
-      </span>
-      <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs uppercase tracking-wide">
-        Phase: {state.phase}
-      </span>
-      <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs uppercase tracking-wide">
-        Threat: {state.threatTrack}
-      </span>
-      {state.freeForAll && (
-        <span className="rounded bg-amber-900/40 px-2 py-0.5 text-xs uppercase tracking-wide text-amber-200">
-          Free-for-all
-        </span>
-      )}
-      {goalSlot && (
-        <span className="text-xs text-neutral-300">
-          Goal: <span className="font-medium text-neutral-100">{goalSlot.goalId}</span>
-        </span>
-      )}
-      {waitingForHuman && (
-        <span className="animate-pulse rounded bg-teal-700/60 px-3 py-0.5 text-xs font-bold uppercase tracking-wide text-teal-100">
-          ⚔ Your Turn
-        </span>
-      )}
-      {!waitingForHuman && humanPlayerId && state.activePlayerId === humanPlayerId && state.phase === 'action' && (
-        <span className="rounded bg-neutral-700 px-2 py-0.5 text-xs text-neutral-300">
-          Your turn next…
-        </span>
-      )}
-      <div className="ml-auto flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onStep}
-          disabled={state.phase === 'finished'}
-          className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs hover:bg-neutral-800 disabled:opacity-50"
-        >
-          Step
-        </button>
-        <button
-          type="button"
-          onClick={onToggleAutoplay}
-          disabled={state.phase === 'finished'}
-          className={`rounded px-3 py-1 text-xs font-semibold ${
-            autoplay
-              ? 'bg-amber-600 text-white hover:bg-amber-500'
-              : 'bg-purple-600 text-white hover:bg-purple-500'
-          } disabled:opacity-50`}
-        >
-          {autoplay ? 'Pause' : 'Auto-play'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function PlayersGrid({
-  state,
-  humanPlayerId,
-  waitingForHuman,
-  selectedDieId,
-  onSelectDie,
-  pendingMoves,
-  onChooseMove,
-  configs,
-}: {
-  state: GameState;
-  humanPlayerId?: PlayerId | null;
-  waitingForHuman?: boolean;
-  selectedDieId?: string | null;
-  onSelectDie?: (dieId: string) => void;
-  pendingMoves?: Move[];
-  onChooseMove?: (m: Move) => void;
-  configs?: ReturnType<typeof loadConfigs>;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {state.turnOrder.map((pid) => {
-        const player = state.players[pid]!;
-        const isActive = pid === state.activePlayerId && state.phase === 'action';
-        const isHuman = pid === humanPlayerId;
-        const isHumanTurn = isHuman && waitingForHuman;
-        return (
-          <div
-            key={pid}
-            className={`rounded border p-3 text-sm transition ${
-              isActive
-                ? isHuman && waitingForHuman
-                  ? 'border-teal-600 bg-teal-950/20'
-                  : 'border-purple-600 bg-purple-950/20'
-                : 'border-neutral-800 bg-neutral-900/40'
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2">
-                <FactionEmblem factionId={player.factionId} size={28} />
-                <span className="font-medium">
-                  {player.id} — {factionLabel(player.factionId)}
-                  {isHuman && (
-                    <span className="ml-1.5 rounded bg-teal-800 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-teal-200">
-                      You
-                    </span>
-                  )}
-                </span>
-              </span>
-              <span className="rounded bg-neutral-800 px-2 py-0.5 text-xs">
-                {player.vp} VP
-              </span>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-400">
-              <ResourceRow resources={player.resources} />
-            </div>
-            <div className="mt-2 flex items-center gap-3 text-xs text-neutral-400">
-              <span>
-                {player.dice.filter((d) => d.location.kind === 'barracks').length} in barracks ·{' '}
-                {player.dice.filter((d) => d.location.kind === 'region').length} placed ·{' '}
-                {player.dice.filter((d) => d.location.kind === 'garrison').length} garrisoned
-              </span>
-            </div>
-
-            {/* Barracks dice — clickable on human's turn */}
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {player.dice
-                .filter((d) => d.location.kind === 'barracks' && d.faceValue !== null)
-                .map((d) => {
-                  const isSelected = d.id === selectedDieId;
-                  const clickable = isHumanTurn && !!onSelectDie;
-                  return (
-                    <button
-                      key={d.id}
-                      type="button"
-                      disabled={!clickable}
-                      onClick={() => clickable && onSelectDie(d.id)}
-                      title={`${d.range} die • face: ${d.faceValue}${clickable ? ' — click to select' : ''}`}
-                      className={`inline-flex h-8 w-8 items-center justify-center rounded text-sm font-bold transition ${
-                        isSelected
-                          ? 'bg-teal-600 text-white ring-2 ring-teal-400 ring-offset-1 ring-offset-neutral-900'
-                          : clickable
-                            ? 'cursor-pointer bg-neutral-700 text-neutral-100 hover:bg-neutral-600 hover:ring-1 hover:ring-teal-500'
-                            : 'bg-neutral-800 text-neutral-100'
-                      }`}
-                    >
-                      {d.faceValue}
-                    </button>
-                  );
-                })}
-            </div>
-
-            {isHumanTurn && (
-              <p className="mt-1.5 text-[10px] text-teal-400/70">
-                Click a die to filter moves · click a glowing region to place
-              </p>
-            )}
-
-            {/* Card hand — clickable when human's turn */}
-            {player.hand.length > 0 && configs && (
-              <div className="mt-2">
-                <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">
-                  Hand ({player.hand.length})
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {player.hand.map((cardId) => {
-                    const cardDef = configs.cards.find((c) => c.id === cardId);
-                    const canPlay = isHumanTurn && pendingMoves?.some(
-                      (m) => m.kind === 'play-card' && m.cardId === cardId,
-                    );
-                    const effectLabel =
-                      cardDef?.effect.kind === 'gain-resource'
-                        ? `+${cardDef.effect.amount} ${cardDef.effect.resource}`
-                        : cardDef?.effect.kind === 'gain-vp'
-                          ? `+${cardDef.effect.amount} VP`
-                          : cardDef?.effect.kind === 'reroll-die'
-                            ? 'reroll'
-                            : cardDef?.effect.kind === 'modify-die'
-                              ? `${cardDef.effect.delta > 0 ? '+' : ''}${cardDef.effect.delta} die`
-                              : '?';
-                    return (
-                      <button
-                        key={cardId}
-                        type="button"
-                        disabled={!canPlay}
-                        onClick={() =>
-                          canPlay && onChooseMove?.({ kind: 'play-card', cardId })
-                        }
-                        title={cardDef?.description ?? cardId}
-                        className={`rounded border px-2 py-1 text-[10px] transition ${
-                          canPlay
-                            ? 'cursor-pointer border-teal-700 bg-teal-950/30 text-teal-200 hover:bg-teal-900/50'
-                            : 'border-neutral-800 bg-neutral-900/40 text-neutral-400'
-                        }`}
-                      >
-                        <span className="font-medium">
-                          {cardDef?.name ?? cardId.replace('card-', '')}
-                        </span>
-                        <span className="ml-1 opacity-70">{effectLabel}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Upgrade / expand economy buttons — human only */}
-            {isHumanTurn && configs && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {player.dice
-                  .filter((d) => d.location.kind === 'barracks' && nextDieRange(d.range))
-                  .map((d) => {
-                    const canUpgrade = pendingMoves?.some(
-                      (m) => m.kind === 'upgrade-die' && m.dieId === d.id,
-                    );
-                    if (!canUpgrade) return null;
-                    return (
-                      <button
-                        key={d.id}
-                        type="button"
-                        onClick={() => onChooseMove?.({ kind: 'upgrade-die', dieId: d.id })}
-                        title={`Upgrade ${d.range} → ${nextDieRange(d.range)} (costs ${configs.costs.dieUpgrade.iron} iron, ${configs.costs.dieUpgrade.gold} gold)`}
-                        className="rounded border border-amber-800 bg-amber-950/30 px-2 py-1 text-[10px] text-amber-200 hover:bg-amber-900/50"
-                      >
-                        ↑ {d.range}→{nextDieRange(d.range)}
-                      </button>
-                    );
-                  })}
-                {pendingMoves?.some((m) => m.kind === 'expand-barracks') && (
-                  <button
-                    type="button"
-                    onClick={() => onChooseMove?.({ kind: 'expand-barracks' })}
-                    title={`Add barracks slot (costs ${configs.costs.barracksExpand.iron} iron, ${configs.costs.barracksExpand.gold} gold)`}
-                    className="rounded border border-blue-800 bg-blue-950/30 px-2 py-1 text-[10px] text-blue-200 hover:bg-blue-900/50"
-                  >
-                    + Expand ({player.dice.length}/{player.barracksMax})
-                  </button>
-                )}
-                {/* Faction active ability */}
-                {pendingMoves?.some((m) => m.kind === 'use-active') && !player.activeUsedThisRound && (
-                  <button
-                    type="button"
-                    onClick={() => onChooseMove?.({ kind: 'use-active' })}
-                    title={FACTION_ABILITIES[player.factionId]?.activeDescription}
-                    className="rounded border border-violet-700 bg-violet-950/40 px-2 py-1 text-[10px] font-semibold text-violet-200 hover:bg-violet-900/60"
-                  >
-                    ✦ {FACTION_ABILITIES[player.factionId]?.activeLabel ?? 'Active'}
-                  </button>
+                {picked && (
+                  <button type="button" onClick={() => onHumanFactionChange(isHuman ? null : id)}
+                    className={`absolute right-1.5 top-1.5 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase transition ${isHuman ? 'bg-teal-600 text-white hover:bg-teal-500' : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'}`}
+                  >{isHuman ? 'YOU' : 'AI'}</button>
                 )}
               </div>
-            )}
-            {/* Used-active indicator */}
-            {player.activeUsedThisRound && (
-              <div className="mt-1 text-[10px] text-neutral-600 line-through">
-                Active used this round
-              </div>
-            )}
-            {player.passedThisRound && (
-              <div className="mt-1 text-xs text-amber-300">Passed for round</div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-end gap-4">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Difficulty</span>
+          <select value={difficulty} onChange={(e) => onDifficultyChange(e.target.value as Difficulty)} className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100">
+            <option value="easy">🟢 Easy</option>
+            <option value="medium">🟡 Medium</option>
+            <option value="hard">🔴 Hard</option>
+          </select>
+        </label>
+        <label className="flex flex-1 flex-col gap-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">Seed</span>
+          <input type="text" value={seed} onChange={(e) => onSeedChange(e.target.value)} className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm font-mono text-neutral-100" />
+        </label>
+        <button type="button" onClick={onStart} className="rounded-xl bg-purple-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-purple-500 transition">
+          {hasActiveGame ? '⟳ Restart' : '▶ Start Game'}
+        </button>
+      </div>
+      {error && <div className="mt-4 rounded-lg border border-red-700 bg-red-950/40 px-4 py-3 text-sm text-red-200">{error}</div>}
     </div>
   );
 }
 
-function ResourceRow({
-  resources,
-}: {
-  resources: { iron: number; gold: number; essence: number };
-}) {
+// ─── Header chips ─────────────────────────────────────────────────────────────
+
+function ThreatBar({ track, threshold }: { track: number; threshold: number }) {
+  const pct = Math.min(100, Math.round((track / threshold) * 100));
+  const bar = pct >= 80 ? 'bg-red-500' : pct >= 50 ? 'bg-amber-500' : 'bg-emerald-500';
   return (
-    <span className="flex items-center gap-3">
-      <span className="inline-flex items-center gap-1">
-        <ResourceIcon resource="iron" size={16} />
-        <span className="tabular-nums">{resources.iron}</span>
-      </span>
-      <span className="inline-flex items-center gap-1">
-        <ResourceIcon resource="gold" size={16} />
-        <span className="tabular-nums">{resources.gold}</span>
-      </span>
-      <span className="inline-flex items-center gap-1">
-        <ResourceIcon resource="essence" size={16} />
-        <span className="tabular-nums">{resources.essence}</span>
-      </span>
+    <div className="flex items-center gap-1.5" title={`Threat ${track}/${threshold}`}>
+      <span className="text-[10px] text-neutral-500">☠</span>
+      <div className="h-2 w-14 overflow-hidden rounded-full bg-neutral-800"><div className={`h-full rounded-full transition-all duration-300 ${bar}`} style={{ width: `${pct}%` }} /></div>
+      <span className="text-[10px] tabular-nums text-neutral-400">{track}/{threshold}</span>
+    </div>
+  );
+}
+
+function PhaseChip({ phase }: { phase: string }) {
+  const m: Record<string,string> = { roll:'bg-blue-900/50 text-blue-200', action:'bg-purple-900/50 text-purple-200', 'end-of-round':'bg-amber-900/50 text-amber-200', finished:'bg-emerald-900/50 text-emerald-200' };
+  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${m[phase] ?? 'bg-neutral-800 text-neutral-400'}`}>{phase}</span>;
+}
+
+function ActivePlayerChip({ state, humanPlayerId, waitingForHuman }: { state: GameState; humanPlayerId: PlayerId | null; waitingForHuman: boolean }) {
+  if (state.phase !== 'action') return null;
+  const player = state.players[state.activePlayerId];
+  if (!player) return null;
+  const isHuman = state.activePlayerId === humanPlayerId;
+  return (
+    <span className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold ${isHuman && waitingForHuman ? 'animate-pulse bg-teal-700 text-white' : 'bg-neutral-800 text-neutral-300'}`}>
+      <FactionEmblem factionId={player.factionId} size={14} />
+      {isHuman && waitingForHuman ? '⚔ Your Turn!' : factionLabel(player.factionId)}
     </span>
   );
 }
 
-function MercPool({ state }: { state: GameState }) {
+// ─── Merc slot ────────────────────────────────────────────────────────────────
+
+function MercSlot({ label, die, claimedBy }: { label: string; die: { faceValue: number | null } | null; claimedBy?: string | undefined }) {
   return (
-    <div className="flex items-center gap-3 rounded border border-neutral-800 bg-neutral-900/40 p-3 text-sm">
-      <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-        Mercs
-      </span>
-      <MercSlot label="Low" die={state.mercs.low} claimedBy={state.mercs.claimed.low} />
-      <MercSlot label="High" die={state.mercs.high} claimedBy={state.mercs.claimed.high} />
-      <MercSlot
-        label={`Specialist (${state.mercs.specialistValue})`}
-        die={state.mercs.specialist}
-        claimedBy={state.mercs.claimed.specialist}
-      />
+    <div className={`flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] ${claimedBy ? 'border-amber-700/60 bg-amber-950/30 text-amber-200' : die ? 'border-neutral-700 bg-neutral-900 text-neutral-300' : 'border-neutral-800 bg-neutral-950 text-neutral-600'}`}>
+      <span className="font-medium">{label}</span>
+      {die?.faceValue !== null && die?.faceValue !== undefined && <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-xs font-bold">{die.faceValue}</span>}
+      {claimedBy ? <span className="text-amber-400/70">→ {claimedBy}</span> : !die && <span>—</span>}
     </div>
   );
 }
 
-function MercSlot({
-  label,
-  die,
-  claimedBy,
-}: {
-  label: string;
-  die: { faceValue: number | null } | null;
-  claimedBy?: string | undefined;
+// ─── Human action menu ────────────────────────────────────────────────────────
+
+function HumanActionMenu({ moves, state, selectedDieId, onChoose }: {
+  moves: Move[]; state: GameState; selectedDieId?: string | null; onChoose: (m: Move) => void;
 }) {
-  return (
-    <div
-      className={`flex items-center gap-2 rounded border px-2 py-1 text-xs ${
-        claimedBy
-          ? 'border-amber-700 bg-amber-950/30 text-amber-200'
-          : die
-            ? 'border-neutral-700 bg-neutral-900'
-            : 'border-neutral-800 bg-neutral-950 text-neutral-500'
-      }`}
-    >
-      <span>{label}</span>
-      {die && die.faceValue !== null && (
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-neutral-800 text-sm font-semibold">
-          {die.faceValue}
-        </span>
-      )}
-      {claimedBy && <span>→ {claimedBy}</span>}
-      {!die && !claimedBy && <span>empty</span>}
-    </div>
-  );
-}
-
-// RegionsGrid removed — replaced by MapView component.
-
-function AILogPanel({
-  entries,
-  state,
-}: {
-  entries: AILogEntry[];
-  state: GameState;
-}) {
-  return (
-    <div className="rounded border border-neutral-800 bg-neutral-900/40 p-3">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-        AI reasoning (latest first)
-      </h3>
-      <div className="max-h-[70vh] space-y-2 overflow-y-auto text-xs">
-        {entries
-          .slice()
-          .reverse()
-          .map((entry, idx) => {
-            const player = state.players[entry.playerId];
-            return (
-              <div
-                key={`${entry.round}-${entry.turn}-${idx}`}
-                className="rounded border border-neutral-800 bg-neutral-950/40 p-2"
-              >
-                <div className="flex items-center justify-between gap-1 text-[11px] text-neutral-400">
-                  <span className="flex items-center gap-1">
-                    {player && <FactionEmblem factionId={player.factionId} size={16} />}
-                    R{entry.round} T{entry.turn} · {entry.playerId}
-                  </span>
-                  <span className="rounded bg-neutral-800 px-1 text-[10px]">
-                    {entry.move.kind}
-                  </span>
-                </div>
-                <MoveSummary move={entry.move} state={state} />
-                {entry.reasoning.candidates.slice(0, 3).map((c, i) => (
-                  <div key={i} className="mt-1 text-[10px] text-neutral-500 tabular-nums">
-                    {i === 0 ? '★ ' : '  '}
-                    {c.move.kind}
-                    {c.move.kind === 'place' || c.move.kind === 'combine'
-                      ? ` → ${c.move.regionId}`
-                      : ''}
-                    {' · '}
-                    score {c.score}
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        {entries.length === 0 && (
-          <div className="text-xs text-neutral-500">
-            No moves yet — press Step or Auto-play.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MoveSummary({ move, state }: { move: Move; state: GameState }) {
-  switch (move.kind) {
-    case 'place':
-      return (
-        <div className="mt-1 text-[11px]">
-          Place die on{' '}
-          <span className="text-neutral-200">
-            {state.regionDefs[move.regionId]?.name ?? move.regionId}
-          </span>
-        </div>
-      );
-    case 'combine':
-      return (
-        <div className="mt-1 text-[11px]">
-          Combine 2 dice on{' '}
-          <span className="text-neutral-200">
-            {state.regionDefs[move.regionId]?.name ?? move.regionId}
-          </span>
-        </div>
-      );
-    case 'battle':
-      return (
-        <div className="mt-1 text-[11px]">
-          Battle at{' '}
-          <span className="text-neutral-200">
-            {state.regionDefs[move.targetRegionId]?.name ?? move.targetRegionId}
-          </span>
-        </div>
-      );
-    case 'hire-merc':
-      return <div className="mt-1 text-[11px]">Hire {move.mercSlot} merc</div>;
-    case 'draft-card':
-      return <div className="mt-1 text-[11px]">Draft {move.cardId}</div>;
-    case 'play-card':
-      return <div className="mt-1 text-[11px]">Play {move.cardId}</div>;
-    case 'use-active': {
-      const player = state.players[state.activePlayerId];
-      const ab = FACTION_ABILITIES[player?.factionId ?? 'warriors'];
-      return <div className="mt-1 text-[11px] text-violet-300">✦ {ab?.activeLabel}</div>;
-    }
-    case 'expand-barracks':
-      return <div className="mt-1 text-[11px]">Expand barracks</div>;
-    case 'upgrade-die':
-      return <div className="mt-1 text-[11px]">Upgrade die {move.dieId}</div>;
-    case 'pass':
-      return <div className="mt-1 text-[11px]">Pass</div>;
-  }
-}
-
-function HumanActionMenu({
-  moves,
-  state,
-  selectedDieId,
-  onChoose,
-  onClearSelection,
-}: {
-  moves: Move[];
-  state: GameState;
-  selectedDieId?: string | null;
-  onChoose: (m: Move) => void;
-  onClearSelection?: () => void;
-}) {
+  const [showAll, setShowAll] = useState(false);
   const player = state.players[state.activePlayerId];
   if (!player) return null;
 
-  // When a die is selected, filter moves to those that use that die.
-  const visibleMoves = selectedDieId
-    ? moves.filter(
-        (m) =>
-          (m.kind === 'place' && m.dieId === selectedDieId) ||
-          (m.kind === 'combine' && (m.dieIds[0] === selectedDieId || m.dieIds[1] === selectedDieId)) ||
-          (m.kind === 'battle' && m.attackerDieId === selectedDieId) ||
-          m.kind === 'pass',
-      )
+  const visible = selectedDieId
+    ? moves.filter((m) => (m.kind === 'place' && m.dieId === selectedDieId) || (m.kind === 'combine' && (m.dieIds[0] === selectedDieId || m.dieIds[1] === selectedDieId)) || (m.kind === 'battle' && m.attackerDieId === selectedDieId) || m.kind === 'pass')
     : moves;
 
-  // Group moves by kind for a structured display.
-  type Group = { label: string; color: string; moves: Move[] };
-  const groups: Group[] = [
-    { label: '⚔ Battle', color: 'border-red-800 bg-red-950/30', moves: visibleMoves.filter((m) => m.kind === 'battle') },
-    { label: '🏰 Garrison / Place', color: 'border-amber-800 bg-amber-950/20', moves: visibleMoves.filter((m) => (m.kind === 'place' || m.kind === 'combine') && state.regionDefs[m.regionId]?.isFortress) },
-    { label: '📍 Place / Combine', color: 'border-purple-800 bg-purple-950/20', moves: visibleMoves.filter((m) => (m.kind === 'place' || m.kind === 'combine') && !state.regionDefs[m.regionId]?.isFortress) },
-    { label: '⚡ Hire Merc', color: 'border-blue-800 bg-blue-950/20', moves: visibleMoves.filter((m) => m.kind === 'hire-merc') },
-    { label: '🃏 Cards', color: 'border-teal-800 bg-teal-950/20', moves: visibleMoves.filter((m) => m.kind === 'draft-card' || m.kind === 'play-card') },
-    { label: '✦ Active Ability', color: 'border-violet-800 bg-violet-950/30', moves: visibleMoves.filter((m) => m.kind === 'use-active') },
-    { label: '⏸ Pass', color: 'border-neutral-700 bg-neutral-900/40', moves: visibleMoves.filter((m) => m.kind === 'pass') },
+  const vp = (m: Move) => (m.kind === 'place' || m.kind === 'combine') ? (state.regionDefs[m.regionId]?.vp ?? 0) + (state.regionDefs[m.regionId]?.isFortress ? 2 : 0) : 0;
+  const placement = visible.filter((m) => m.kind === 'place' || m.kind === 'combine');
+  const topMoves  = [...placement].sort((a, b) => vp(b) - vp(a)).slice(0, 5);
+  const others: { label: string; color: string; moves: Move[] }[] = [
+    { label: '⚔ Battle',    color: 'border-red-800 bg-red-950/30',       moves: visible.filter((m) => m.kind === 'battle') },
+    { label: '⚡ Merc',     color: 'border-blue-800 bg-blue-950/20',     moves: visible.filter((m) => m.kind === 'hire-merc') },
+    { label: '🃏 Cards',    color: 'border-teal-800 bg-teal-950/20',     moves: visible.filter((m) => m.kind === 'draft-card' || m.kind === 'play-card') },
+    { label: '✦ Active',    color: 'border-violet-800 bg-violet-950/30', moves: visible.filter((m) => m.kind === 'use-active') },
+    { label: '🏗 Build',    color: 'border-yellow-800 bg-yellow-950/20', moves: visible.filter((m) => m.kind === 'build-structure') },
+    { label: '↑ Upgrade',   color: 'border-amber-800 bg-amber-950/20',   moves: visible.filter((m) => m.kind === 'upgrade-die' || m.kind === 'expand-barracks') },
+  ].filter((g) => g.moves.length > 0);
+
+  const allGroups: { label: string; color: string; moves: Move[] }[] = [
+    { label: '🏰 Garrison', color: 'border-amber-800 bg-amber-950/20',   moves: visible.filter((m) => (m.kind === 'place' || m.kind === 'combine') && state.regionDefs[m.regionId]?.isFortress) },
+    { label: '📍 Place',    color: 'border-purple-800 bg-purple-950/20', moves: visible.filter((m) => (m.kind === 'place' || m.kind === 'combine') && !state.regionDefs[m.regionId]?.isFortress) },
   ].filter((g) => g.moves.length > 0);
 
   return (
-    <div className="rounded border-2 border-teal-700 bg-teal-950/20 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-teal-200">
-          Choose your action —{' '}
-          <span className="text-neutral-300">{player.id} ({factionLabel(player.factionId)})</span>
-        </h3>
-        <div className="flex items-center gap-2">
-          {selectedDieId && (
-            <button
-              type="button"
-              onClick={onClearSelection}
-              className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] hover:bg-neutral-800"
-              title="Show all moves"
-            >
-              ✕ Die filter
-            </button>
-          )}
-          <span className="text-xs text-neutral-400">
-            {visibleMoves.length}{selectedDieId ? `/${moves.length}` : ''} moves
-          </span>
-        </div>
-      </div>
-      <div className="space-y-3">
-        {groups.map((g) => (
-          <div key={g.label}>
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-              {g.label}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {g.moves.map((m, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => onChoose(m)}
-                  className={`rounded border px-3 py-1.5 text-xs transition hover:brightness-125 active:scale-95 ${g.color}`}
-                >
-                  <HumanMoveLabel move={m} state={state} player={player} />
-                </button>
-              ))}
-            </div>
+    <div className="space-y-2.5">
+      {topMoves.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-emerald-500/80">★ Best by VP</div>
+          <div className="flex flex-wrap gap-1.5">
+            {topMoves.map((m, i) => (
+              <button key={i} type="button" onClick={() => onChoose(m)} className="rounded-lg border border-emerald-800/60 bg-emerald-950/30 px-3 py-1.5 text-xs text-emerald-200 hover:bg-emerald-900/40 transition">
+                <HumanMoveLabel move={m} state={state} player={player} />
+              </button>
+            ))}
+            {placement.length > 5 && (
+              <button type="button" onClick={() => setShowAll((p) => !p)} className="rounded-lg border border-neutral-700 px-2.5 py-1 text-[10px] text-neutral-400 hover:bg-neutral-800 transition">
+                {showAll ? '▲ less' : `+${placement.length - 5} more placements`}
+              </button>
+            )}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+      {showAll && allGroups.map((g) => (
+        <div key={g.label}>
+          <div className="mb-1 text-[9px] font-bold uppercase tracking-widest text-neutral-600">{g.label}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {g.moves.map((m, i) => <button key={i} type="button" onClick={() => onChoose(m)} className={`rounded border px-2.5 py-1 text-xs transition hover:brightness-125 ${g.color}`}><HumanMoveLabel move={m} state={state} player={player} /></button>)}
+          </div>
+        </div>
+      ))}
+      {others.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {others.flatMap((g) => g.moves.map((m, i) => <button key={`${g.label}-${i}`} type="button" onClick={() => onChoose(m)} className={`rounded border px-2.5 py-1 text-xs transition hover:brightness-125 ${g.color}`}><HumanMoveLabel move={m} state={state} player={player} /></button>))}
+        </div>
+      )}
+      <button type="button" onClick={() => onChoose({ kind: 'pass' })} className="rounded-lg border border-neutral-700 bg-neutral-900/50 px-4 py-1.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition">⏸ Pass (end turn)</button>
     </div>
   );
 }
 
-function HumanMoveLabel({
-  move,
-  state,
-  player,
-}: {
-  move: Move;
-  state: GameState;
-  player: ReturnType<typeof Object.values<typeof state.players[string]>>[number];
-}) {
+function HumanMoveLabel({ move, state, player }: { move: Move; state: GameState; player: NonNullable<GameState['players'][string]> }) {
   switch (move.kind) {
-    case 'place': {
-      const die = player?.dice.find((d) => d.id === move.dieId);
-      const region = state.regionDefs[move.regionId];
-      return (
-        <span>
-          [{die?.range ?? '?'}: <strong>{die?.faceValue}</strong>] →{' '}
-          <span className="text-neutral-200">{region?.name ?? move.regionId}</span>
-          <span className="ml-1 text-neutral-500">({region?.vp}VP)</span>
-        </span>
-      );
-    }
-    case 'combine': {
-      const dieA = player?.dice.find((d) => d.id === move.dieIds[0]);
-      const dieB = player?.dice.find((d) => d.id === move.dieIds[1]);
-      const region = state.regionDefs[move.regionId];
-      const sum = (dieA?.faceValue ?? 0) + (dieB?.faceValue ?? 0);
-      return (
-        <span>
-          <strong>{dieA?.faceValue}</strong> + <strong>{dieB?.faceValue}</strong> ={' '}
-          <strong className="text-teal-300">{sum}</strong> →{' '}
-          <span className="text-neutral-200">{region?.name ?? move.regionId}</span>
-        </span>
-      );
-    }
-    case 'battle': {
-      const die = player?.dice.find((d) => d.id === move.attackerDieId);
-      const region = state.regionDefs[move.targetRegionId];
-      return (
-        <span>
-          Attack <span className="text-neutral-200">{region?.name ?? move.targetRegionId}</span>{' '}
-          with <strong className="text-red-300">{die?.faceValue}</strong>
-        </span>
-      );
-    }
-    case 'hire-merc': {
-      const slot = move.mercSlot;
-      const die = state.mercs[slot];
-      const val = die && typeof die === 'object' && 'faceValue' in die ? die.faceValue : state.mercs.specialistValue;
-      return (
-        <span>
-          {slot === 'low' ? 'Low' : slot === 'high' ? 'High' : 'Specialist'} merc{' '}
-          {val !== null && <strong>({val})</strong>}
-        </span>
-      );
-    }
-    case 'draft-card':
-      return <span>Draft <span className="text-neutral-200">{move.cardId.replace('card-', '')}</span></span>;
-    case 'play-card':
-      return <span>Play <span className="text-neutral-200">{move.cardId.replace('card-', '')}</span></span>;
-    case 'use-active': {
-      const ability = FACTION_ABILITIES[player?.factionId ?? 'warriors'];
-      return (
-        <span>
-          <strong className="text-violet-300">{ability?.activeLabel}</strong>
-          <span className="ml-1 text-neutral-400">— {ability?.activeDescription}</span>
-        </span>
-      );
-    }
-    case 'pass':
-      return <span className="text-neutral-400">Pass (end turn)</span>;
+    case 'place':    { const d = player.dice.find((x) => x.id === move.dieId); const r = state.regionDefs[move.regionId]; return <span>[{d?.range}:<strong>{d?.faceValue}</strong>] → <span className="text-neutral-200">{r?.name}</span> <span className="text-neutral-500">({r?.vp}VP)</span></span>; }
+    case 'combine':  { const a = player.dice.find((x) => x.id === move.dieIds[0]); const b = player.dice.find((x) => x.id === move.dieIds[1]); const r = state.regionDefs[move.regionId]; return <span>{a?.faceValue}+{b?.faceValue}={(a?.faceValue??0)+(b?.faceValue??0)} → <span className="text-neutral-200">{r?.name}</span> <span className="text-neutral-500">({r?.vp}VP)</span></span>; }
+    case 'battle':   { const r = state.regionDefs[move.targetRegionId]; return <span>Attack <span className="text-red-300">{r?.name}</span></span>; }
+    case 'hire-merc': return <span>Hire <span className="text-blue-200">{move.mercSlot}</span></span>;
+    case 'draft-card': return <span>Draft {move.cardId.replace('card-','')}</span>;
+    case 'play-card':  return <span>Play {move.cardId.replace('card-','')}</span>;
+    case 'use-active': return <span className="text-violet-300">✦ {FACTION_ABILITIES[player.factionId]?.activeLabel}</span>;
+    case 'upgrade-die': { const d = player.dice.find((x) => x.id === move.dieId); return <span>↑ {d?.range}→{nextDieRange(d?.range??'1-3')}</span>; }
+    case 'expand-barracks': return <span>+ Expand ({player.dice.length}/{player.barracksMax})</span>;
+    case 'build-structure': { const r = state.regionDefs[move.regionId]; return <span>🏗 {move.structureId.replace(/-/g,' ')} on {r?.name}</span>; }
+    case 'pass': return <span>Pass</span>;
   }
 }
 
-function EndGamePanel({ state }: { state: GameState }) {
-  const breakdown = state.scoreBreakdown;
-  if (!breakdown) return null;
-  const ordered = state.turnOrder
-    .map((pid) => breakdown.perPlayer[pid]!)
-    .sort((a, b) => b.total - a.total);
+// ─── Compact player card ──────────────────────────────────────────────────────
+
+function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieId, onSelectDie, pendingMoves, onChooseMove, configs }: {
+  player: NonNullable<GameState['players'][string]>; isActive: boolean; isHuman: boolean; isLeader: boolean;
+  waitingForHuman: boolean; selectedDieId: string | null; onSelectDie: (id: string) => void;
+  pendingMoves: Move[]; onChooseMove: (m: Move) => void; configs: ReturnType<typeof loadConfigs>;
+}) {
+  const isHumanTurn = isHuman && waitingForHuman;
+  const barracks = player.dice.filter((d) => d.location.kind === 'barracks').length;
+  const placed   = player.dice.filter((d) => d.location.kind === 'region').length;
+  const garr     = player.dice.filter((d) => d.location.kind === 'garrison').length;
+
   return (
-    <div className="rounded border border-purple-700 bg-purple-950/20 p-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-purple-200">
-        Game over — Winner: {state.players[breakdown.winnerId]!.factionId} ({breakdown.winnerId}) ·{' '}
-        {breakdown.perPlayer[breakdown.winnerId]!.total} VP
-      </h3>
-      <table className="mt-3 w-full text-left text-xs">
-        <thead className="text-[10px] uppercase tracking-wide text-neutral-400">
-          <tr>
-            <th className="py-1">Player</th>
-            <th className="py-1 text-right">Total</th>
-            <th className="py-1 text-right">Goals + Fort/Round</th>
-            <th className="py-1 text-right">Region Control</th>
-            <th className="py-1 text-right">Fort End-Game</th>
-            <th className="py-1 text-right">Full Barracks</th>
-            <th className="py-1 text-right">Secret Goals</th>
-            <th className="py-1 text-right">Both Bonus</th>
-          </tr>
+    <div className={`w-52 shrink-0 rounded-xl border-2 p-3 text-xs transition ${isHumanTurn ? 'border-teal-500 bg-teal-950/20 shadow-lg shadow-teal-950/30' : isActive ? 'border-purple-500 bg-purple-950/15' : 'border-neutral-800 bg-neutral-900/50'}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <FactionEmblem factionId={player.factionId} size={28} className="rounded-lg shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1 truncate">
+            <span className="font-semibold text-neutral-100 truncate">{factionLabel(player.factionId)}</span>
+            {isHuman && <span className="shrink-0 rounded bg-teal-700 px-1 py-0.5 text-[8px] font-bold uppercase">YOU</span>}
+            {player.passedThisRound && <span className="shrink-0 text-[8px] text-amber-400">passed</span>}
+          </div>
+          <div className="text-[9px] text-neutral-500">{barracks}b·{placed}p·{garr}g</div>
+        </div>
+        <div className="shrink-0 text-right">
+          {isLeader && <div className="text-[9px] text-amber-400 leading-none">👑</div>}
+          <div className="text-xl font-bold tabular-nums text-white leading-none">{player.vp}</div>
+          <div className="text-[8px] text-neutral-600">VP</div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="inline-flex items-center gap-0.5 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-200"><ResourceIcon resource="iron"    size={11}/>{player.resources.iron}</span>
+        <span className="inline-flex items-center gap-0.5 rounded bg-amber-900/60 px-1.5 py-0.5 text-[10px] tabular-nums text-amber-200"><ResourceIcon resource="gold"    size={11}/>{player.resources.gold}</span>
+        <span className="inline-flex items-center gap-0.5 rounded bg-violet-900/60 px-1.5 py-0.5 text-[10px] tabular-nums text-violet-200"><ResourceIcon resource="essence" size={11}/>{player.resources.essence}</span>
+      </div>
+
+      <div className="flex flex-wrap gap-1 mb-1.5">
+        {player.dice.filter((d) => d.location.kind === 'barracks' && d.faceValue !== null).map((d) => {
+          const sel = d.id === selectedDieId;
+          return (
+            <button key={d.id} type="button" disabled={!isHumanTurn} onClick={() => isHumanTurn && onSelectDie(d.id)}
+              title={`${d.range} · ${d.faceValue}${isHumanTurn ? ' — click to filter' : ''}`}
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold transition ${sel ? 'bg-teal-600 text-white ring-2 ring-teal-400 ring-offset-1 ring-offset-neutral-900' : isHumanTurn ? 'bg-neutral-700 text-neutral-100 hover:bg-neutral-600 cursor-pointer' : 'bg-neutral-800 text-neutral-200'}`}
+            >{d.faceValue}</button>
+          );
+        })}
+      </div>
+
+      {isHumanTurn && <p className="text-[9px] text-teal-400/60 mb-1.5">Click die · click glowing region</p>}
+
+      {player.hand.length > 0 && (
+        <div className="mb-1.5">
+          <div className="mb-1 text-[9px] uppercase tracking-wide text-neutral-600">Hand ({player.hand.length})</div>
+          <div className="flex flex-wrap gap-1">
+            {player.hand.map((cardId) => {
+              const cd = configs.cards.find((c) => c.id === cardId);
+              const ok = isHumanTurn && pendingMoves.some((m) => m.kind === 'play-card' && m.cardId === cardId);
+              return <button key={cardId} type="button" disabled={!ok} onClick={() => ok && onChooseMove({ kind: 'play-card', cardId })} title={cd?.description} className={`rounded border px-1.5 py-0.5 text-[9px] transition ${ok ? 'border-teal-700 bg-teal-950/30 text-teal-200 hover:bg-teal-900/50 cursor-pointer' : 'border-neutral-800 bg-neutral-900/40 text-neutral-500'}`}>{cd?.name ?? cardId.replace('card-','')}</button>;
+            })}
+          </div>
+        </div>
+      )}
+
+      {isHumanTurn && (
+        <div className="flex flex-wrap gap-1">
+          {player.dice.filter((d) => d.location.kind === 'barracks' && nextDieRange(d.range)).map((d) => {
+            const ok = pendingMoves.some((m) => m.kind === 'upgrade-die' && m.dieId === d.id);
+            return ok ? <button key={d.id} type="button" onClick={() => onChooseMove({ kind: 'upgrade-die', dieId: d.id })} className="rounded border border-amber-800 bg-amber-950/30 px-1.5 py-0.5 text-[9px] text-amber-200 hover:bg-amber-900/50">↑ {d.range}→{nextDieRange(d.range)}</button> : null;
+          })}
+          {pendingMoves.some((m) => m.kind === 'expand-barracks') && <button type="button" onClick={() => onChooseMove({ kind: 'expand-barracks' })} className="rounded border border-blue-800 bg-blue-950/30 px-1.5 py-0.5 text-[9px] text-blue-200 hover:bg-blue-900/50">+ Expand</button>}
+          {pendingMoves.some((m) => m.kind === 'use-active') && !player.activeUsedThisRound && <button type="button" onClick={() => onChooseMove({ kind: 'use-active' })} title={FACTION_ABILITIES[player.factionId]?.activeDescription} className="rounded border border-violet-700 bg-violet-950/40 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200 hover:bg-violet-900/60">✦ {FACTION_ABILITIES[player.factionId]?.activeLabel}</button>}
+        </div>
+      )}
+      {player.activeUsedThisRound && <div className="mt-1 text-[9px] text-neutral-700 line-through">Active used</div>}
+    </div>
+  );
+}
+
+// ─── End game ─────────────────────────────────────────────────────────────────
+
+function EndGamePanel({ state, onExport }: { state: GameState; onExport: () => void }) {
+  const b = state.scoreBreakdown;
+  if (!b) return null;
+  const ordered = state.turnOrder.map((pid) => b.perPlayer[pid]!).sort((a, x) => x.total - a.total);
+  return (
+    <div className="rounded-xl border border-purple-700 bg-purple-950/20 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-base font-bold text-purple-200">🏆 {factionLabel(state.players[b.winnerId]!.factionId)} wins · {b.perPlayer[b.winnerId]!.total} VP</h3>
+        <button type="button" onClick={onExport} className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs hover:bg-neutral-800 transition">Export Replay</button>
+      </div>
+      <table className="w-full text-left text-xs">
+        <thead className="text-[9px] uppercase tracking-wide text-neutral-500">
+          <tr><th className="pb-1">Player</th><th className="pb-1 text-right">Total</th><th className="pb-1 text-right">Goals</th><th className="pb-1 text-right">Regions</th><th className="pb-1 text-right">Fort</th><th className="pb-1 text-right">Secrets</th><th className="pb-1 text-right">Struct</th></tr>
         </thead>
         <tbody>
           {ordered.map((p) => {
-            const player = state.players[p.playerId]!;
+            const pl = state.players[p.playerId]!;
             return (
               <tr key={p.playerId} className="border-t border-neutral-800">
-                <td className="py-1.5">
-                  <span className="inline-flex items-center gap-2">
-                    <FactionEmblem factionId={player.factionId} size={20} />
-                    {p.playerId} — {factionLabel(player.factionId)}
-                  </span>
-                </td>
-                <td className="py-1.5 text-right font-semibold tabular-nums">{p.total}</td>
-                <td className="py-1.5 text-right tabular-nums">{p.parts.roundGoals}</td>
-                <td className="py-1.5 text-right tabular-nums">{p.parts.regionControl}</td>
-                <td className="py-1.5 text-right tabular-nums">{p.parts.fortressEndGame}</td>
-                <td className="py-1.5 text-right tabular-nums">{p.parts.fullBarracksBonus}</td>
-                <td className="py-1.5 text-right tabular-nums">{p.parts.secretGoals}</td>
-                <td className="py-1.5 text-right tabular-nums">{p.parts.bothSecretGoalsBonus}</td>
+                <td className="py-1.5"><span className="inline-flex items-center gap-1.5">{p.playerId === b.winnerId && '🏆'}<FactionEmblem factionId={pl.factionId} size={18}/>{factionLabel(pl.factionId)}</span></td>
+                <td className="py-1.5 text-right font-bold tabular-nums text-white">{p.total}</td>
+                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.roundGoals}</td>
+                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.regionControl}</td>
+                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.fortressEndGame}</td>
+                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.secretGoals}</td>
+                <td className="py-1.5 text-right tabular-nums text-neutral-300">{p.parts.structures}</td>
               </tr>
             );
           })}
@@ -1086,4 +575,22 @@ function EndGamePanel({ state }: { state: GameState }) {
       </table>
     </div>
   );
+}
+
+// ─── AI log inline ─────────────────────────────────────────────────────────────
+
+function MoveSummaryInline({ move, state }: { move: Move; state: GameState }) {
+  switch (move.kind) {
+    case 'place':    return <>{state.regionDefs[move.regionId]?.name ?? move.regionId}</>;
+    case 'combine':  return <>combine → {state.regionDefs[move.regionId]?.name ?? move.regionId}</>;
+    case 'battle':   return <>attack {state.regionDefs[move.targetRegionId]?.name ?? move.targetRegionId}</>;
+    case 'hire-merc': return <>hire {move.mercSlot} merc</>;
+    case 'pass':     return <>pass</>;
+    case 'draft-card': return <>draft {move.cardId.replace('card-','')}</>;
+    case 'play-card':  return <>play {move.cardId.replace('card-','')}</>;
+    case 'use-active': return <>active ability</>;
+    case 'upgrade-die': return <>upgrade die</>;
+    case 'expand-barracks': return <>expand barracks</>;
+    case 'build-structure': return <>build {move.structureId}</>;
+  }
 }

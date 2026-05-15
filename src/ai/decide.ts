@@ -11,6 +11,7 @@ import type {
   RoundGoalDefinition,
   RulesConfig,
   SecretGoalDefinition,
+  StructureDefinition,
 } from '../engine/types';
 import type { FactionWeights } from './types';
 import { enumerate } from '../engine/moves';
@@ -24,6 +25,7 @@ export interface DecideContext {
   rules: RulesConfig;
   cards?: CardDefinition[];
   costs?: CostsConfig;
+  structures?: StructureDefinition[];
   roundGoals: RoundGoalDefinition[];
   secretGoals: SecretGoalDefinition[];
   rng: Rng;
@@ -43,6 +45,7 @@ export function pickMove(state: GameState, ctx: DecideContext): DecideResult {
     rng: ctx.rng,
     ...(ctx.cards ? { cards: ctx.cards } : {}),
     ...(ctx.costs ? { costs: ctx.costs } : {}),
+    ...(ctx.structures ? { structures: ctx.structures } : {}),
   };
   const moves = enumerate(state, moveCtx);
   if (moves.length === 0) {

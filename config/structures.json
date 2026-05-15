@@ -1,0 +1,34 @@
+[
+  {
+    "id": "watchtower",
+    "name": "Watchtower",
+    "description": "A stone tower granting the owner visibility and control. Built on any terrain.",
+    "cost": { "iron": 3, "gold": 0, "essence": 0 },
+    "vp": 2,
+    "allowedTerrains": ["fortress", "forest", "mountain", "swamp", "plains", "ruins"]
+  },
+  {
+    "id": "market",
+    "name": "Market",
+    "description": "A trading hub in open terrain that attracts wealth.",
+    "cost": { "iron": 0, "gold": 3, "essence": 0 },
+    "vp": 2,
+    "allowedTerrains": ["plains", "forest", "ruins"]
+  },
+  {
+    "id": "arcane-spire",
+    "name": "Arcane Spire",
+    "description": "A crystalline spire focusing ley-line energy.",
+    "cost": { "iron": 0, "gold": 0, "essence": 3 },
+    "vp": 2,
+    "allowedTerrains": ["mountain", "swamp", "ruins"]
+  },
+  {
+    "id": "citadel",
+    "name": "Citadel",
+    "description": "Massive fortifications that dominate the surrounding area. Fortress or mountain only.",
+    "cost": { "iron": 3, "gold": 2, "essence": 0 },
+    "vp": 4,
+    "allowedTerrains": ["fortress", "mountain"]
+  }
+]

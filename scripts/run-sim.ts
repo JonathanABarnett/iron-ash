@@ -14,6 +14,7 @@ import {
   parseRoundGoals,
   parseRules,
   parseSecretGoals,
+  parseStructures,
 } from '../src/engine/config-loader';
 import { runSimulation } from '../src/simulation/runner';
 import { writeResultToFile } from '../src/simulation/output';
@@ -72,7 +73,10 @@ function loadConfigs() {
   const costs = parseCosts(
     JSON.parse(readFileSync(resolve(root, 'config/costs.json'), 'utf8')),
   );
-  return { factions, regions, rules, roundGoals, secretGoals, cards, costs };
+  const structures = parseStructures(
+    JSON.parse(readFileSync(resolve(root, 'config/structures.json'), 'utf8')),
+  );
+  return { factions, regions, rules, roundGoals, secretGoals, cards, costs, structures };
 }
 
 function main() {

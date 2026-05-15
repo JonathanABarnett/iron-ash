@@ -91,6 +91,10 @@ export const CardEffectSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('gain-vp'), amount: z.number().int() }),
   z.object({ kind: z.literal('reroll-die') }),
   z.object({ kind: z.literal('modify-die'), delta: z.number().int() }),
+  z.object({ kind: z.literal('combine-bonus') }),
+  z.object({ kind: z.literal('lock-region') }),
+  z.object({ kind: z.literal('steal-resource'), resource: ResourceSchema.optional() }),
+  z.object({ kind: z.literal('forced-march') }),
 ]);
 
 export const CardDefinitionSchema = z.object({
@@ -153,6 +157,22 @@ export const CostsConfigSchema = z.object({
   barracksExpand: ResourceCostSchema,
   cardKeep: ResourceCostSchema,
 });
+
+export const StructureDefinitionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  cost: z.object({
+    iron: z.number().int().nonnegative().optional(),
+    gold: z.number().int().nonnegative().optional(),
+    essence: z.number().int().nonnegative().optional(),
+  }),
+  vp: z.number().int().positive(),
+  allowedTerrains: z.array(TerrainSchema),
+});
+
+export const StructuresConfigSchema = z.array(StructureDefinitionSchema);
+export type ParsedStructures = z.infer<typeof StructuresConfigSchema>;
 
 export type ParsedRegions = z.infer<typeof RegionsConfigSchema>;
 export type ParsedFactions = z.infer<typeof FactionsConfigSchema>;

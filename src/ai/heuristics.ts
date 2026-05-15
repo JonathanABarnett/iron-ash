@@ -50,6 +50,8 @@ export function estimateVPGain(move: Move, state: GameState): number {
     case 'use-active':
       // Active abilities are generally worth using — rough estimate.
       return 1.2;
+    case 'build-structure':
+      return 2; // structures yield 2-4 VP; use a conservative estimate
     case 'pass':
       return 0;
   }
@@ -185,6 +187,7 @@ export function roundGoalAlignment(
     case 'upgrade-die':
     case 'expand-barracks':
     case 'use-active':
+    case 'build-structure':
       return 0;
   }
 }
