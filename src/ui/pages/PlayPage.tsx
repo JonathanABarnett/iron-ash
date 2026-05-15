@@ -20,7 +20,7 @@ import { FACTION_ABILITIES } from '@engine/factions/abilities';
 import { loadConfigs } from '@ui/configLoader';
 import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
 import { MapView } from '@ui/components/MapView';
-import { Die } from '@ui/components/Die';
+import { Die, DIE_NAMES } from '@ui/components/Die';
 import { ResourceCount } from '@ui/components/ResourceGem';
 import { VPMedallion } from '@ui/components/VPMedallion';
 
@@ -888,7 +888,7 @@ function HumanMoveLabel({ move, state, player }: { move: Move; state: GameState;
     case 'draft-card': return <span>Draft {move.cardId.replace('card-','')}</span>;
     case 'play-card':  return <span>Play {move.cardId.replace('card-','')}</span>;
     case 'use-active': return <span className="text-violet-300">✦ {FACTION_ABILITIES[player.factionId]?.activeLabel}</span>;
-    case 'upgrade-die': { const d = player.dice.find((x) => x.id === move.dieId); return <span>↑ {d?.range}→{nextDieRange(d?.range??'1-3')}</span>; }
+    case 'upgrade-die': { const d = player.dice.find((x) => x.id === move.dieId); const r = d?.range ?? '1-3'; const nr = nextDieRange(r); return <span>↑ {DIE_NAMES[r]} → {nr ? DIE_NAMES[nr] : nr}</span>; }
     case 'expand-barracks': return <span>+ Expand ({player.dice.length}/{player.barracksMax})</span>;
     case 'build-structure': { const r = state.regionDefs[move.regionId]; return <span>🏗 {move.structureId.replace(/-/g,' ')} on {r?.name}</span>; }
     case 'pass': return <span>Pass</span>;
@@ -1058,7 +1058,7 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
             return ok ? (
               <button key={d.id} type="button" onClick={() => onChooseMove({ kind: 'upgrade-die', dieId: d.id })}
                 className="rounded-lg border border-amber-700/50 bg-amber-950/30 px-2 py-0.5 text-[9px] text-amber-300 hover:bg-amber-900/50 transition">
-                ↑ {d.range}→{nextDieRange(d.range)}
+                ↑ {DIE_NAMES[d.range]} → {(() => { const nr = nextDieRange(d.range); return nr ? DIE_NAMES[nr] : nr; })()}
               </button>
             ) : null;
           })}

@@ -14,6 +14,14 @@ const PIPS: Record<number, [number, number][]> = {
   6: [[0,0],[2,0],[0,1],[2,1],[0,2],[2,2]],
 };
 
+/** Human-readable die tier names. */
+export const DIE_NAMES: Record<DieRange, string> = {
+  '1-3': 'Recruit',    // starting die — weak but cheap to field
+  '2-5': 'Soldier',    // first upgrade tier
+  '3-6': 'Veteran',    // second upgrade tier — reaches high-value regions
+  '1-6': 'Specialist', // merc/wild die — any face value
+};
+
 // Colour per range tier
 const RANGE_STYLE: Record<DieRange, { bg: string; border: string; pip: string; glow: string }> = {
   '1-3': { bg: 'linear-gradient(145deg,#2a2e3a 0%,#1c1f2a 100%)', border: '#4b5563', pip: '#94a3b8', glow: 'rgba(100,116,139,0.3)' },
@@ -59,7 +67,7 @@ export function Die({ value, range, size = 32, isSelected = false, isRolling = f
       type="button"
       disabled={disabled || !onClick}
       onClick={onClick}
-      title={value !== null ? `${range} · face ${value}` : `${range} · unrolled`}
+      title={value !== null ? `${DIE_NAMES[range]} (${range}) · face ${value}` : `${DIE_NAMES[range]} (${range}) · not yet rolled`}
       className={`relative shrink-0 rounded-lg transition-all select-none focus:outline-none ${
         onClick && !disabled ? 'cursor-pointer active:scale-95' : 'cursor-default'
       } ${animClass} ${isRolling ? 'die-rolling' : ''} ${className}`}
@@ -91,9 +99,9 @@ export function Die({ value, range, size = 32, isSelected = false, isRolling = f
           ))}
         </div>
       ) : (
-        /* Unrolled — show range label */
-        <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold opacity-40" style={{ color: style.pip }}>
-          {range}
+        /* Unrolled — show die tier name */
+        <span className="absolute inset-0 flex items-center justify-center text-[7px] font-bold opacity-50 leading-none text-center px-0.5" style={{ color: style.pip }}>
+          {DIE_NAMES[range]}
         </span>
       )}
     </button>
