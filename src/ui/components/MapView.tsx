@@ -14,8 +14,8 @@ const GRID: Record<string, [col: number, row: number]> = {
   'verdant-grove':   [2,3], 'drownland':        [3,3],
 };
 
-const NODE_W = 155; const NODE_H = 100;
-const GAP_X  = 16;  const GAP_Y  = 16;
+const NODE_W = 148; const NODE_H = 90;
+const GAP_X  = 12;  const GAP_Y  = 12;
 const COL_STRIDE = NODE_W + GAP_X;
 const ROW_STRIDE = NODE_H + GAP_Y;
 const PAD  = 16;
@@ -86,7 +86,7 @@ export function MapView({ state, humanMoves = [], selectedDieId, onRegionClick }
   }
 
   return (
-    <div className="w-full overflow-x-auto rounded-2xl border border-white/[0.06] bg-[#06060e] shadow-xl shadow-black/60">
+    <div className="w-full overflow-x-auto rounded-2xl border border-white/[0.06] bg-[#06060e] shadow-xl shadow-black/60" style={{ maxWidth: SVG_W }}>
       <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} className="h-auto w-full">
         <defs>
           {/* Terrain gradients */}

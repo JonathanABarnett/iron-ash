@@ -267,6 +267,7 @@ export function PlayPage() {
 
   return (
     <main className="relative min-h-screen animate-fade-in page-bg-dots" style={{ background: 'var(--color-bg)' }}>
+      {/* Constrain game content to a readable max width on ultra-wide screens */}
       {!active && (
         <SetupPanel
           lineup={lineup} humanFaction={humanFaction} seed={seed} error={error}
