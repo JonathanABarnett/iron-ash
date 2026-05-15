@@ -84,6 +84,7 @@ function mkState(players: Player[], regions: Region[], overrides: Partial<GameSt
     rngState: '',
     log: [],
     freeForAll: false,
+    mercHireLog: [],
     lockedRegions: {},
     ...overrides,
   };

@@ -85,6 +85,7 @@ function mkBattleState(): GameState {
     rngState: '',
     log: [],
     freeForAll: false,
+    mercHireLog: [],
     lockedRegions: {},
   };
 }

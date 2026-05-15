@@ -54,6 +54,7 @@ function mkState(players: Player[]): GameState {
     rngState: '',
     log: [],
     freeForAll: false,
+    mercHireLog: [],
     lockedRegions: {},
   };
 }

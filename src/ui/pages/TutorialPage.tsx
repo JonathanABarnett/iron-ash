@@ -245,7 +245,6 @@ export function TutorialPage() {
   const [dismissedHints, setDismissedHints] = useState<Set<string>>(new Set());
   const [activeHints, setActiveHints]       = useState<string[]>([]);
   const [prevRound, setPrevRound]           = useState(0);
-  const [showAllHints, setShowAllHints]     = useState(false);
   const [roundSummary, setRoundSummary]     = useState<{ round: number; vpDeltas: Record<string, number> } | null>(null);
   const [justRolled, setJustRolled]         = useState(false);
   const [vpGains, setVpGains]               = useState<Record<string, number>>({});
@@ -410,7 +409,7 @@ export function TutorialPage() {
 
           {/* Hint count button */}
           {activeHints.length > 0 && (
-            <button type="button" onClick={() => setShowAllHints((p) => !p)}
+            <button type="button" onClick={() => {}}
               className="flex items-center gap-1 rounded-lg bg-amber-900/40 border border-amber-700/40 px-2.5 py-1 text-[10px] font-bold text-amber-300 transition hover:bg-amber-800/40">
               💡 {activeHints.length} hint{activeHints.length > 1 ? 's' : ''}
             </button>

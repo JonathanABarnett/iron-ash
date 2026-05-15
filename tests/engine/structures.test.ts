@@ -98,6 +98,7 @@ function mkState(overrides?: Partial<GameState>): GameState {
     rngState: '',
     log: [],
     freeForAll: false,
+    mercHireLog: [],
     lockedRegions: {},
     ...overrides,
   };

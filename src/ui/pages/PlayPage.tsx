@@ -269,7 +269,7 @@ export function PlayPage() {
     <main className="relative min-h-screen animate-fade-in page-bg-dots" style={{ background: 'var(--color-bg)' }}>
       {!active && (
         <SetupPanel
-          lineup={lineup} humanFaction={humanFaction} difficulty={difficulty} seed={seed} error={error}
+          lineup={lineup} humanFaction={humanFaction} seed={seed} error={error}
           onLineupChange={handleLineupChange} onHumanFactionChange={setHumanFaction} onDifficultyChange={setDifficulty}
           playerDifficulties={playerDifficulties} onPlayerDifficultiesChange={setPlayerDifficulties}
           onSeedChange={setSeed} onStart={start} hasActiveGame={false}
@@ -539,11 +539,11 @@ function RoundSummaryOverlay({
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
-function SetupPanel({ lineup, humanFaction, difficulty, seed, error,
+function SetupPanel({ lineup, humanFaction, seed, error,
   playerDifficulties, onPlayerDifficultiesChange,
   onLineupChange, onHumanFactionChange, onDifficultyChange, onSeedChange, onStart, hasActiveGame,
 }: {
-  lineup: FactionId[]; humanFaction: FactionId | null; difficulty: Difficulty; seed: string; error: string | null;
+  lineup: FactionId[]; humanFaction: FactionId | null; seed: string; error: string | null;
   playerDifficulties: Difficulty[];
   onPlayerDifficultiesChange: (d: Difficulty[]) => void;
   onLineupChange: (n: FactionId[]) => void; onHumanFactionChange: (f: FactionId | null) => void;
@@ -916,13 +916,13 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
   player: NonNullable<GameState['players'][string]>; isActive: boolean; isHuman: boolean; isLeader: boolean;
   waitingForHuman: boolean; selectedDieId: string | null; onSelectDie: (id: string) => void;
   pendingMoves: Move[]; onChooseMove: (m: Move) => void; configs: ReturnType<typeof loadConfigs>;
-  vpHistory?: number[];
+  vpHistory?: number[] | undefined;
   /** VP gained in the most recent step — drives float animation */
-  vpGain?: number;
+  vpGain?: number | undefined;
   /** Barracks dice should show roll tumble animation */
-  isRolling?: boolean;
+  isRolling?: boolean | undefined;
   /** Resources gained from passive this round — pulse gems */
-  resourcePulsed?: boolean;
+  resourcePulsed?: boolean | undefined;
 }) {
   const isHumanTurn = isHuman && waitingForHuman;
   const fc = FACTION_COLORS[player.factionId] ?? '#7c3aed'; // faction accent colour
