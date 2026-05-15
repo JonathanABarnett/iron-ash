@@ -365,7 +365,7 @@ export function PlayPage() {
           </div>
 
           {/* ── Map ── */}
-          <div className="px-4 pt-2">
+          <div className="px-4 pt-2 pb-4">
             <MapView state={active.state} humanMoves={active.waitingForHuman ? active.pendingMoves : []} selectedDieId={active.selectedDieId} onRegionClick={(_id, moves) => { if (moves.length === 1) applyHumanMove(moves[0]!); }} />
           </div>
 
@@ -932,7 +932,7 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
   const barracksDice = player.dice.filter((d) => d.location.kind === 'barracks' && d.faceValue !== null);
 
   return (
-    <div className="relative w-56 shrink-0 rounded-2xl p-3 text-xs transition-all backdrop-blur-sm overflow-hidden"
+    <div className="relative w-56 shrink-0 rounded-2xl p-3 text-xs transition-all backdrop-blur-sm"
       style={{
         border: `1px solid ${isHumanTurn ? 'rgba(20,184,166,0.5)' : `${fc}${isActive ? '55' : '1a'}`}`,
         background: isHumanTurn
@@ -956,8 +956,8 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
           {isActive && !isHumanTurn && (
             <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-purple-400 ring-2 ring-neutral-950 animate-pulse" />
           )}
-          {/* Ability tooltip — appears on hover */}
-          <div className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-56 rounded-2xl p-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+          {/* Ability tooltip — opens to the right of the emblem to stay on-screen */}
+          <div className="pointer-events-none absolute left-full top-0 z-50 ml-2 w-56 rounded-2xl p-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
             style={{ background: 'rgba(12,8,22,0.97)', border: '1px solid rgba(124,58,237,0.3)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
             <div className="mb-1 text-[10px] font-black text-purple-300 uppercase tracking-wide">
               {FACTION_ABILITIES[player.factionId]?.activeLabel}

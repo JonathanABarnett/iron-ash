@@ -486,7 +486,7 @@ export function TutorialPage() {
       </div>
 
       {/* ── Map ── */}
-      <div className="px-4 pt-2">
+      <div className="px-4 pt-2 pb-4">
         <MapView
           state={gameState}
           humanMoves={waitingForHuman ? pendingMoves : []}
