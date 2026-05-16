@@ -18,6 +18,7 @@ import type { GameState, Move, PlayerId } from '@engine/types';
 import { loadConfigs } from '@ui/configLoader';
 import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
 import { MapView } from '@ui/components/MapView';
+import { GoalStandingsBar, FortressStrip } from '@ui/pages/PlayPage';
 import { Die } from '@ui/components/Die';
 import { ResourceCount } from '@ui/components/ResourceGem';
 import { VPMedallion } from '@ui/components/VPMedallion';
@@ -29,6 +30,8 @@ interface HintDef {
   icon: string;
   title: string;
   body: string;
+  /** data-tour attribute value to spotlight (the element will get a pulsing ring). */
+  anchor?: string;
   /** Returns true when this hint should appear (checked once; won't re-fire after dismiss). */
   trigger: (s: GameState, humanPid: string, prevRound: number) => boolean;
 }
@@ -38,23 +41,25 @@ const HINTS: HintDef[] = [
     id: 'roll-phase',
     icon: '🎲',
     title: 'Roll Phase',
-    body: 'Your dice have been rolled — each gets a random face value based on its range. Higher-range dice (gold, purple) unlock more powerful regions.',
+    body: 'Look at your Barracks — each die just got a fresh face value. Higher-range dice (gold, purple) unlock more powerful regions. Hover a die to see its tier name.',
+    anchor: 'player-cards',
     trigger: (s) => s.phase === 'action' && s.round === 1,
   },
   {
     id: 'first-turn',
     icon: '👆',
-    title: 'Your Turn',
-    body: 'Glowing regions accept your dice. Click a die in your barracks to select it, then click a glowing region to place it. Or tap "combine" to merge two dice and add their values.',
+    title: 'Your Turn — Place a Die',
+    body: 'On the map, teal-glowing regions accept your dice. Click a die in your Barracks (highlighted on the left), then click a glowing region to place it. Each region scores +1 VP when you occupy it.',
+    anchor: 'map',
     trigger: (s, pid) => s.phase === 'action' && s.activePlayerId === pid && s.round === 1,
   },
   {
     id: 'resources',
     icon: '⚙',
-    title: 'Resources',
-    body: 'Iron ⚙ funds die upgrades and structures. Gold 🪙 buys cards and mercs. Essence 💎 powers Arcane Spires and certain cards. All cap at 8.',
+    title: 'Three Resources',
+    body: 'The gem chips below your faction crest show Iron ⚙ (upgrades/structures), Gold 🪙 (mercs/cards), and Essence 💎 (Arcane Spires/cards). Hover any gem to see its uses. All cap at 8.',
+    anchor: 'player-cards',
     trigger: (s, pid, prevRound) => s.round === 1 && prevRound === 0 && (() => {
-      // trigger after human has made at least one placement
       const p = s.players[pid];
       return (p?.progress.battlesWonThisGame ?? 0) >= 0 && (p?.vp ?? 0) >= 1;
     })(),
@@ -63,14 +68,16 @@ const HINTS: HintDef[] = [
     id: 'round-goal',
     icon: '🎯',
     title: 'Round Goal',
-    body: 'The goal shown in the header is this round\'s competitive target (e.g. "most-fortresses"). The leader at round-end earns bonus VP. Goals change every round!',
+    body: 'Every round has a shared bonus goal — highlighted in the purple bar above the map. The leader at round-end earns +2 VP. The progress bars show who is currently winning the goal.',
+    anchor: 'goal-bar',
     trigger: (s) => s.round === 1 && s.phase === 'action',
   },
   {
     id: 'fortress',
     icon: '🏰',
     title: 'Uncontested Fortress',
-    body: 'A fortress is free for the taking! Garrison it by placing a die that meets its requirement — you\'ll earn VP every round you hold it. Expect opponents to try to usurp you.',
+    body: 'The fortress strip above the map shows which fortresses are held. A "● free" tag means it\'s yours for the taking — garrison it by placing a die that meets its requirement. You\'ll earn +1 VP every round you hold it.',
+    anchor: 'fortress-strip',
     trigger: (s, pid) => {
       const openFortress = Object.values(s.regions).find(
         (rt) => {
@@ -85,14 +92,16 @@ const HINTS: HintDef[] = [
     id: 'specialist',
     icon: '⭐',
     title: 'Hire the Specialist',
-    body: `The Specialist die in the merc bar counts down its value each round (6→5→4…). It costs only 2 gold in rounds 1–2 — claiming high value early is a big advantage.`,
+    body: 'The Specialist row in the merc panel shows a countdown of purple dots — each round one dot disappears, lowering its face value. Hire it now (only 2 gold in rounds 1–2!) for a max-power die.',
+    anchor: 'merc-bar',
     trigger: (s) => s.round <= 2 && s.mercs.specialist !== null && !s.mercs.claimed['specialist'],
   },
   {
     id: 'battle',
     icon: '⚔',
     title: 'Battle Available',
-    body: 'You can attack an enemy-occupied region! Win condition: your die value > (sum of their dice + 1). Victory evicts the enemy, gains +1 VP, and earns +1 iron as war spoils.',
+    body: 'See the "⚔ Battle" button in your action menu? You can attack an enemy-occupied region! Win condition: your die value > (their total dice + 1). Victory: evict them, +1 VP, +1 iron.',
+    anchor: 'action-menu',
     trigger: (s, pid) => {
       const p = s.players[pid];
       if (!p || s.activePlayerId !== pid) return false;
@@ -111,25 +120,28 @@ const HINTS: HintDef[] = [
     id: 'active-ability',
     icon: '✦',
     title: 'Use Your Active Ability',
-    body: 'Warriors\' "Iron Discipline" gives +2 iron immediately — free to use once per round! Look for the "✦ Active" button in your action menu. Great when you need resources fast.',
+    body: 'Tap the "✦ Active" button in your action menu — Warriors\' Iron Discipline gives +2 iron instantly, once per round. Free to use! Hover the Warriors emblem on your card to see the full description.',
+    anchor: 'action-menu',
     trigger: (s, pid) => s.round >= 2 && s.activePlayerId === pid && !(s.players[pid]?.activeUsedThisRound),
   },
   {
     id: 'combine',
     icon: '🔗',
-    title: 'Combine Dice',
-    body: 'The "combine" action lets you send two dice to one region using their summed value. Essential for fortress garrisons and high-requirement regions. Both dice are spent.',
+    title: 'Combine Dice for Big Targets',
+    body: 'Look for "Combine →" buttons in your action menu. They merge two of your dice and place them in one region using their summed value. Essential for fortresses with Σ≥8 requirements.',
+    anchor: 'action-menu',
     trigger: (s) => s.round === 2 && s.phase === 'action',
   },
   {
     id: 'upgrade',
     icon: '↑',
     title: 'Upgrade a Die',
-    body: 'You can upgrade a 1–3 die to 2–5, or a 2–5 die to 3–6. Cost: iron + gold (shown in the Upgrade menu). Upgraded dice reach far more regions — invest early!',
+    body: 'Tap "↑ Upgrade" in your action menu to promote a Recruit (1-3) → Soldier (2-5), or Soldier → Veteran (3-6). Costs iron + gold. Higher-range dice reach more regions — invest early!',
+    anchor: 'action-menu',
     trigger: (s, pid) => {
       const p = s.players[pid];
       if (!p) return false;
-      const cost = { iron: 2, gold: 1, essence: 0 }; // typical upgrade cost
+      const cost = { iron: 2, gold: 1, essence: 0 };
       return s.round >= 2 && p.resources.iron >= cost.iron && p.resources.gold >= cost.gold
         && p.dice.some((d) => d.range === '1-3' && d.location.kind === 'barracks');
     },
@@ -138,7 +150,8 @@ const HINTS: HintDef[] = [
     id: 'threat',
     icon: '🌡',
     title: 'Threat Track Building',
-    body: 'The Threat Track has crossed halfway. Every round adds +1, battles add +1, fortress usurps add +1. When it maxes, the Round-7 Free-For-All begins — all mercs free!',
+    body: 'Check the threat bar at the top — it has crossed halfway. Every round adds +1, battles add +1, fortress usurps add +1. When it maxes, the Free-For-All round begins — all mercs free!',
+    anchor: 'threat-bar',
     trigger: (s, _pid, _prev) => {
       const pcKey = String(s.turnOrder.length) as '2' | '3' | '4';
       const threshold = (s as GameState & { rules?: { threatTrackThresholdByPlayerCount?: Record<string, number>; threatTrackThreshold: number } }).rules?.threatTrackThresholdByPlayerCount?.[pcKey] ?? 8;
@@ -190,8 +203,8 @@ function TutorialSplash({ onStart, onSkip }: { onStart: () => void; onSkip: () =
       <h1 className="mb-2 text-3xl font-black text-white">Interactive Tutorial</h1>
       <p className="mb-2 max-w-md text-center text-sm leading-relaxed" style={{ color: 'var(--color-muted)' }}>
         Play as <strong className="text-white">Warriors</strong> against a Mage AI opponent.
-        Contextual hint cards appear as each mechanic becomes relevant — dismiss them whenever
-        you're ready, or ignore them entirely and just play.
+        Hint cards appear in the corner and a <strong className="text-purple-300">pulsing purple ring</strong> highlights
+        the UI element each hint is describing — so you always know where to look.
       </p>
       <p className="mb-8 text-center text-xs" style={{ color: 'var(--color-subtle)' }}>
         You control every Warriors action. The AI plays Mages automatically.
@@ -384,13 +397,32 @@ export function TutorialPage() {
     .filter(Boolean)
     .slice(0, 3) as HintDef[]; // show at most 3 hints at once
 
+  // Spotlight the first active hint with an anchor
+  const firstAnchor = visibleActiveHints.find((h) => h.anchor)?.anchor ?? null;
+
+  // Apply pulsing spotlight class to the element matching the current anchor
+  useEffect(() => {
+    if (!firstAnchor) return;
+    const el = document.querySelector(`[data-tour="${firstAnchor}"]`);
+    if (!el) return;
+    el.classList.add('tutorial-spotlight');
+    // Scroll into view if not already visible
+    const rect = el.getBoundingClientRect();
+    if (rect.top < 60 || rect.bottom > window.innerHeight - 60) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return () => { el.classList.remove('tutorial-spotlight'); };
+  }, [firstAnchor]);
+
   return (
     <main className="relative min-h-screen animate-fade-in" style={{ background: 'var(--color-bg)' }}>
 
       {/* ── Header ── */}
       <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-white/[0.06] bg-black/80 px-4 py-2.5 backdrop-blur-xl"
         style={{ boxShadow: '0 1px 0 rgba(255,255,255,0.04)' }}>
-        <ThreatBar track={gameState.threatTrack} threshold={threshold} />
+        <div data-tour="threat-bar" className="rounded-lg p-1 -m-1">
+          <ThreatBar track={gameState.threatTrack} threshold={threshold} />
+        </div>
         <span className="text-sm font-bold text-white">
           Round <span className="text-purple-300">{gameState.round}</span>
           <span className="text-neutral-600">/{rules.totalRounds}</span>
@@ -439,7 +471,7 @@ export function TutorialPage() {
 
       {/* ── Human action banner ── */}
       {waitingForHuman && (
-        <div className="mx-4 mt-3 rounded-2xl p-4"
+        <div data-tour="action-menu" className="mx-4 mt-3 rounded-2xl p-4"
           style={{
             background: 'linear-gradient(135deg, rgba(20,184,166,0.08), rgba(6,182,212,0.04))',
             border: '1px solid rgba(20,184,166,0.3)',
@@ -464,7 +496,7 @@ export function TutorialPage() {
       )}
 
       {/* ── Merc bar ── */}
-      <div className="flex items-center gap-3 border-b border-neutral-800/60 bg-neutral-900/30 px-4 py-1.5 mt-2">
+      <div data-tour="merc-bar" className="flex items-center gap-3 border-b border-neutral-800/60 bg-neutral-900/30 px-4 py-1.5 mt-2">
         <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-600">Mercs</span>
         {(['low','high','specialist'] as const).map((slot) => {
           const die = gameState.mercs[slot];
@@ -485,8 +517,14 @@ export function TutorialPage() {
         )}
       </div>
 
+      {/* ── Goal standings ── */}
+      <GoalStandingsBar state={gameState} roundGoals={configs.roundGoals} />
+
+      {/* ── Fortress strip ── */}
+      <FortressStrip state={gameState} />
+
       {/* ── Map ── */}
-      <div className="px-4 pt-2 pb-4">
+      <div data-tour="map" className="px-4 pt-2 pb-4">
         <MapView
           state={gameState}
           humanMoves={waitingForHuman ? pendingMoves : []}
@@ -559,7 +597,7 @@ export function TutorialPage() {
       )}
 
       {/* ── Player strip ── */}
-      <div className="flex gap-2.5 overflow-x-auto px-4 py-3">
+      <div data-tour="player-cards" className="flex gap-2.5 overflow-x-auto px-4 py-3">
         {gameState.turnOrder.map((pid) => {
           const player = gameState.players[pid]!;
           const isHuman = pid === humanPid;

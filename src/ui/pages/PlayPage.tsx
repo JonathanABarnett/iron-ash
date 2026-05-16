@@ -826,7 +826,23 @@ function ActivePlayerChip({ state, humanPlayerId, waitingForHuman }: { state: Ga
 
 // ─── Goal standings bar ───────────────────────────────────────────────────────
 
-function GoalStandingsBar({ state, roundGoals }: {
+/** Human-readable label + unit per goal id */
+const GOAL_DESCRIPTIONS: Record<string, { title: string; unit: string; rewardText: string }> = {
+  'most-fortresses':       { title: 'Most Fortresses',      unit: 'fortress',  rewardText: 'Most fortresses garrisoned at round-end wins +2 VP' },
+  'most-regions':          { title: 'Most Regions',         unit: 'region',    rewardText: 'Most distinct regions occupied wins +2 VP' },
+  'most-combines':         { title: 'Most Combines',        unit: 'combine',   rewardText: 'Most combine actions this round wins +2 VP' },
+  'least-resources':       { title: 'Lowest Resources',     unit: 'total',     rewardText: 'Lowest total resources at round-end wins +2 VP' },
+  'most-low-placements':   { title: 'Most Low Placements',  unit: 'die ≤2',    rewardText: 'Most placements with face ≤2 wins +2 VP' },
+  'most-high-placements':  { title: 'Most High Placements', unit: 'die ≥5',    rewardText: 'Most placements with face ≥5 wins +2 VP' },
+  'most-dice-placed':      { title: 'Most Dice Placed',     unit: 'die',       rewardText: 'Most dice placed/garrisoned wins +2 VP' },
+  'equal-resources':       { title: 'Balanced Resources',   unit: 'min',       rewardText: 'Highest minimum across iron/gold/essence wins +2 VP' },
+  'most-iron':             { title: 'Most Iron',            unit: 'iron',      rewardText: 'Highest iron at round-end wins +2 VP' },
+  'most-gold':             { title: 'Most Gold',            unit: 'gold',      rewardText: 'Highest gold at round-end wins +2 VP' },
+  'most-essence':          { title: 'Most Essence',         unit: 'essence',   rewardText: 'Highest essence at round-end wins +2 VP' },
+  'most-passes':           { title: 'Most Passes',          unit: 'pass',      rewardText: 'Most pass actions wins +2 VP' },
+};
+
+export function GoalStandingsBar({ state, roundGoals }: {
   state: GameState;
   roundGoals: import('@engine/types').RoundGoalDefinition[];
 }) {
@@ -836,78 +852,121 @@ function GoalStandingsBar({ state, roundGoals }: {
   const measure = ROUND_GOAL_MEASURES[slot.goalId];
   if (!measure) return null;
 
+  const descr = GOAL_DESCRIPTIONS[slot.goalId] ?? { title: slot.goalId, unit: 'pts', rewardText: '+2 VP to leader' };
+
   const scores = state.turnOrder.map((pid) => ({
     pid, factionId: state.players[pid]!.factionId,
     score: measure(state, pid),
-  })).sort((a, b) => (goalDef?.direction === 'lowest' ? a.score - b.score : b.score - a.score));
+  }));
+  // For 'lowest wins' direction, the smallest score leads; otherwise highest
+  const sorted = [...scores].sort((a, b) => goalDef?.direction === 'lowest' ? a.score - b.score : b.score - a.score);
+  const bestScore = sorted[0]?.score ?? 0;
 
-  const best = scores[0]?.score ?? 0;
-  const goalLabel = slot.goalId.replace(/-/g, ' ');
-  const dirLabel = goalDef?.direction === 'lowest' ? 'fewest' : 'most';
+  // Bar width scales to the highest score in the round (or 1 to avoid /0)
+  const maxScore = Math.max(...scores.map((s) => s.score), 1);
 
   return (
-    <div className="mx-4 mt-2 mb-1 rounded-xl px-3 py-2" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="text-[10px] font-bold text-purple-400 uppercase tracking-wide shrink-0">
-          🎯 {goalLabel}
+    <div data-tour="goal-bar" className="mx-4 mt-3 mb-2 rounded-2xl overflow-hidden" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.22)' }}>
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-3 px-3 py-2 border-b" style={{ borderColor: 'rgba(124,58,237,0.15)', background: 'rgba(124,58,237,0.06)' }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-base">🎯</span>
+          <div className="min-w-0">
+            <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-purple-300/80">Round {state.round} Goal</div>
+            <div className="text-sm font-black text-white truncate">{descr.title}</div>
+          </div>
         </div>
-        <div className="text-[10px] text-neutral-600 shrink-0">({dirLabel} wins)</div>
-        <div className="flex items-center gap-2 ml-auto flex-wrap">
-          {scores.map(({ pid, factionId, score }, rank) => {
-            const isLeading = rank === 0;
-            const fc = FACTION_COLORS[factionId] ?? '#7c3aed';
-            return (
-              <div key={pid} className="flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-bold"
-                style={{
-                  background: isLeading ? `${fc}22` : 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${isLeading ? `${fc}50` : 'transparent'}`,
-                  color: isLeading ? fc : '#6b7280',
-                }}>
-                <FactionEmblem factionId={factionId} size={14} />
-                <span>{score}</span>
-                {isLeading && best > 0 && <span className="text-[9px]">👑</span>}
+        <div className="text-right shrink-0">
+          <div className="text-[9px] font-bold uppercase tracking-wide text-amber-300/90">Reward</div>
+          <div className="text-xs font-bold text-amber-200">+2 VP</div>
+        </div>
+      </div>
+
+      {/* Standings rows */}
+      <div className="px-3 py-2 space-y-1.5">
+        {scores.map(({ pid, factionId, score }) => {
+          const isLeading = score === bestScore && bestScore > 0;
+          const fc  = FACTION_COLORS[factionId] ?? '#7c3aed';
+          const pct = (score / maxScore) * 100;
+          return (
+            <div key={pid} className="flex items-center gap-2">
+              <FactionEmblem factionId={factionId} size={16} className="shrink-0 rounded" />
+              <span className="text-[11px] font-semibold w-20 truncate" style={{ color: isLeading ? fc : '#9ca3af' }}>
+                {factionLabel(factionId)}
+              </span>
+              {/* Progress bar */}
+              <div className="relative flex-1 h-3 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${fc}, ${fc}80)`, opacity: isLeading ? 1 : 0.45 }} />
               </div>
-            );
-          })}
-        </div>
+              <span className="text-[11px] font-bold tabular-nums shrink-0 w-14 text-right" style={{ color: isLeading ? fc : '#6b7280' }}>
+                {score} <span className="text-[9px] font-normal opacity-70">{score === 1 ? descr.unit : pluralize(descr.unit)}</span>
+              </span>
+              {isLeading && <span className="text-sm shrink-0">👑</span>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footnote */}
+      <div className="px-3 py-1.5 text-[10px] text-neutral-500 border-t" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(0,0,0,0.2)' }}>
+        {descr.rewardText}
       </div>
     </div>
   );
 }
 
+/** Simple plural — fortress → fortresses, region → regions, die → dice, etc. */
+function pluralize(s: string): string {
+  if (s === 'die') return 'dice';
+  if (s === 'fortress') return 'fortresses';
+  if (s === 'pass') return 'passes';
+  if (s === 'min' || s === 'total' || s === 'iron' || s === 'gold' || s === 'essence' || s.includes('≤') || s.includes('≥')) return s;
+  return s + 's';
+}
+
 // ─── Fortress ownership strip ─────────────────────────────────────────────────
 
-function FortressStrip({ state }: { state: GameState }) {
+export function FortressStrip({ state }: { state: GameState }) {
   const fortresses = Object.entries(state.regionDefs)
     .filter(([, def]) => def.isFortress)
     .map(([id, def]) => ({ id, def, rt: state.regions[id]! }));
 
   if (fortresses.length === 0) return null;
 
+  const heldCount = fortresses.filter(({ rt }) => rt.garrisonOwnerId).length;
+
   return (
-    <div className="mx-4 mb-2 flex flex-wrap gap-1.5">
-      {fortresses.map(({ id, def, rt }) => {
-        const owner = rt.garrisonOwnerId;
-        const ownerPlayer = owner ? state.players[owner] : null;
-        const fc = ownerPlayer ? (FACTION_COLORS[ownerPlayer.factionId] ?? '#6b7280') : '#374151';
-        return (
-          <div key={id} className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold"
-            style={{
-              background: owner ? `${fc}18` : 'rgba(55,65,81,0.3)',
-              border: `1px solid ${owner ? `${fc}40` : 'rgba(55,65,81,0.5)'}`,
-              color: owner ? fc : '#4b5563',
-            }}>
-            <span>🏰</span>
-            <span className="truncate max-w-[80px]">{def.name}</span>
-            {ownerPlayer ? (
-              <FactionEmblem factionId={ownerPlayer.factionId} size={12} />
-            ) : (
-              <span className="text-neutral-600">free</span>
-            )}
-            {rt.heldRounds > 0 && <span className="text-[9px] opacity-60">×{rt.heldRounds}</span>}
-          </div>
-        );
-      })}
+    <div data-tour="fortress-strip" className="mx-4 mb-2 rounded-xl px-3 py-2" style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.15)' }}>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-amber-400">🏰 Fortresses</span>
+        <span className="text-[10px] text-neutral-500">{heldCount}/{fortresses.length} held · +1 VP per round held</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {fortresses.map(({ id, def, rt }) => {
+          const owner = rt.garrisonOwnerId;
+          const ownerPlayer = owner ? state.players[owner] : null;
+          const fc = ownerPlayer ? (FACTION_COLORS[ownerPlayer.factionId] ?? '#6b7280') : '#374151';
+          return (
+            <div key={id} className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold"
+              title={ownerPlayer ? `${def.name} — held by ${factionLabel(ownerPlayer.factionId)} for ${rt.heldRounds} round${rt.heldRounds === 1 ? '' : 's'}` : `${def.name} — uncontested, free to garrison`}
+              style={{
+                background: owner ? `${fc}18` : 'rgba(55,65,81,0.3)',
+                border: `1px solid ${owner ? `${fc}40` : 'rgba(55,65,81,0.5)'}`,
+                color: owner ? fc : '#9ca3af',
+              }}>
+              <span className="truncate max-w-[90px]">{def.name}</span>
+              {ownerPlayer ? (
+                <>
+                  <FactionEmblem factionId={ownerPlayer.factionId} size={12} />
+                  {rt.heldRounds > 0 && <span className="text-[9px] opacity-70 tabular-nums">{rt.heldRounds}r</span>}
+                </>
+              ) : (
+                <span className="text-[9px] text-emerald-400">● free</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
