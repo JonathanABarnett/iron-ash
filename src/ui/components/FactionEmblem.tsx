@@ -23,7 +23,8 @@ export function FactionEmblem({ factionId, size = 32, className = '' }: {
 
   return (
     <img
-      src={`/art/factions/${factionId}.jpg`}
+      // Prefix with Vite's BASE_URL so the path resolves correctly under /iron-ash/ on GH Pages
+      src={`${import.meta.env.BASE_URL}art/factions/${factionId}.jpg`}
       alt={`${label} emblem`}
       width={size} height={size}
       onError={() => setFailed(true)}

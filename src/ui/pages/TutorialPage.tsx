@@ -382,6 +382,29 @@ export function TutorialPage() {
     setActiveHints([]);
   }
 
+  // Spotlight anchor must be derived before early returns so React hook order stays consistent.
+  const firstAnchor: string | null = (() => {
+    for (const id of activeHints) {
+      const hint = HINTS.find((h) => h.id === id);
+      if (hint?.anchor) return hint.anchor;
+    }
+    return null;
+  })();
+
+  // Apply pulsing spotlight class to the matching element. Effect must be registered
+  // unconditionally; the inner check handles the not-started/no-game case.
+  useEffect(() => {
+    if (!firstAnchor) return;
+    const el = document.querySelector(`[data-tour="${firstAnchor}"]`);
+    if (!el) return;
+    el.classList.add('tutorial-spotlight');
+    const rect = el.getBoundingClientRect();
+    if (rect.top < 60 || rect.bottom > window.innerHeight - 60) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return () => { el.classList.remove('tutorial-spotlight'); };
+  }, [firstAnchor]);
+
   if (!started) {
     return <TutorialSplash onStart={startGame} onSkip={() => navigate('/play')} />;
   }
@@ -396,23 +419,6 @@ export function TutorialPage() {
     .map((id) => HINTS.find((h) => h.id === id))
     .filter(Boolean)
     .slice(0, 3) as HintDef[]; // show at most 3 hints at once
-
-  // Spotlight the first active hint with an anchor
-  const firstAnchor = visibleActiveHints.find((h) => h.anchor)?.anchor ?? null;
-
-  // Apply pulsing spotlight class to the element matching the current anchor
-  useEffect(() => {
-    if (!firstAnchor) return;
-    const el = document.querySelector(`[data-tour="${firstAnchor}"]`);
-    if (!el) return;
-    el.classList.add('tutorial-spotlight');
-    // Scroll into view if not already visible
-    const rect = el.getBoundingClientRect();
-    if (rect.top < 60 || rect.bottom > window.innerHeight - 60) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-    return () => { el.classList.remove('tutorial-spotlight'); };
-  }, [firstAnchor]);
 
   return (
     <main className="relative min-h-screen animate-fade-in" style={{ background: 'var(--color-bg)' }}>
