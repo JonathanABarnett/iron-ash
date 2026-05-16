@@ -84,7 +84,7 @@ const STEPS: Step[] = [
   {
     kind: 'place',
     title: '👆 Round 1 — Your First Placement',
-    body: 'Click a die in your Barracks then click a glowing region. The action menu also lists top moves sorted by VP. Try any placement to begin.',
+    body: 'Three ways to act: (1) click any teal-bordered button in the action menu above, (2) click a green "★ Best by VP" button, or (3) click any glowing region on the map directly. Try any one of them.',
     anchor: 'action-menu',
     doneBody: '✓ Placed. The Mages will respond.',
   },
@@ -671,11 +671,12 @@ export function TutorialPage() {
         })}
       </div>
 
-      {/* ── Action banner ── */}
+      {/* ── Action banner — sticky so it follows the user when scrolled ── */}
       {waitingForHuman && (
-        <div data-tour="action-menu" className="mx-4 mt-3 rounded-2xl p-4"
+        <div data-tour="action-menu" className="sticky top-[52px] z-10 mx-4 mt-3 rounded-2xl p-4"
           style={{
-            background: 'linear-gradient(135deg, rgba(20,184,166,0.08), rgba(6,182,212,0.04))',
+            background: 'linear-gradient(135deg, rgba(20,184,166,0.12), rgba(6,182,212,0.08))',
+            backdropFilter: 'blur(12px)',
             border: '1px solid rgba(20,184,166,0.3)',
           }}>
           <div className="mb-2 flex items-center justify-between">
@@ -695,7 +696,19 @@ export function TutorialPage() {
           state={gameState}
           humanMoves={waitingForHuman ? pendingMoves : []}
           selectedDieId={selectedDieId}
-          onRegionClick={(_id, moves) => { if (moves.length === 1) applyHumanMove(moves[0]!); }}
+          onRegionClick={(_id, moves) => {
+            if (moves.length === 0) return;
+            // If a die is selected, only apply moves using it. Otherwise pick the highest-VP
+            // legal move (the one the user would probably want anyway).
+            const filtered = selectedDieId
+              ? moves.filter((m) =>
+                  (m.kind === 'place'   && m.dieId === selectedDieId) ||
+                  (m.kind === 'combine' && (m.dieIds[0] === selectedDieId || m.dieIds[1] === selectedDieId)) ||
+                  (m.kind === 'battle'  && m.attackerDieId === selectedDieId)
+                )
+              : moves;
+            if (filtered.length >= 1) applyHumanMove(filtered[0]!);
+          }}
         />
       </div>
 
