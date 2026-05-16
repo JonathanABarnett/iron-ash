@@ -32,7 +32,7 @@ import { GoalStandingsBar, FortressStrip } from '@ui/pages/PlayPage';
 
 // ─── Tutorial step definitions ────────────────────────────────────────────────
 
-type StepKind = 'info' | 'place' | 'ai-turn' | 'finish';
+type StepKind = 'info' | 'place' | 'ai-turn' | 'end-of-round' | 'new-round' | 'finish';
 interface Step {
   kind: StepKind;
   title: string;
@@ -43,88 +43,154 @@ interface Step {
 }
 
 const STEPS: Step[] = [
+  // ── Intro: 6 info steps ──
   {
     kind: 'info',
     title: '👋 Welcome to Iron & Ash',
-    body: 'A guided 14-step walkthrough. You\'ll play Warriors against a Mage AI on a fixed scenario so every run feels the same. Click "Next" to continue, or "Exit" at the top right anytime.',
+    body: 'A guided 22-step walkthrough across 2 full rounds. You play Warriors vs Mage AI on a fixed scenario. After Round 2 you can keep playing the same game on your own. Click Exit Tutorial anytime.',
   },
   {
     kind: 'info',
     title: '🗺  The Board',
-    body: '16 regions span six terrain types. Each region has a die-value requirement (≥3, ≤2, exactly 1, or summed ≥8). Placing a die that meets the requirement claims the region for +1 VP.',
+    body: '16 regions, six terrain types. Each region has a die-value requirement (≥3, ≤2, exactly 1, or summed ≥8). Placing a die that meets the requirement claims the region for +1 VP.',
     anchor: 'map',
   },
   {
     kind: 'info',
     title: '⚔  You — Warriors',
-    body: 'You play Warriors: iron-and-battle specialists. Hover the Warriors emblem to see their active ability "Iron Discipline" (+2 iron once per round). The passive: +1 iron each round and all mercs cost 1 less gold.',
+    body: 'You play Warriors: iron-and-battle specialists. Hover the Warriors emblem to see their active ability "Iron Discipline" (+2 iron once per round). Passive: +1 iron each round, all mercs cost 1 less gold.',
     anchor: 'player-cards',
   },
   {
     kind: 'info',
     title: '🎯  Round Goal',
-    body: 'Every round has a shared bonus goal worth +2 VP. The bar above the map shows the goal and live standings. Watch the progress bars to see who\'s winning.',
+    body: 'Every round has a shared bonus goal worth +2 VP to the leader. Progress bars above the map show live standings — watch them shift as players move.',
     anchor: 'goal-bar',
   },
   {
     kind: 'info',
     title: '🏰  Fortresses',
-    body: 'The orange strip lists every fortress. A "● free" tag means it\'s yours for the taking — garrison one by placing a die meeting its requirement. You earn +1 VP every round you hold it.',
+    body: 'The orange strip lists every fortress. A "● free" tag means uncontested — garrison by placing a die meeting its requirement and you earn +1 VP every round you hold it. Crucial for long-term VP.',
     anchor: 'fortress-strip',
   },
   {
     kind: 'info',
     title: '🌡  Threat Track',
-    body: 'The threat bar in the header ticks up every round, plus +1 per battle and +1 per fortress usurp. When it maxes out, the climactic Free-For-All round triggers — all mercs become free!',
+    body: 'Threat bar in the header ticks +1 per round, +1 per battle, +1 per fortress usurp. When maxed, the climactic Free-For-All round triggers — all mercs free, half-price cards.',
     anchor: 'threat-bar',
   },
+
+  // ── Round 1: 7 action steps ──
   {
     kind: 'place',
-    title: '👆 Your First Move',
-    body: 'Click a die in your Barracks (highlighted), then click a glowing region on the map. The action menu also shows your top moves sorted by VP — try any of them.',
+    title: '👆 Round 1 — Your First Placement',
+    body: 'Click a die in your Barracks then click a glowing region. The action menu also lists top moves sorted by VP. Try any placement to begin.',
     anchor: 'action-menu',
-    doneBody: 'Nice! You placed a die. Now the AI Mages will take their turn.',
+    doneBody: '✓ Placed. The Mages will respond.',
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages\' Turn',
-    body: 'Click "Run AI Turn" below to watch the Mages play. After they move, I\'ll explain what they chose and why.',
+    title: '🧙 Mages\' Move',
+    body: 'Click ▶ Run AI Turn to watch the Mages play. After the move, I\'ll explain what they chose and why.',
   },
   {
     kind: 'place',
-    title: '👆 Your Second Move',
-    body: 'Place another die — try a fortress this time (orange castle icon on the map). Garrisoning earns ongoing VP.',
-    anchor: 'map',
-    doneBody: 'Good move. The Mages will respond.',
+    title: '🏰 Try Garrisoning a Fortress',
+    body: 'Look at the fortress strip — any with "● free"? Place a die meeting that fortress\'s requirement to garrison it and start earning +1 VP/round.',
+    anchor: 'fortress-strip',
+    doneBody: '✓ Great move. The Mages may try to usurp you in future rounds — be ready.',
   },
   {
     kind: 'ai-turn',
     title: '🧙 Mages Respond',
-    body: 'Click "Run AI Turn" to see how the Mages react to your placements.',
+    body: 'Click ▶ Run AI Turn. Watch how the Mages adapt to your placements.',
   },
   {
     kind: 'place',
-    title: '⚡ Try Hiring a Specialist',
-    body: 'The Specialist merc (in the merc bar) is a 1-6 die with a known face value. It costs only 2 gold in rounds 1–2. Click "Merc" or the specialist row in the merc bar to hire.',
+    title: '⚡ Hire a Specialist Merc',
+    body: 'The Specialist merc in the merc bar is a 1-6 die with a known face. It costs only 2 gold in rounds 1–2 (and Warriors get -1 gold extra). Click "Merc" in the action menu to hire.',
     anchor: 'merc-bar',
-    doneBody: 'Excellent. Mercs give you flexibility — and Warriors get a -1 gold discount on top.',
-  },
-  {
-    kind: 'place',
-    title: '⏸ Pass When Done',
-    body: 'When you don\'t want to make more moves, click "Pass" to end your turn. The round ends after every player passes.',
-    anchor: 'action-menu',
-    doneBody: 'Passed. The round will continue until everyone passes.',
+    doneBody: '✓ Mercs are temporary but powerful — and the Specialist often has the best face value on the board.',
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages Continue',
-    body: 'Mages take their action. Click "Run AI Turn".',
+    title: '🧙 Mages Move Again',
+    body: 'Click ▶ Run AI Turn.',
   },
   {
+    kind: 'place',
+    title: '⏸ Pass to End Your Turn',
+    body: 'When you\'re done acting this round, click "⏸ Pass". The round ends when everyone passes. (You can still see the AI play before the round ends.)',
+    anchor: 'action-menu',
+    doneBody: '✓ You passed. The Mages will play their remaining moves and then the round will end.',
+  },
+  {
+    kind: 'ai-turn',
+    title: '🧙 Mages Finish the Round',
+    body: 'Click ▶ Run AI Turn — this runs every remaining Mage action until they also pass.',
+  },
+
+  // ── End of Round 1 → Round 2 ──
+  {
+    kind: 'end-of-round',
+    title: '📊 Round 1 Scoring',
+    body: 'Round complete! Now scoring fires: the round-goal leader earns +2 VP, every fortress holder earns +1 VP × rounds held, and the threat track ticks up. Check the VP medallions on the right — they\'ll update.',
+  },
+  {
+    kind: 'new-round',
+    title: '🎲 Round 2 Begins',
+    body: 'New round, new goal! Your dice get re-rolled to fresh face values. The Specialist value just dropped by 1 (countdown). Notice the threat track has crept up too.',
+    anchor: 'threat-bar',
+  },
+
+  // ── Round 2: 5 action steps ──
+  {
+    kind: 'place',
+    title: '↑ Upgrade a Die',
+    body: 'Tap "↑ Upgrade" in your action menu to promote a Recruit (1-3) → Soldier (2-5). Costs iron + gold. Higher range = reach more regions. You should have enough iron now.',
+    anchor: 'action-menu',
+    doneBody: '✓ Upgraded! That die can now roll up to 5 instead of 3.',
+  },
+  {
+    kind: 'ai-turn',
+    title: '🧙 Mages\' Turn',
+    body: 'Click ▶ Run AI Turn.',
+  },
+  {
+    kind: 'place',
+    title: '✦ Use Your Active Ability',
+    body: 'Tap "✦ Iron Discipline" in your action menu — free +2 iron, once per round. Always worth using early. (If you don\'t see it, pick any other action.)',
+    anchor: 'action-menu',
+    doneBody: '✓ Active used. You won\'t see it again until next round.',
+  },
+  {
+    kind: 'ai-turn',
+    title: '🧙 Mages Move',
+    body: 'Click ▶ Run AI Turn.',
+  },
+  {
+    kind: 'place',
+    title: '⏸ Pass to End Round 2',
+    body: 'Click "⏸ Pass" to wind down round 2. The Mages will finish their actions and round 2 will end.',
+    anchor: 'action-menu',
+    doneBody: '✓ Passed. The Mages will close out the round.',
+  },
+  {
+    kind: 'ai-turn',
+    title: '🧙 Mages Close Round 2',
+    body: 'Click ▶ Run AI Turn — runs every remaining Mage action.',
+  },
+  {
+    kind: 'end-of-round',
+    title: '📊 Round 2 Scoring',
+    body: 'Round 2 done — VP awarded. The game has 5 more rounds, plus a possible Free-For-All. Read on...',
+  },
+
+  // ── Finish ──
+  {
     kind: 'finish',
-    title: '🎉 You\'ve Got the Basics',
-    body: 'You now know how rounds, placements, fortresses, mercs, and goals work. Battles, combines, card plays, and faction abilities follow the same pattern. Ready for a real game?',
+    title: '🎉 Tutorial Complete',
+    body: 'You\'ve learned placements, fortresses, mercs, round goals, upgrades, active abilities, and end-of-round scoring. Now choose: keep playing this same game freely (rounds 3–7), start a fresh game with any faction, or replay the tutorial.',
   },
 ];
 
@@ -264,6 +330,10 @@ export function TutorialPage() {
   const [stepDone, setStepDone]               = useState(false); // for 'place' steps — true once user has acted
   const [aiNarration, setAiNarration]         = useState<string | null>(null); // for 'ai-turn' steps after the move
   const [justRolled, setJustRolled]           = useState(false);
+  const [freePlayMode, setFreePlayMode]       = useState(false); // after tutorial ends; user keeps playing
+  const [freePlayAutoplay, setFreePlayAutoplay] = useState(false);
+  const freePlayAutoplayRef = useRef(freePlayAutoplay);
+  freePlayAutoplayRef.current = freePlayAutoplay;
   const [vpGains, setVpGains]                 = useState<Record<string, number>>({});
 
   useEffect(() => { if (!justRolled) return; const t = setTimeout(() => setJustRolled(false), 650); return () => clearTimeout(t); }, [justRolled]);
@@ -366,47 +436,96 @@ export function TutorialPage() {
     }
   }
 
-  // ── Run one AI step manually (for ai-turn tutorial steps) ──────────────────
+  // ── Run AI moves until human's turn OR round-over (for ai-turn steps) ──────
 
   function runOneAIStep() {
     if (!gameState) return;
     let state = gameState;
     const rng = Rng.fromSnapshot(JSON.parse(rngSnapshot));
+    const narrations: string[] = [];
 
-    // If we somehow ended up in roll/end-of-round, resolve them quietly first
-    if (state.phase === 'roll') {
-      state = rollPhase(state, { rng, cards: configs.cards });
-      setJustRolled(true);
-    } else if (isRoundOver(state)) {
-      state = endOfRound(state, { rules: configs.rules, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals, cardKeepCost: configs.costs.cardKeep, ...structuresCtx });
-    } else if (state.activePlayerId !== humanPid) {
+    // Loop through AI moves. Stops when:
+    //  - It's the human's turn AND they haven't passed yet (waiting for human)
+    //  - Round is over (everyone passed)
+    //  - Game phase is finished or roll
+    let safety = 30;
+    while (state.phase === 'action' && !isRoundOver(state) && safety-- > 0) {
+      // If it's the human's active turn AND they haven't passed, stop and wait
+      if (state.activePlayerId === humanPid && !state.players[humanPid]?.passedThisRound) break;
+      // Otherwise an AI is up (or human is auto-passed); pick and apply a move
       const result = pickMove(state, {
         rules: configs.rules, cards: configs.cards, costs: configs.costs,
         ...structuresCtx, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals,
         rng, difficulty: 'medium',
       });
       const factionName = factionLabel(state.players[state.activePlayerId]!.factionId);
+      const before = state;
       state = apply(state, result.move, {
         rules: configs.rules, cards: configs.cards, costs: configs.costs,
         ...structuresCtx, rng,
       });
-      // VP-gain animation
-      const gains: Record<string, number> = {};
-      for (const [pid, np] of Object.entries(state.players)) {
-        const pv = gameState.players[pid]?.vp ?? 0;
-        if (np.vp > pv) gains[pid] = np.vp - pv;
+      // Only narrate AI moves (not auto-passes from already-passed players)
+      if (before.activePlayerId !== humanPid) {
+        narrations.push(describeAIMove(result.move, result.reasoning, state, factionName));
       }
-      if (Object.keys(gains).length) setVpGains(gains);
-
-      // Narrate
-      setAiNarration(describeAIMove(result.move, result.reasoning, state, factionName));
     }
+
+    // VP-gain animation
+    const gains: Record<string, number> = {};
+    for (const [pid, np] of Object.entries(state.players)) {
+      const pv = gameState.players[pid]?.vp ?? 0;
+      if (np.vp > pv) gains[pid] = np.vp - pv;
+    }
+    if (Object.keys(gains).length) setVpGains(gains);
+
+    // Final narration block — every AI move strung together
+    if (narrations.length > 0) setAiNarration(narrations.join('\n\n'));
+    else if (isRoundOver(state)) setAiNarration('Everyone has passed — the round is over. Click Next →');
+    else setAiNarration('The Mages had no moves to take.');
 
     setGameState(state);
     setRngSnapshot(JSON.stringify(rng.snapshot()));
 
-    // If it's now the human's turn, set up the pending moves
-    if (state.activePlayerId === humanPid && state.phase === 'action' && !isRoundOver(state)) {
+    // If it's the human's turn next, set up their pending moves
+    if (state.activePlayerId === humanPid && state.phase === 'action' && !isRoundOver(state) && !state.players[humanPid]?.passedThisRound) {
+      const moves = enumerate(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng: Rng.fromSnapshot(JSON.parse(JSON.stringify(rng.snapshot()))) });
+      setWaitingForHuman(true);
+      setPendingMoves(moves);
+    }
+  }
+
+  // ── Run end-of-round transition (for 'end-of-round' steps) ─────────────────
+
+  function runEndOfRound() {
+    if (!gameState || !isRoundOver(gameState)) return;
+    const rng = Rng.fromSnapshot(JSON.parse(rngSnapshot));
+    const before = gameState;
+    const state = endOfRound(gameState, {
+      rules: configs.rules, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals,
+      cardKeepCost: configs.costs.cardKeep, ...structuresCtx,
+    });
+    // VP-gain animation for round goal/fortress scoring
+    const gains: Record<string, number> = {};
+    for (const [pid, np] of Object.entries(state.players)) {
+      const pv = before.players[pid]?.vp ?? 0;
+      if (np.vp > pv) gains[pid] = np.vp - pv;
+    }
+    if (Object.keys(gains).length) setVpGains(gains);
+    setGameState(state);
+    setRngSnapshot(JSON.stringify(rng.snapshot()));
+  }
+
+  // ── Run roll phase (for 'new-round' steps) ─────────────────────────────────
+
+  function runRollPhase() {
+    if (!gameState || gameState.phase !== 'roll') return;
+    const rng = Rng.fromSnapshot(JSON.parse(rngSnapshot));
+    const state = rollPhase(gameState, { rng, cards: configs.cards });
+    setGameState(state);
+    setRngSnapshot(JSON.stringify(rng.snapshot()));
+    setJustRolled(true);
+    // Set up human turn if active
+    if (state.activePlayerId === humanPid && state.phase === 'action') {
       const moves = enumerate(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng: Rng.fromSnapshot(JSON.parse(JSON.stringify(rng.snapshot()))) });
       setWaitingForHuman(true);
       setPendingMoves(moves);
@@ -419,6 +538,59 @@ export function TutorialPage() {
     setStepDone(false);
     setAiNarration(null);
   }
+
+  // Auto-trigger game transitions when entering end-of-round or new-round steps
+  useEffect(() => {
+    if (!started || !gameState) return;
+    const s = STEPS[stepIdx];
+    if (!s) return;
+    if (s.kind === 'end-of-round' && isRoundOver(gameState)) {
+      runEndOfRound();
+    }
+    if (s.kind === 'new-round' && gameState.phase === 'roll') {
+      runRollPhase();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepIdx, started]);
+
+  // Free-play autoplay loop — runs after tutorial completes
+  useEffect(() => {
+    if (!freePlayMode || !freePlayAutoplay || !gameState) return;
+    if (gameState.phase === 'finished') { setFreePlayAutoplay(false); return; }
+    if (waitingForHuman) return;
+    const id = window.setTimeout(() => {
+      if (!freePlayAutoplayRef.current) return;
+      // Step one game tick
+      const rng = Rng.fromSnapshot(JSON.parse(rngSnapshot));
+      let state = gameState;
+      if (state.phase === 'roll') {
+        state = rollPhase(state, { rng, cards: configs.cards });
+        setJustRolled(true);
+      } else if (isRoundOver(state)) {
+        state = endOfRound(state, { rules: configs.rules, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals, cardKeepCost: configs.costs.cardKeep, ...structuresCtx });
+      } else if (state.activePlayerId !== humanPid) {
+        const result = pickMove(state, {
+          rules: configs.rules, cards: configs.cards, costs: configs.costs,
+          ...structuresCtx, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals,
+          rng, difficulty: 'medium',
+        });
+        state = apply(state, result.move, {
+          rules: configs.rules, cards: configs.cards, costs: configs.costs,
+          ...structuresCtx, rng,
+        });
+      } else {
+        // Human's turn — surface the action menu
+        const moves = enumerate(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
+        setWaitingForHuman(true);
+        setPendingMoves(moves);
+        return;
+      }
+      setGameState(state);
+      setRngSnapshot(JSON.stringify(rng.snapshot()));
+    }, 500);
+    return () => clearTimeout(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameState, freePlayMode, freePlayAutoplay, waitingForHuman]);
   function prevStep() {
     if (stepIdx === 0) return;
     setStepIdx((i) => i - 1);
@@ -438,10 +610,12 @@ export function TutorialPage() {
 
   // Whether the Next button should be enabled for the current step
   const canAdvance =
-    step.kind === 'info'    ? true :
-    step.kind === 'finish'  ? false :
-    step.kind === 'place'   ? stepDone :
-    step.kind === 'ai-turn' ? !!aiNarration :
+    step.kind === 'info'         ? true :
+    step.kind === 'end-of-round' ? true :
+    step.kind === 'new-round'    ? true :
+    step.kind === 'finish'       ? false :
+    step.kind === 'place'        ? stepDone :
+    step.kind === 'ai-turn'      ? !!aiNarration :
     false;
 
   return (
@@ -603,22 +777,50 @@ export function TutorialPage() {
         })}
       </div>
 
+      {/* ── Free-play mode banner + autoplay controls (after tutorial ends) ── */}
+      {freePlayMode && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 md:left-52" style={{
+          background: 'linear-gradient(180deg, transparent 0%, rgba(9,9,11,0.92) 25%)',
+          paddingBottom: 'max(env(safe-area-inset-bottom), 12px)',
+        }}>
+          <div className="mx-auto max-w-3xl px-4 pb-3 pt-6">
+            <div className="rounded-2xl p-3 flex items-center gap-3"
+              style={{ background: 'rgba(18,12,30,0.97)', border: '1px solid rgba(20,184,166,0.3)' }}>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-teal-300">Free Play · Tutorial Ended</span>
+              <span className="text-[11px] text-neutral-400 flex-1">Continue this game on your own. Round {gameState.round}/{rules.totalRounds}.</span>
+              <button type="button" onClick={() => setFreePlayAutoplay((p) => !p)}
+                disabled={gameState.phase === 'finished'}
+                className={`rounded-lg px-3 py-1 text-xs font-bold transition ${freePlayAutoplay ? 'bg-amber-600 text-white hover:bg-amber-500' : 'bg-purple-600 text-white hover:bg-purple-500'} disabled:opacity-40`}>
+                {freePlayAutoplay ? '⏸ Pause' : '▶ Auto'}
+              </button>
+              <button type="button" onClick={() => navigate('/play')}
+                className="rounded-lg border border-neutral-700 px-3 py-1 text-xs text-neutral-400 hover:text-neutral-200 transition">
+                Start new game →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Tutorial step panel (fixed bottom) ── */}
-      <TutorialStepPanel
-        step={step}
-        stepIdx={stepIdx}
-        totalSteps={STEPS.length}
-        aiNarration={aiNarration}
-        canAdvance={canAdvance}
-        stepDone={stepDone}
-        onNext={() => {
-          if (step.kind === 'ai-turn' && !aiNarration) { runOneAIStep(); return; }
-          nextStep();
-        }}
-        onBack={prevStep}
-        onPlayGame={() => navigate('/play')}
-        onReplay={restartTutorial}
-      />
+      {!freePlayMode && (
+        <TutorialStepPanel
+          step={step}
+          stepIdx={stepIdx}
+          totalSteps={STEPS.length}
+          aiNarration={aiNarration}
+          canAdvance={canAdvance}
+          stepDone={stepDone}
+          onNext={() => {
+            if (step.kind === 'ai-turn' && !aiNarration) { runOneAIStep(); return; }
+            nextStep();
+          }}
+          onBack={prevStep}
+          onPlayGame={() => navigate('/play')}
+          onReplay={restartTutorial}
+          onContinueFreePlay={() => { setFreePlayMode(true); setFreePlayAutoplay(true); }}
+        />
+      )}
     </main>
   );
 }
@@ -627,7 +829,7 @@ export function TutorialPage() {
 
 function TutorialStepPanel({
   step, stepIdx, totalSteps, aiNarration, canAdvance, stepDone,
-  onNext, onBack, onPlayGame, onReplay,
+  onNext, onBack, onPlayGame, onReplay, onContinueFreePlay,
 }: {
   step: Step;
   stepIdx: number;
@@ -639,6 +841,7 @@ function TutorialStepPanel({
   onBack: () => void;
   onPlayGame: () => void;
   onReplay: () => void;
+  onContinueFreePlay: () => void;
 }) {
   // Body to show: doneBody for completed 'place' steps, aiNarration for ai-turn after move
   let displayBody = step.body;
@@ -689,14 +892,19 @@ function TutorialStepPanel({
           <p className="text-sm leading-relaxed" style={{ color: 'var(--color-muted)' }}>{displayBody}</p>
 
           {step.kind === 'finish' ? (
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <button type="button" onClick={onContinueFreePlay}
+                className="rounded-xl py-2.5 text-xs font-bold text-white transition hover:brightness-110"
+                style={{ background: 'linear-gradient(135deg,#0d9488,#06b6d4)', boxShadow: '0 0 16px rgba(20,184,166,0.25)' }}>
+                ▶ Continue This Game
+              </button>
               <button type="button" onClick={onPlayGame}
-                className="flex-1 rounded-xl py-2.5 text-sm font-bold text-white transition hover:brightness-110"
+                className="rounded-xl py-2.5 text-xs font-bold text-white transition hover:brightness-110"
                 style={{ background: 'linear-gradient(135deg,#7c3aed,#4f46e5)' }}>
-                ▶ Play a Full Game
+                New Game
               </button>
               <button type="button" onClick={onReplay}
-                className="rounded-xl border border-neutral-700 px-4 py-2.5 text-sm font-semibold text-neutral-300 transition hover:bg-neutral-800">
+                className="rounded-xl border border-neutral-700 py-2.5 text-xs font-semibold text-neutral-300 transition hover:bg-neutral-800">
                 ⟳ Replay Tutorial
               </button>
             </div>
@@ -830,5 +1038,3 @@ function PhaseChip({ phase }: { phase: string }) {
     </span>
   );
 }
-// silence unused for now — useRef kept for future autoplay if needed
-void useRef;
