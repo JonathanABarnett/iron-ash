@@ -17,6 +17,7 @@ import type { Difficulty } from '@ai/types';
 import type { AIReasoning, FactionId, GameState, Move, PlayerId } from '@engine/types';
 import { nextDieRange } from '@engine/types';
 import { FACTION_ABILITIES } from '@engine/factions/abilities';
+import { ROUND_GOAL_MEASURES } from '@engine/round-goals';
 import { loadConfigs } from '@ui/configLoader';
 import { FactionEmblem, factionLabel } from '@ui/components/FactionEmblem';
 import { MapView } from '@ui/components/MapView';
@@ -62,6 +63,8 @@ interface ActiveGame {
   vpHistory: Record<string, number[]>;
   /** Cleared each step; set when the most recent step resolved a battle. */
   lastBattle: { regionName: string; won: boolean; attackerPid: string } | null;
+  /** Region the user has tapped for details. */
+  focusedRegionId: string | null;
 }
 
 export function PlayPage() {
@@ -127,7 +130,7 @@ export function PlayPage() {
       });
       const humanIdx      = humanFaction ? lineup.indexOf(humanFaction) : -1;
       const humanPlayerId = humanIdx >= 0 ? `p${humanIdx + 1}` : null;
-      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieId: null, roundSummary: null, vpHistory: {}, lastBattle: null });
+      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieId: null, roundSummary: null, vpHistory: {}, lastBattle: null, focusedRegionId: null });
       setAutoplay(false);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
@@ -279,7 +282,7 @@ export function PlayPage() {
 
       {active && (
         <>
-          {/* ── Sticky header ── */}
+          {/* ══ Sticky header ══ */}
           <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-white/[0.06] bg-black/80 px-4 py-2.5 backdrop-blur-xl" style={{ boxShadow: '0 1px 0 rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.4)' }}>
             <span className="text-sm font-bold text-white">
               Round <span className="text-purple-300">{active.state.round}</span>
@@ -288,88 +291,179 @@ export function PlayPage() {
             <ThreatBar track={active.state.threatTrack} threshold={rules.threatTrackThreshold} pulse={threatPulse} />
             <PhaseChip phase={active.state.phase} />
             <ActivePlayerChip state={active.state} humanPlayerId={active.humanPlayerId} waitingForHuman={active.waitingForHuman} />
-            {active.state.freeForAll && <span className="rounded-md bg-amber-800/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">Free-for-all</span>}
-            {(() => { const s = active.state.roundGoals.find((g) => g.forRound === active.state.round); return s ? <span className="text-[10px] text-neutral-500">Goal: <span className="text-neutral-300">{s.goalId}</span></span> : null; })()}
+            {active.state.freeForAll && <span className="rounded-md bg-amber-800/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-200">🔥 Free-for-all</span>}
             <div className="ml-auto flex items-center gap-1.5">
               <button type="button" onClick={stepOnce} disabled={active.state.phase === 'finished'} className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-medium hover:bg-neutral-800 disabled:opacity-40 transition">Step ›</button>
               <button type="button" onClick={() => setAutoplay((p) => !p)} disabled={active.state.phase === 'finished'} className={`rounded-lg px-3 py-1 text-xs font-bold disabled:opacity-40 transition ${autoplay ? 'bg-amber-600 text-white hover:bg-amber-500' : 'bg-purple-600 text-white hover:bg-purple-500'}`}>{autoplay ? '⏸ Pause' : '▶ Auto'}</button>
-              {/* Speed control — only visible during autoplay */}
               {autoplay && (
                 <div className="flex items-center gap-1.5" title={`Step speed: ${autoSpeed}ms`}>
                   <span className="text-[9px] text-neutral-500">🐢</span>
-                  <input type="range" min={80} max={2000} step={50} value={autoSpeed}
-                    onChange={(e) => setAutoSpeed(Number(e.target.value))}
-                    className="w-16 h-1 cursor-pointer accent-purple-500"
-                  />
+                  <input type="range" min={80} max={2000} step={50} value={autoSpeed} onChange={(e) => setAutoSpeed(Number(e.target.value))} className="w-16 h-1 cursor-pointer accent-purple-500" />
                   <span className="text-[9px] text-neutral-500">🐇</span>
                 </div>
               )}
-              <button type="button" onClick={() => setShowLog((p) => !p)} className={`rounded-lg px-3 py-1 text-xs font-medium transition ${showLog ? 'bg-neutral-700 text-white' : 'border border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-neutral-200'}`}>📋 Log</button>
+              <button type="button" onClick={() => setShowLog((p) => !p)} className={`rounded-lg px-3 py-1 text-xs font-medium transition ${showLog ? 'bg-neutral-700 text-white' : 'border border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-neutral-200'}`}>📋</button>
               <button type="button" onClick={() => { if (window.confirm('Restart?')) setActive(null); }} className="rounded-lg border border-neutral-700 px-2.5 py-1 text-xs text-neutral-500 hover:text-neutral-200 transition" title="Restart">⟳</button>
             </div>
           </div>
 
-          {/* ── Human action banner ── */}
-          {active.waitingForHuman && (
-            <div className="mx-4 mt-3 rounded-2xl p-4 glow-teal"
-              style={{
-                background: 'linear-gradient(135deg, rgba(20,184,166,0.08) 0%, rgba(6,182,212,0.04) 100%)',
-                border: '1px solid rgba(20,184,166,0.3)',
-                boxShadow: '0 0 30px 6px rgba(20,184,166,0.1), inset 0 1px 0 rgba(255,255,255,0.05)',
-              }}
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-black text-teal-300 uppercase tracking-wide">
-                  ⚔ Your Turn — {active.humanPlayerId ? factionLabel(active.state.players[active.humanPlayerId]?.factionId ?? 'warriors') : ''}
-                </span>
-                {active.selectedDieId && (
-                  <button type="button" onClick={() => setActive((p) => p ? { ...p, selectedDieId: null } : p)}
-                    className="rounded-lg border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800 transition">
-                    ✕ clear filter
-                  </button>
-                )}
+          {/* ══ Two-column layout ══ */}
+          <div className="flex flex-col xl:flex-row xl:items-start">
+
+            {/* ── LEFT: Map column ── */}
+            <div className="flex-1 min-w-0">
+
+              {/* Goal standings bar */}
+              <GoalStandingsBar state={active.state} roundGoals={configs.roundGoals} />
+
+              {/* Fortress ownership strip */}
+              <FortressStrip state={active.state} />
+
+              {/* Battle flash */}
+              {active.lastBattle && (
+                <div key={`${active.lastBattle.regionName}-${active.state.round}-${active.state.turn}`}
+                  className={`animate-fade-in mx-4 mt-2 flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold ${active.lastBattle.won ? 'battle-win-anim' : 'battle-loss-anim'}`}
+                  style={{
+                    background: active.lastBattle.won ? 'rgba(239,68,68,0.12)' : 'rgba(107,114,128,0.10)',
+                    border: `1px solid ${active.lastBattle.won ? 'rgba(239,68,68,0.3)' : 'rgba(107,114,128,0.2)'}`,
+                  }}>
+                  <span>{active.lastBattle.won ? '⚔' : '🛡'}</span>
+                  <span style={{ color: active.lastBattle.won ? '#fca5a5' : '#9ca3af' }}>
+                    {active.lastBattle.won
+                      ? `${active.state.players[active.lastBattle.attackerPid] ? factionLabel(active.state.players[active.lastBattle.attackerPid]!.factionId) : active.lastBattle.attackerPid} won at ${active.lastBattle.regionName} — +1 VP +1 iron`
+                      : `${active.state.players[active.lastBattle.attackerPid] ? factionLabel(active.state.players[active.lastBattle.attackerPid]!.factionId) : active.lastBattle.attackerPid} attack on ${active.lastBattle.regionName} repelled`}
+                  </span>
+                </div>
+              )}
+
+              {/* Map */}
+              <div className="px-4 pt-2 pb-4">
+                <MapView
+                  state={active.state}
+                  humanMoves={active.waitingForHuman ? active.pendingMoves : []}
+                  selectedDieId={active.selectedDieId}
+                  onRegionClick={(id, moves) => {
+                    // Toggle focus for detail panel; also auto-apply if 1 legal move
+                    setActive((p) => p ? { ...p, focusedRegionId: p.focusedRegionId === id ? null : id } : p);
+                    if (moves.length === 1) applyHumanMove(moves[0]!);
+                  }}
+                />
               </div>
-              <HumanActionMenu moves={active.pendingMoves} state={active.state} selectedDieId={active.selectedDieId} onChoose={applyHumanMove} />
+
+              {/* Region detail panel */}
+              {active.focusedRegionId && (
+                <div className="mx-4 mb-3">
+                  <RegionDetailPanel
+                    regionId={active.focusedRegionId}
+                    state={active.state}
+                    humanMoves={active.waitingForHuman ? active.pendingMoves : []}
+                    onMove={applyHumanMove}
+                    onClose={() => setActive((p) => p ? { ...p, focusedRegionId: null } : p)}
+                  />
+                </div>
+              )}
+
+              {/* End-game (mobile / stacked) */}
+              {active.state.phase === 'finished' && (
+                <div className="mx-4 mt-3 xl:hidden"><EndGamePanel state={active.state} onExport={exportReplay} /></div>
+              )}
             </div>
-          )}
 
-          {/* ── Battle flash ── */}
-          {active.lastBattle && (
-            <div key={`${active.lastBattle.regionName}-${active.state.round}-${active.state.turn}`}
-              className={`animate-fade-in mx-4 mt-2 flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold ${active.lastBattle.won ? 'battle-win-anim' : 'battle-loss-anim'}`}
-              style={{
-                background: active.lastBattle.won
-                  ? 'rgba(239,68,68,0.12)'
-                  : 'rgba(107,114,128,0.10)',
-                border: `1px solid ${active.lastBattle.won ? 'rgba(239,68,68,0.3)' : 'rgba(107,114,128,0.2)'}`,
-              }}>
-              <span>{active.lastBattle.won ? '⚔' : '🛡'}</span>
-              <span style={{ color: active.lastBattle.won ? '#fca5a5' : '#9ca3af' }}>
-                {active.lastBattle.won
-                  ? `${active.state.players[active.lastBattle.attackerPid] ? factionLabel(active.state.players[active.lastBattle.attackerPid]!.factionId) : active.lastBattle.attackerPid} won the battle at ${active.lastBattle.regionName} — seized +1 VP +1 iron`
-                  : `${active.state.players[active.lastBattle.attackerPid] ? factionLabel(active.state.players[active.lastBattle.attackerPid]!.factionId) : active.lastBattle.attackerPid} attack on ${active.lastBattle.regionName} repelled`}
-              </span>
+            {/* ── RIGHT: Game panel sidebar ── */}
+            <div className="xl:w-80 xl:shrink-0 xl:sticky xl:top-[53px] xl:max-h-[calc(100vh-53px)] xl:overflow-y-auto xl:border-l xl:border-white/[0.05]">
+
+              {/* Merc bar */}
+              <div className="px-3 pt-3 pb-2">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-neutral-600 mb-2">Mercenaries</div>
+                <div className="space-y-1.5">
+                  {(['low','high','specialist'] as const).map((slot) => {
+                    const claimedBy = active.state.mercs.claimed[slot];
+                    const claimerFactionId = claimedBy ? active.state.players[claimedBy]?.factionId : undefined;
+                    const die = active.state.mercs[slot];
+                    const specVal = active.state.mercs.specialistValue;
+                    return <MercSlot key={slot} slot={slot} die={die} claimedBy={claimedBy} claimerFactionId={claimerFactionId} specialistValue={specVal} />;
+                  })}
+                </div>
+              </div>
+
+              {/* Human action panel */}
+              {active.waitingForHuman && (
+                <div className="mx-3 mb-3 rounded-2xl p-3"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(20,184,166,0.08), rgba(6,182,212,0.04))',
+                    border: '1px solid rgba(20,184,166,0.3)',
+                  }}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs font-black text-teal-300 uppercase tracking-wide">
+                      ⚔ Your Turn
+                    </span>
+                    {active.selectedDieId && (
+                      <button type="button" onClick={() => setActive((p) => p ? { ...p, selectedDieId: null } : p)}
+                        className="text-[10px] text-neutral-400 hover:text-neutral-200 transition">✕ clear</button>
+                    )}
+                  </div>
+                  <HumanActionMenu moves={active.pendingMoves} state={active.state} selectedDieId={active.selectedDieId} onChoose={applyHumanMove} compact />
+                </div>
+              )}
+
+              {/* Player cards */}
+              <div className="px-3 pb-3 space-y-2">
+                {active.state.turnOrder.map((pid) => {
+                  const maxVP = Math.max(...Object.values(active.state.players).map((p) => p?.vp ?? 0));
+                  return (
+                    <CompactPlayerCard
+                      key={pid}
+                      player={active.state.players[pid]!}
+                      isActive={pid === active.state.activePlayerId && active.state.phase === 'action'}
+                      isHuman={pid === active.humanPlayerId}
+                      isLeader={maxVP > 0 && (active.state.players[pid]?.vp ?? 0) === maxVP}
+                      waitingForHuman={active.waitingForHuman}
+                      selectedDieId={active.selectedDieId}
+                      onSelectDie={selectDie}
+                      pendingMoves={active.pendingMoves}
+                      onChooseMove={applyHumanMove}
+                      configs={configs}
+                      vpHistory={active.vpHistory[pid]}
+                      vpGain={vpGains[pid] ?? 0}
+                      isRolling={justRolled}
+                      resourcePulsed={resourcePulse.has(pid)}
+                      sidebarMode
+                    />
+                  );
+                })}
+              </div>
+
+              {/* End-game (sidebar / wide) */}
+              {active.state.phase === 'finished' && (
+                <div className="mx-3 mb-3 hidden xl:block"><EndGamePanel state={active.state} onExport={exportReplay} /></div>
+              )}
+
+              {/* AI log */}
+              {showLog && (
+                <div className="border-t border-neutral-800/60 px-3 py-2 mx-0">
+                  <div className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-neutral-600">AI Log</div>
+                  <div className="max-h-40 overflow-y-auto space-y-0.5">
+                    {active.log.length === 0 && <div className="text-xs text-neutral-600">No moves yet.</div>}
+                    {active.log.slice(-20).slice().reverse().map((entry, i) => {
+                      const p = active.state.players[entry.playerId];
+                      const top = entry.reasoning.candidates[0]?.score;
+                      return (
+                        <div key={i} className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800/40">
+                          <span className="shrink-0 tabular-nums text-neutral-700 text-[9px]">R{entry.round}</span>
+                          {p && <FactionEmblem factionId={p.factionId} size={11} />}
+                          <span className="font-mono text-neutral-300 truncate flex-1"><MoveSummaryInline move={entry.move} state={active.state} /></span>
+                          {top !== undefined && <span className="shrink-0 text-[9px] text-neutral-700">{top.toFixed(1)}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
 
-          {/* ── Merc bar ── */}
-          <div className="flex items-center gap-3 border-b border-neutral-800/60 bg-neutral-900/30 px-4 py-1.5 mt-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-600">Mercs</span>
-            {(['low','high','specialist'] as const).map((slot) => {
-              const claimedBy = active.state.mercs.claimed[slot];
-              const claimerFactionId = claimedBy ? active.state.players[claimedBy]?.factionId : undefined;
-              const die = active.state.mercs[slot];
-              const label = slot === 'specialist' ? `Spec·${active.state.mercs.specialistValue}` : slot === 'low' ? 'Low' : 'High';
-              return <MercSlot key={slot} label={label} die={die} claimedBy={claimedBy} claimerFactionId={claimerFactionId} />;
-            })}
-          </div>
+          </div>{/* end two-column */}
 
-          {/* ── Map ── */}
-          <div className="px-4 pt-2 pb-4">
-            <MapView state={active.state} humanMoves={active.waitingForHuman ? active.pendingMoves : []} selectedDieId={active.selectedDieId} onRegionClick={(_id, moves) => { if (moves.length === 1) applyHumanMove(moves[0]!); }} />
-          </div>
-
-          {/* ── Round summary overlay ── */}
+          {/* Round summary overlay */}
           {active.roundSummary && (
             <RoundSummaryOverlay
               summary={active.roundSummary}
@@ -377,59 +471,6 @@ export function PlayPage() {
               totalRounds={rules.totalRounds}
               onDismiss={() => setActive((p) => p ? { ...p, roundSummary: null } : p)}
             />
-          )}
-
-          {/* ── End-game ── */}
-          {active.state.phase === 'finished' && (
-            <div className="mx-4 mt-3"><EndGamePanel state={active.state} onExport={exportReplay} /></div>
-          )}
-
-          {/* ── Player strip ── */}
-          <div className="flex gap-2.5 overflow-x-auto px-4 py-3">
-            {active.state.turnOrder.map((pid) => {
-              const maxVP = Math.max(...Object.values(active.state.players).map((p) => p?.vp ?? 0));
-              return (
-                <CompactPlayerCard
-                  key={pid}
-                  player={active.state.players[pid]!}
-                  isActive={pid === active.state.activePlayerId && active.state.phase === 'action'}
-                  isHuman={pid === active.humanPlayerId}
-                  isLeader={maxVP > 0 && (active.state.players[pid]?.vp ?? 0) === maxVP}
-                  waitingForHuman={active.waitingForHuman}
-                  selectedDieId={active.selectedDieId}
-                  onSelectDie={selectDie}
-                  pendingMoves={active.pendingMoves}
-                  onChooseMove={applyHumanMove}
-                  configs={configs}
-                  vpHistory={active.vpHistory[pid]}
-                  vpGain={vpGains[pid] ?? 0}
-                  isRolling={justRolled}
-                  resourcePulsed={resourcePulse.has(pid)}
-                />
-              );
-            })}
-          </div>
-
-          {/* ── AI log ── */}
-          {showLog && (
-            <div className="border-t border-neutral-800 bg-neutral-900/30 px-4 py-3 mt-1">
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-neutral-600">AI Reasoning Log</div>
-              <div className="max-h-52 overflow-y-auto space-y-0.5">
-                {active.log.length === 0 && <div className="text-xs text-neutral-600">No moves yet.</div>}
-                {active.log.slice(-20).slice().reverse().map((entry, i) => {
-                  const p = active.state.players[entry.playerId];
-                  const top = entry.reasoning.candidates[0]?.score;
-                  return (
-                    <div key={i} className="flex items-center gap-2 rounded px-2 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-800/40">
-                      <span className="shrink-0 tabular-nums text-neutral-600">R{entry.round}T{entry.turn}</span>
-                      {p && <FactionEmblem factionId={p.factionId} size={12} />}
-                      <span className="font-mono text-neutral-300 truncate flex-1"><MoveSummaryInline move={entry.move} state={active.state} /></span>
-                      {top !== undefined && <span className="shrink-0 tabular-nums text-neutral-600">{top.toFixed(1)}</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           )}
         </>
       )}
@@ -783,31 +824,272 @@ function ActivePlayerChip({ state, humanPlayerId, waitingForHuman }: { state: Ga
   );
 }
 
+// ─── Goal standings bar ───────────────────────────────────────────────────────
+
+function GoalStandingsBar({ state, roundGoals }: {
+  state: GameState;
+  roundGoals: import('@engine/types').RoundGoalDefinition[];
+}) {
+  const slot = state.roundGoals.find((s) => s.forRound === state.round);
+  if (!slot || state.phase === 'finished') return null;
+  const goalDef = roundGoals.find((g) => g.id === slot.goalId);
+  const measure = ROUND_GOAL_MEASURES[slot.goalId];
+  if (!measure) return null;
+
+  const scores = state.turnOrder.map((pid) => ({
+    pid, factionId: state.players[pid]!.factionId,
+    score: measure(state, pid),
+  })).sort((a, b) => (goalDef?.direction === 'lowest' ? a.score - b.score : b.score - a.score));
+
+  const best = scores[0]?.score ?? 0;
+  const goalLabel = slot.goalId.replace(/-/g, ' ');
+  const dirLabel = goalDef?.direction === 'lowest' ? 'fewest' : 'most';
+
+  return (
+    <div className="mx-4 mt-2 mb-1 rounded-xl px-3 py-2" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="text-[10px] font-bold text-purple-400 uppercase tracking-wide shrink-0">
+          🎯 {goalLabel}
+        </div>
+        <div className="text-[10px] text-neutral-600 shrink-0">({dirLabel} wins)</div>
+        <div className="flex items-center gap-2 ml-auto flex-wrap">
+          {scores.map(({ pid, factionId, score }, rank) => {
+            const isLeading = rank === 0;
+            const fc = FACTION_COLORS[factionId] ?? '#7c3aed';
+            return (
+              <div key={pid} className="flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-bold"
+                style={{
+                  background: isLeading ? `${fc}22` : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${isLeading ? `${fc}50` : 'transparent'}`,
+                  color: isLeading ? fc : '#6b7280',
+                }}>
+                <FactionEmblem factionId={factionId} size={14} />
+                <span>{score}</span>
+                {isLeading && best > 0 && <span className="text-[9px]">👑</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Fortress ownership strip ─────────────────────────────────────────────────
+
+function FortressStrip({ state }: { state: GameState }) {
+  const fortresses = Object.entries(state.regionDefs)
+    .filter(([, def]) => def.isFortress)
+    .map(([id, def]) => ({ id, def, rt: state.regions[id]! }));
+
+  if (fortresses.length === 0) return null;
+
+  return (
+    <div className="mx-4 mb-2 flex flex-wrap gap-1.5">
+      {fortresses.map(({ id, def, rt }) => {
+        const owner = rt.garrisonOwnerId;
+        const ownerPlayer = owner ? state.players[owner] : null;
+        const fc = ownerPlayer ? (FACTION_COLORS[ownerPlayer.factionId] ?? '#6b7280') : '#374151';
+        return (
+          <div key={id} className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold"
+            style={{
+              background: owner ? `${fc}18` : 'rgba(55,65,81,0.3)',
+              border: `1px solid ${owner ? `${fc}40` : 'rgba(55,65,81,0.5)'}`,
+              color: owner ? fc : '#4b5563',
+            }}>
+            <span>🏰</span>
+            <span className="truncate max-w-[80px]">{def.name}</span>
+            {ownerPlayer ? (
+              <FactionEmblem factionId={ownerPlayer.factionId} size={12} />
+            ) : (
+              <span className="text-neutral-600">free</span>
+            )}
+            {rt.heldRounds > 0 && <span className="text-[9px] opacity-60">×{rt.heldRounds}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Region detail panel ──────────────────────────────────────────────────────
+
+const TERRAIN_NAMES: Record<string, string> = {
+  fortress: '🏰 Fortress', forest: '🌲 Forest', mountain: '⛰ Mountain',
+  swamp: '🌿 Swamp', plains: '🌾 Plains', ruins: '🗿 Ruins',
+};
+
+function RegionDetailPanel({ regionId, state, humanMoves, onMove, onClose }: {
+  regionId: string; state: GameState;
+  humanMoves: Move[]; onMove: (m: Move) => void; onClose: () => void;
+}) {
+  const def = state.regionDefs[regionId];
+  const rt  = state.regions[regionId];
+  if (!def || !rt) return null;
+
+  const isLocked = def.unlocksRound !== undefined && state.round < def.unlocksRound;
+  const reqLabel =
+    def.valueRequirement.kind === 'min'   ? `Die face ≥ ${def.valueRequirement.value}` :
+    def.valueRequirement.kind === 'max'   ? `Die face ≤ ${def.valueRequirement.value}` :
+    def.valueRequirement.kind === 'exact' ? `Die face = ${def.valueRequirement.value}` :
+    `Combined sum ≥ ${def.valueRequirement.value}`;
+
+  const legalMovesHere = humanMoves.filter((m) =>
+    ((m.kind === 'place' || m.kind === 'combine') && m.regionId === regionId) ||
+    (m.kind === 'battle' && m.targetRegionId === regionId),
+  );
+
+  const placedDice = rt.placedDieIds.flatMap((dieId) => {
+    for (const player of Object.values(state.players)) {
+      const die = player.dice.find((d) => d.id === dieId);
+      if (die) return [{ die, player }];
+    }
+    return [];
+  });
+
+  const garrisonOwner = rt.garrisonOwnerId ? state.players[rt.garrisonOwnerId] : null;
+
+  return (
+    <div className="rounded-2xl p-4 animate-fade-in" style={{ background: 'rgba(14,10,26,0.97)', border: '1px solid rgba(124,58,237,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <div className="text-base font-black text-white">{def.name}</div>
+          <div className="text-[11px] text-neutral-500 mt-0.5">
+            {TERRAIN_NAMES[def.terrain] ?? def.terrain} · <span className="text-amber-400 font-bold">{def.vp} VP</span>
+            {def.isFortress && <span className="ml-2 text-amber-300">+{def.vp} VP/round held</span>}
+          </div>
+        </div>
+        <button type="button" onClick={onClose} className="rounded-lg p-1 text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800 transition">✕</button>
+      </div>
+
+      {/* Requirement */}
+      <div className="mb-3 rounded-xl px-3 py-2 text-xs" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <span className="text-neutral-500">Placement: </span>
+        <span className="font-bold text-neutral-200">{reqLabel}</span>
+        {isLocked && <span className="ml-2 text-amber-400">🔒 Unlocks round {def.unlocksRound}</span>}
+        {state.lockedRegions?.[regionId] && <span className="ml-2 text-red-400">🔒 Locked by card this round</span>}
+      </div>
+
+      {/* Current occupants */}
+      {(placedDice.length > 0 || garrisonOwner) && (
+        <div className="mb-3">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-neutral-600 mb-1.5">Occupants</div>
+          <div className="flex flex-wrap gap-2">
+            {garrisonOwner && (
+              <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs"
+                style={{ background: `${FACTION_COLORS[garrisonOwner.factionId] ?? '#7c3aed'}22`, border: `1px solid ${FACTION_COLORS[garrisonOwner.factionId] ?? '#7c3aed'}40` }}>
+                <FactionEmblem factionId={garrisonOwner.factionId} size={16} />
+                <span className="font-semibold text-neutral-200">{factionLabel(garrisonOwner.factionId)}</span>
+                <span className="text-amber-400 font-bold">garrison</span>
+                <span className="text-neutral-500">×{rt.heldRounds}r</span>
+              </div>
+            )}
+            {placedDice.map(({ die, player }, i) => (
+              <div key={i} className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <FactionEmblem factionId={player.factionId} size={14} />
+                <span className="text-neutral-400">{factionLabel(player.factionId)}</span>
+                <span className="font-bold tabular-nums text-white">{die.faceValue ?? '?'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Structure */}
+      {rt.structure && (
+        <div className="mb-3 text-xs text-neutral-400">
+          🏗 <span className="font-semibold text-neutral-200">{rt.structure.structureId.replace(/-/g,' ')}</span> built here
+        </div>
+      )}
+
+      {/* Legal moves */}
+      {legalMovesHere.length > 0 && (
+        <div>
+          <div className="text-[9px] font-bold uppercase tracking-widest text-teal-500 mb-1.5">Your moves here</div>
+          <div className="flex flex-wrap gap-1.5">
+            {legalMovesHere.map((m, i) => {
+              const label = m.kind === 'battle'
+                ? `⚔ Attack`
+                : m.kind === 'place'
+                  ? (() => { const d = Object.values(state.players).flatMap(p => p.dice).find(d => d.id === (m as {kind:'place';dieId:string;regionId:string}).dieId); return `Place ${DIE_NAMES[d?.range ?? '1-3']} (${d?.faceValue})`; })()
+                  : `Combine → ${(() => { const mv = m as {kind:'combine';dieIds:[string,string];regionId:string}; const a = Object.values(state.players).flatMap(p=>p.dice).find(d=>d.id===mv.dieIds[0]); const b = Object.values(state.players).flatMap(p=>p.dice).find(d=>d.id===mv.dieIds[1]); return `${(a?.faceValue??0)+(b?.faceValue??0)}`; })()}`;
+              return (
+                <button key={i} type="button" onClick={() => { onMove(m); onClose(); }}
+                  className="rounded-lg border border-teal-700/60 bg-teal-950/40 px-3 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-900/50 transition">
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {legalMovesHere.length === 0 && humanMoves.length > 0 && (
+        <div className="text-[11px] text-neutral-600 italic">No legal moves here with your current dice.</div>
+      )}
+    </div>
+  );
+}
+
 // ─── Merc slot ────────────────────────────────────────────────────────────────
 
+/** Specialist countdown: filled dots = remaining value */
+function SpecialistDots({ value, max = 6 }: { value: number; max?: number }) {
+  return (
+    <div className="flex items-center gap-0.5" title={`Specialist value: ${value} (counts down each round)`}>
+      {Array.from({ length: max }).map((_, i) => (
+        <div key={i} className="rounded-full transition-all"
+          style={{ width: 6, height: 6, background: i < value ? '#a78bfa' : 'rgba(255,255,255,0.08)' }} />
+      ))}
+    </div>
+  );
+}
+
 function MercSlot({
-  label, die, claimedBy, claimerFactionId,
+  slot, die, claimedBy, claimerFactionId, specialistValue,
 }: {
-  label: string;
-  die: { faceValue: number | null } | null;
+  slot: 'low' | 'high' | 'specialist';
+  die: { faceValue: number | null; range?: string } | null;
   claimedBy?: string | undefined;
   claimerFactionId?: FactionId | undefined;
+  specialistValue?: number;
 }) {
+  const isSpec = slot === 'specialist';
+  const slotLabel = isSpec ? 'Specialist' : slot === 'low' ? 'Low (1-3)' : 'High (3-6)';
+  const rangeLabel = isSpec ? '1–6' : slot === 'low' ? '1–3' : '3–6';
   return (
-    <div className={`flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] ${claimedBy ? 'border-amber-700/60 bg-amber-950/30 text-amber-200' : die ? 'border-neutral-700 bg-neutral-900 text-neutral-300' : 'border-neutral-800 bg-neutral-950 text-neutral-600'}`}>
-      <span className="font-medium">{label}</span>
-      {die?.faceValue !== null && die?.faceValue !== undefined && (
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-xs font-bold">{die.faceValue}</span>
-      )}
-      {claimedBy ? (
-        <span className="flex items-center gap-1 text-amber-400/80">
-          →{' '}
-          {claimerFactionId && <FactionEmblem factionId={claimerFactionId} size={12} className="rounded-sm" />}
-          <span>{claimerFactionId ? factionLabel(claimerFactionId) : claimedBy}</span>
+    <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${
+      claimedBy
+        ? 'border border-amber-700/40 bg-amber-950/20'
+        : die
+          ? 'border border-neutral-700/60 bg-neutral-900/50'
+          : 'border border-neutral-800/40 bg-neutral-950/30 opacity-50'
+    }`}>
+      {/* Slot info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="font-semibold text-neutral-300">{slotLabel}</span>
+          <span className="text-[9px] text-neutral-600">{rangeLabel}</span>
+        </div>
+        {isSpec && specialistValue !== undefined && (
+          <div className="mt-1"><SpecialistDots value={specialistValue} /></div>
+        )}
+      </div>
+      {/* Face value */}
+      {die?.faceValue != null && (
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-sm font-black"
+          style={{ background: isSpec ? 'rgba(124,58,237,0.25)' : 'rgba(255,255,255,0.06)', color: isSpec ? '#c4b5fd' : '#e5e7eb' }}>
+          {die.faceValue}
         </span>
-      ) : !die ? (
-        <span>—</span>
-      ) : null}
+      )}
+      {!die && <span className="text-neutral-700 text-[10px]">— empty</span>}
+      {/* Claimed by */}
+      {claimedBy && claimerFactionId && (
+        <div className="flex items-center gap-1 text-amber-400/80">
+          <FactionEmblem factionId={claimerFactionId} size={14} className="rounded" />
+          <span className="text-[10px]">{factionLabel(claimerFactionId)}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -816,6 +1098,7 @@ function MercSlot({
 
 function HumanActionMenu({ moves, state, selectedDieId, onChoose }: {
   moves: Move[]; state: GameState; selectedDieId?: string | null; onChoose: (m: Move) => void;
+  compact?: boolean; // reserved for future use
 }) {
   const [showAll, setShowAll] = useState(false);
   const player = state.players[state.activePlayerId];
@@ -913,17 +1196,16 @@ function VPSparkline({ history, width = 88, height = 18 }: { history: number[]; 
   );
 }
 
-function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieId, onSelectDie, pendingMoves, onChooseMove, configs, vpHistory, vpGain = 0, isRolling = false, resourcePulsed = false }: {
+function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieId, onSelectDie, pendingMoves, onChooseMove, configs, vpHistory, vpGain = 0, isRolling = false, resourcePulsed = false, sidebarMode = false }: {
   player: NonNullable<GameState['players'][string]>; isActive: boolean; isHuman: boolean; isLeader: boolean;
   waitingForHuman: boolean; selectedDieId: string | null; onSelectDie: (id: string) => void;
   pendingMoves: Move[]; onChooseMove: (m: Move) => void; configs: ReturnType<typeof loadConfigs>;
   vpHistory?: number[] | undefined;
-  /** VP gained in the most recent step — drives float animation */
   vpGain?: number | undefined;
-  /** Barracks dice should show roll tumble animation */
   isRolling?: boolean | undefined;
-  /** Resources gained from passive this round — pulse gems */
   resourcePulsed?: boolean | undefined;
+  /** When true, card is full-width inside the sidebar rather than fixed 224px */
+  sidebarMode?: boolean;
 }) {
   const isHumanTurn = isHuman && waitingForHuman;
   const fc = FACTION_COLORS[player.factionId] ?? '#7c3aed'; // faction accent colour
@@ -932,7 +1214,7 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
   const barracksDice = player.dice.filter((d) => d.location.kind === 'barracks' && d.faceValue !== null);
 
   return (
-    <div className="relative w-56 shrink-0 rounded-2xl p-3 text-xs transition-all backdrop-blur-sm"
+    <div className={`relative rounded-2xl p-3 text-xs transition-all backdrop-blur-sm ${sidebarMode ? 'w-full' : 'w-56 shrink-0'}`}
       style={{
         border: `1px solid ${isHumanTurn ? 'rgba(20,184,166,0.5)' : `${fc}${isActive ? '55' : '1a'}`}`,
         background: isHumanTurn
