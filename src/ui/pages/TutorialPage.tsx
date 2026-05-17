@@ -462,9 +462,11 @@ export function TutorialPage() {
     setStepDone(false);
     setAiNarration(null);
     setJustRolled(true);
-    // If first move belongs to human, set up the pending moves immediately
-    if (afterRoll.activePlayerId === humanPid) {
-      const moves = enumerate(afterRoll, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
+    // Enumerate from the FORCED state so the move list matches the visible dice.
+    // (afterRoll has different face values — using it here would show moves based
+    // on the original random roll, not the tutorial's pre-set [6,3,2] values.)
+    if (forced.activePlayerId === humanPid) {
+      const moves = enumerate(forced, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
       setWaitingForHuman(true);
       setPendingMoves(moves);
     }
@@ -491,6 +493,8 @@ export function TutorialPage() {
 
   function applyHumanMove(move: Move) {
     if (!gameState) return;
+    // Only accept moves on 'place' steps — info, ai-turn etc. are read-only.
+    if (step?.kind !== 'place') return;
     // If this step prescribes a specific move, silently reject anything else.
     // This prevents accidental clicks on the map or stale button state from
     // applying an off-script action.
@@ -778,8 +782,9 @@ export function TutorialPage() {
         })}
       </div>
 
-      {/* ── Action banner — sticky so it follows the user when scrolled ── */}
-      {waitingForHuman && (
+      {/* ── Action banner — only visible on 'place' steps so info/ai-turn steps
+           can't be skipped by accidentally making a move ── */}
+      {waitingForHuman && step.kind === 'place' && !stepDone && (
         <div data-tour="action-menu" className="sticky top-[52px] z-10 mx-4 mt-3 rounded-2xl p-4"
           style={{
             background: 'linear-gradient(135deg, rgba(20,184,166,0.12), rgba(6,182,212,0.08))',
@@ -802,6 +807,7 @@ export function TutorialPage() {
             state={gameState}
             selectedDieId={step?.prescribed ? null : selectedDieId}
             onChoose={applyHumanMove}
+            showPass={!step?.prescribed || step.prescribed.kind === 'pass'}
           />
         </div>
       )}
@@ -810,7 +816,7 @@ export function TutorialPage() {
       <div data-tour="map" className="px-4 pt-2 pb-4">
         <MapView
           state={gameState}
-          humanMoves={waitingForHuman ? visibleMoves : []}
+          humanMoves={waitingForHuman && step.kind === 'place' && !stepDone ? visibleMoves : []}
           selectedDieId={step?.prescribed ? null : selectedDieId}
           onRegionClick={(_id, moves) => {
             if (moves.length === 0) return;
@@ -1058,8 +1064,11 @@ function TutorialStepPanel({
 
 // ─── Inline human action menu (simplified from PlayPage) ──────────────────────
 
-function HumanActionMenu({ moves, state, selectedDieId, onChoose }: {
-  moves: Move[]; state: GameState; selectedDieId?: string | null; onChoose: (m: Move) => void;
+function HumanActionMenu({ moves, state, selectedDieId, onChoose, showPass = true }: {
+  moves: Move[]; state: GameState; selectedDieId?: string | null;
+  onChoose: (m: Move) => void;
+  /** Hide the pass button when the tutorial prescribes a non-pass action. */
+  showPass?: boolean;
 }) {
   const player = state.players[state.activePlayerId];
   if (!player) return null;
@@ -1114,10 +1123,12 @@ function HumanActionMenu({ moves, state, selectedDieId, onChoose }: {
           )))}
         </div>
       )}
-      <button type="button" onClick={() => onChoose({ kind: 'pass' })}
-        className="rounded-lg border border-neutral-700 bg-neutral-900/50 px-4 py-1.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition">
-        ⏸ Pass (end turn)
-      </button>
+      {showPass && (
+        <button type="button" onClick={() => onChoose({ kind: 'pass' })}
+          className="rounded-lg border border-neutral-700 bg-neutral-900/50 px-4 py-1.5 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition">
+          ⏸ Pass (end turn)
+        </button>
+      )}
     </div>
   );
 }
