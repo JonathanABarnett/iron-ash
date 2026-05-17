@@ -67,165 +67,163 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  // ── Intro: 6 info steps. Each points at a specific UI section and references
-  //     the exact values the user can see (dice forced to 6,3,2; warriors stats).
+  // ── Intro ──────────────────────────────────────────────────────────────────
   {
     kind: 'info',
-    title: '👋 Welcome to Iron & Ash',
-    body: 'This 22-step tutorial walks you through 2 full rounds against a Mage AI. Your dice and starting setup are pre-set to fixed values so every instruction can name exactly what to click. After Round 2 you can continue the same game freely. Click Next → to begin.',
+    title: 'Welcome',
+    body: 'Two rounds, fixed dice, one opponent — the Mages. Every step tells you exactly what to click. Finish the two rounds and you can keep playing the same game from where you left off.',
   },
   {
     kind: 'info',
-    title: '🗺  The Board',
-    body: 'Below is the 16-region map (4×4 grid). Each tile shows its name, VP value, and a die requirement: ≥4 means die face ≥ 4, ≤2 means ≤ 2, =3 means exactly 3, and Σ≥7 means the combined sum of placed dice must be 7 or higher. Castle icons mark fortresses.',
+    title: 'The Map',
+    body: 'Sixteen regions, each with a VP value and a die requirement. ≥4 means your die needs to show 4 or higher. ≤2 means 2 or lower. =3 means exactly 3. Σ≥7 means two dice combined. Castle icons are fortresses — they score every round you hold them.',
     anchor: 'map',
   },
   {
     kind: 'info',
-    title: '⚔  You — Warriors',
-    body: 'Look at your Warriors card (right side of screen): you have 2 iron ⚙, 1 gold 🪙, 0 essence 💎, and 3 dice in your barracks showing values 6 (purple Specialist range), 3 (gray Recruit), and 2 (gray Recruit). Hover the Warriors emblem to see your active ability — "Iron Discipline" (+2 iron) and the passive that gives -1 gold on mercs.',
+    title: 'Your Faction — Warriors',
+    body: 'Check your card on the right. You\'ve got 3 iron, 1 gold, 0 essence, and three dice: a 6, a 3, and a 2. The Warriors passive gives you -1 gold on all mercs. Your active ability, Iron Discipline, drops +2 iron whenever you use it — once per round.',
     anchor: 'player-cards',
   },
   {
     kind: 'info',
-    title: '🎯  Round Goal',
-    body: 'Above the map is the purple round-goal bar — read its name now. The progress bars under each faction show live standings; whoever leads at round-end earns the +2 VP shown on the right. Both players currently sit at 0 since no moves have been made.',
+    title: 'Round Goal',
+    body: 'See the bar at the top? Each round has a goal — whoever leads it at the end gets +2 VP. The standings update live as you place dice. It\'s worth playing toward it, but don\'t sacrifice good positions just to chase the bonus.',
     anchor: 'goal-bar',
   },
   {
     kind: 'info',
-    title: '🏰  Fortresses',
-    body: 'The orange "Fortresses" strip lists every castle region with its holder (faction emblem + held-rounds count) or "● free" if uncontested. You\'ll garrison Black Citadel (≥4) in two steps using your 6. Highspire (≥5) stays locked until Round 2.',
+    title: 'Fortresses',
+    body: 'The orange strip shows all three fortresses: Black Citadel, Stormwall Keep, and Highspire. Right now they\'re all free. Holding a fortress earns +1 VP every round — but someone can usurp it if they beat your garrison value.',
     anchor: 'fortress-strip',
   },
   {
     kind: 'info',
-    title: '🌡  Threat Track',
-    body: 'In the top-left header, the threat bar reads 0/7 right now. Every round adds +1, every battle adds +1, every fortress usurp adds +1. When the bar fills (7), Round 7 becomes the Free-For-All finale — all mercs free, all cards half-price.',
+    title: 'Threat Track',
+    body: 'Top left — that\'s the threat track, currently at 0. It goes up every round, every battle, and every usurp. If it hits 7, Round 7 becomes a free-for-all: mercs are free, cards are half price, chaos ensues.',
     anchor: 'threat-bar',
   },
 
-  // ── Round 1: 7 action steps. Dice are forced to [6, 3, 2] so instructions
-  //     can reference exact values. Any action still advances (failsafe).
+  // ── Round 1 ─────────────────────────────────────────────────────────────────
   {
     kind: 'place',
-    title: '👆 Place Your 2 in Marshlands',
-    body: 'Your dice: 6 (Specialist range), 3 and 2 (Recruits). Start safe: click Marshlands on the map (green ≤2 region) or use "[1-3:2] → Marshlands" in the action menu. Your 2 satisfies ≤2 → +1 VP claimed.',
+    title: 'Place your 2 in Marshlands',
+    body: 'Marshlands needs a die showing 2 or lower — your 2 is a perfect fit. Click it in the action menu or tap the region on the map. Low-value regions are easy points early; save your big dice for where they matter.',
     anchor: 'action-menu',
-    doneBody: '✓ Marshlands claimed. The Mages will respond.',
+    doneBody: 'Marshlands is yours. The Mages are up.',
     prescribed: { kind: 'place', regionId: 'marshlands' },
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages\' Move',
-    body: 'Mages have a 5 and a 3 plus 2 gold and 3 essence. They\'ll likely combine 5+3=8 to garrison Black Citadel (≥4, fortress) — watch for it. Click ▶ Run AI Turn.',
+    title: 'Mages move',
+    body: 'They\'ve got a 5 and a 3, plus some gold and essence. Watch — they\'ll probably combine both dice to garrison Black Citadel. A combine stacks two dice into one placement, letting them hit high-requirement regions.',
   },
   {
     kind: 'place',
-    title: '⚡ Hire the Specialist Now (Before Mages Do!)',
-    body: 'The merc bar shows Specialist=6. Cost: 2 gold normally, but Warriors get -1 discount = just 1 gold. Mages also wants this — beat them to it! Open the action menu and click the "Merc" / "Hire specialist" button.',
+    title: 'Grab the Specialist merc',
+    body: 'That Spec·6 in the merc bar is a hired die worth 6 — and it\'s yours for just 1 gold (Warriors get a discount). The Mages want it too. Hit "Hire specialist" before they get a turn.',
     anchor: 'merc-bar',
-    doneBody: '✓ Specialist hired. You now have an extra value-6 die for the round.',
+    doneBody: 'Got it. You now have two 6s to work with this round.',
     prescribed: { kind: 'hire-merc', mercSlot: 'specialist' },
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages Respond',
-    body: 'Mages are out of dice (both garrisoning Black Citadel) and out of gold for mercs (you got the Specialist!). They might use Arcane Precision, draft a card, or pass. Click ▶ Run AI Turn.',
+    title: 'Mages respond',
+    body: 'They spent both barracks dice on Black Citadel and you took the Specialist, so they\'re limited. They might use an ability, draft a card, or just pass.',
   },
   {
     kind: 'place',
-    title: '👆 Place Your 6 in Goldhaven (2 VP)',
-    body: 'Goldhaven is a high-value non-fortress region (≥3, 2 VP). Your 6 easily qualifies. Click Goldhaven on the map or use "[1-6:6] → Goldhaven" in the action menu. We\'ll save the fortress garrison for Round 2 (combine 6+3=9 → Stormwall Keep is safer there).',
+    title: 'Place your 6 in Goldhaven',
+    body: 'Goldhaven needs ≥3 and pays 2 VP. Your 6 clears that easily. We\'re saving the combine (6+3=9) for Round 2 when it can lock down Stormwall Keep safely.',
     anchor: 'map',
-    doneBody: '✓ Goldhaven claimed for +2 VP.',
+    doneBody: 'Goldhaven secured — that\'s 2 VP.',
     prescribed: { kind: 'place', regionId: 'goldhaven', dieRange: '1-6' },
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages\' Last Move',
-    body: 'Mages have no dice and can\'t afford non-Specialist mercs. They\'ll likely pass. Click ▶ Run AI Turn.',
+    title: 'Mages\' last move',
+    body: 'No dice left, no Specialist — they\'ll likely pass or play a card. Click Run to see what they do.',
   },
   {
     kind: 'place',
-    title: '⏸ Pass to End Your Turn',
-    body: 'You\'ve used the Specialist and claimed two regions. Click "⏸ Pass (end turn)" in the action menu — this signals you\'re done for the round. The round ends once both players have passed.',
+    title: 'Pass to end your turn',
+    body: 'You\'ve placed two dice and hired a merc. Click Pass to signal you\'re done. Once both sides pass, the round ends and scoring fires.',
     anchor: 'action-menu',
-    doneBody: '✓ Passed. Round 1 ended — scoring fires next.',
+    doneBody: 'Round 1 over. Time to score.',
     prescribed: { kind: 'pass' },
     skipIfRoundOver: true,
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Round Ends',
-    body: 'Both players have passed. Click ▶ Run AI Turn — it\'ll confirm the round is over and scoring is next.',
+    title: 'Round wraps up',
+    body: 'Both players have passed. Click Run — the engine will confirm the round is over so we can move on to scoring.',
   },
 
-  // ── End of Round 1 → Round 2 ──
+  // ── End of Round 1 → Round 2 ────────────────────────────────────────────────
   {
     kind: 'end-of-round',
-    title: '📊 Round 1 Scoring',
-    body: 'Round complete! Now scoring fires: the round-goal leader earns +2 VP, every fortress holder earns +1 VP × rounds held, and the threat track ticks up. Check the VP medallions on the right — they\'ll update.',
+    title: 'Round 1 scoring',
+    body: 'Scoring runs automatically: the round-goal leader gets +2 VP, fortress holders get +1 VP each, unused merc dice refund their cost. Watch the VP numbers tick up on the right.',
   },
   {
     kind: 'new-round',
-    title: '🎲 Round 2 Begins',
-    body: 'New round, new goal! Your dice get re-rolled to fresh face values. The Specialist value just dropped by 1 (countdown). Notice the threat track has crept up too.',
+    title: 'Round 2',
+    body: 'Dice re-roll, a new goal drops in, and the Specialist countdown ticks down by 1. The threat track also nudged up — keep an eye on it as the game goes on.',
     anchor: 'threat-bar',
   },
 
-  // ── Round 2: dice forced to [6, 3, 2] again so we can combine for Stormwall Keep.
+  // ── Round 2 ─────────────────────────────────────────────────────────────────
   {
     kind: 'place',
-    title: '🏰 Combine 6+3=9 → Garrison Stormwall Keep',
-    body: 'Round 2 dice: 6, 3, 2 (rolled fresh). Stormwall Keep is a fortress requiring Σ≥7 (combined sum). Your 6+3=9 qualifies AND is too high for Mages to usurp (their max combine is 8). Click Stormwall Keep on the map or use "combine 3+6=9 → Stormwall Keep" in the action menu. Big +3 VP and a safe fortress hold.',
+    title: 'Garrison Stormwall Keep',
+    body: 'Stormwall Keep needs a combined sum ≥7. Your 6+3=9 clears it and — crucially — the Mages can\'t top it. Their best combine this round maxes out at 8, so your garrison is safe. Click Stormwall Keep on the map.',
     anchor: 'fortress-strip',
-    doneBody: '✓ Stormwall Keep garrisoned with a sum of 9 — Mages can\'t usurp it.',
+    doneBody: 'Stormwall Keep is yours with a 9. Mages can\'t touch it.',
     prescribed: { kind: 'combine', regionId: 'stormwall-keep' },
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages\' Turn in R2',
-    body: 'Mages has no barracks dice (both garrisoning Black Citadel from R1) but 3 gold and 4 essence. They\'ll likely hire the Specialist (value 5 in R2) to garrison Highspire (≥5). Click ▶ Run AI Turn.',
+    title: 'Mages\' turn',
+    body: 'No barracks dice but plenty of gold and essence. They\'ll probably hire the Specialist (now worth 5) and try to take Highspire. Click Run and watch.',
   },
   {
     kind: 'place',
-    title: '✦ Use Iron Discipline',
-    body: 'Active abilities reset every round. Click "✦ Iron Discipline" in the action menu — free +2 iron. Stockpile iron for more upgrades and structure builds later in the game.',
+    title: 'Use Iron Discipline',
+    body: 'Active abilities refresh each round. Iron Discipline gives you +2 iron for free — no cost, no drawback. Click it. Iron fuels upgrades and structures later.',
     anchor: 'action-menu',
-    doneBody: '✓ +2 iron added. You won\'t see Iron Discipline again until round 3.',
+    doneBody: '+2 iron banked. Iron Discipline resets again next round.',
     prescribed: { kind: 'use-active' },
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages Place the Merc',
-    body: 'Mages will likely place their Specialist 5 in Highspire (≥5, fortress). Note: merc dice disappear at end of round, so Mages will lose Highspire next round! Click ▶ Run AI Turn.',
+    title: 'Mages place their merc',
+    body: 'They\'ll put that hired die to work — probably Highspire. Worth noting: merc dice vanish at end of round, so whatever they garrison now they\'ll lose. Click Run.',
   },
   {
     kind: 'place',
-    title: '⏸ Pass to End Round 2',
-    body: 'Click "⏸ Pass" to end your turn. The Mages will finish their actions and round 2 will end with another scoring pass.',
+    title: 'Pass to end Round 2',
+    body: 'You\'re done — garrison\'s set, ability used. Pass, let the Mages finish, and we\'ll score.',
     anchor: 'action-menu',
-    doneBody: '✓ Passed. Round 2 ended — scoring fires next.',
+    doneBody: 'Round 2 done.',
     prescribed: { kind: 'pass' },
     skipIfRoundOver: true,
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Round 2 Ends',
-    body: 'Both players are done. Click ▶ Run AI Turn — the round closes and Round 2 scoring fires. (Mages\' Highspire garrison will dissolve since it was a merc die.)',
+    title: 'Round 2 wraps up',
+    body: 'Click Run to close the round. Any merc dice the Mages garrisoned will disappear — they don\'t carry over.',
   },
   {
     kind: 'end-of-round',
-    title: '📊 Round 2 Scoring',
-    body: 'Round 2 done — VP awarded. The game has 5 more rounds, plus a possible Free-For-All. Read on...',
+    title: 'Round 2 scoring',
+    body: 'Same deal — round goal, fortress VP, threat tick. After this the game opens up: 5 more rounds, a potential free-for-all, and all your upgrades and cards to play with.',
   },
 
-  // ── Finish ──
+  // ── Finish ───────────────────────────────────────────────────────────────────
   {
     kind: 'finish',
-    title: '🎉 Tutorial Complete',
-    body: 'You\'ve learned placements, fortresses, mercs, round goals, upgrades, active abilities, and end-of-round scoring. Now choose: keep playing this same game freely (rounds 3–7), start a fresh game with any faction, or replay the tutorial.',
+    title: 'That\'s the game',
+    body: 'You\'ve seen placements, combines, fortresses, mercs, an active ability, and how rounds score. Keep going with this game, start fresh with any faction, or run it again.',
   },
 ];
 
@@ -363,12 +361,12 @@ function TutorialSplash({ onStart, onSkip }: { onStart: () => void; onSkip: () =
       <div className="mb-4 text-5xl">🎓</div>
       <h1 className="mb-2 text-3xl font-black text-white">Iron &amp; Ash Tutorial</h1>
       <p className="mb-2 max-w-md text-center text-sm leading-relaxed" style={{ color: 'var(--color-muted)' }}>
-        A <strong className="text-white">guided 14-step walkthrough</strong> on a fixed scenario — you play Warriors against
-        a Mage AI. Each step highlights a UI element and walks you through one piece of the game.
-        Every AI move is explained so you can learn the strategy.
+        Play two full rounds as <strong className="text-white">Warriors</strong> against a Mage AI.
+        The dice are fixed so every step tells you exactly what to click — no guessing.
+        After round 2, the game is yours to finish.
       </p>
       <p className="mb-8 text-center text-xs" style={{ color: 'var(--color-subtle)' }}>
-        You can exit anytime and jump straight to a full game with any faction.
+        Hit Exit Tutorial anytime to jump straight into a real game.
       </p>
       <div className="mb-10 flex items-center gap-6">
         <div className="flex flex-col items-center gap-2">
