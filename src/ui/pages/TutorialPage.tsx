@@ -44,40 +44,41 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  // ── Intro: 6 info steps ──
+  // ── Intro: 6 info steps. Each points at a specific UI section and references
+  //     the exact values the user can see (dice forced to 6,3,2; warriors stats).
   {
     kind: 'info',
     title: '👋 Welcome to Iron & Ash',
-    body: 'A guided 22-step walkthrough across 2 full rounds. You play Warriors vs Mage AI on a fixed scenario. After Round 2 you can keep playing the same game on your own. Click Exit Tutorial anytime.',
+    body: 'This 22-step tutorial walks you through 2 full rounds against a Mage AI. Your dice and starting setup are pre-set to fixed values so every instruction can name exactly what to click. After Round 2 you can continue the same game freely. Click Next → to begin.',
   },
   {
     kind: 'info',
     title: '🗺  The Board',
-    body: '16 regions, six terrain types. Each region has a die-value requirement (≥3, ≤2, exactly 1, or summed ≥8). Placing a die that meets the requirement claims the region for +1 VP.',
+    body: 'Below is the 16-region map (4×4 grid). Each tile shows its name, VP value, and a die requirement: ≥4 means die face ≥ 4, ≤2 means ≤ 2, =3 means exactly 3, and Σ≥7 means the combined sum of placed dice must be 7 or higher. Castle icons mark fortresses.',
     anchor: 'map',
   },
   {
     kind: 'info',
     title: '⚔  You — Warriors',
-    body: 'You play Warriors: iron-and-battle specialists. Hover the Warriors emblem to see their active ability "Iron Discipline" (+2 iron once per round). Passive: +1 iron each round, all mercs cost 1 less gold.',
+    body: 'Look at your Warriors card (right side of screen): you have 2 iron ⚙, 1 gold 🪙, 0 essence 💎, and 3 dice in your barracks showing values 6 (purple Specialist range), 3 (gray Recruit), and 2 (gray Recruit). Hover the Warriors emblem to see your active ability — "Iron Discipline" (+2 iron) and the passive that gives -1 gold on mercs.',
     anchor: 'player-cards',
   },
   {
     kind: 'info',
     title: '🎯  Round Goal',
-    body: 'Every round has a shared bonus goal worth +2 VP to the leader. Progress bars above the map show live standings — watch them shift as players move.',
+    body: 'Above the map is the purple round-goal bar — read its name now. The progress bars under each faction show live standings; whoever leads at round-end earns the +2 VP shown on the right. Both players currently sit at 0 since no moves have been made.',
     anchor: 'goal-bar',
   },
   {
     kind: 'info',
     title: '🏰  Fortresses',
-    body: 'The orange strip lists every fortress. A "● free" tag means uncontested — garrison by placing a die meeting its requirement and you earn +1 VP every round you hold it. Crucial for long-term VP.',
+    body: 'The orange "Fortresses" strip lists every castle region with its holder (faction emblem + held-rounds count) or "● free" if uncontested. You\'ll garrison Black Citadel (≥4) in two steps using your 6. Highspire (≥5) stays locked until Round 2.',
     anchor: 'fortress-strip',
   },
   {
     kind: 'info',
     title: '🌡  Threat Track',
-    body: 'Threat bar in the header ticks +1 per round, +1 per battle, +1 per fortress usurp. When maxed, the climactic Free-For-All round triggers — all mercs free, half-price cards.',
+    body: 'In the top-left header, the threat bar reads 0/7 right now. Every round adds +1, every battle adds +1, every fortress usurp adds +1. When the bar fills (7), Round 7 becomes the Free-For-All finale — all mercs free, all cards half-price.',
     anchor: 'threat-bar',
   },
 
