@@ -58,13 +58,13 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
   assassins: {
     passiveStartOfRound: { gain: { gold: 1 } },
     activeLabel: 'Shadow Step',
-    activeDescription: 'Set one barracks die to a low face value (≤3) — perfect for restricted regions.',
+    activeDescription: 'Use once per round: set a barracks die to any value ≤3, unlocking low-requirement regions. Passives: earn +1 gold at the start of every round; the Low mercenary costs you 1 less gold.',
     activeTargeting: 'die+value',
   },
   mages: {
     passiveStartOfRound: { gain: { essence: 1, gold: 1 } },
     activeLabel: 'Arcane Precision',
-    activeDescription: 'Set one barracks die to any face value within its range.',
+    activeDescription: 'Use once per round: set a barracks die to any face value within its range. Passives: earn +1 essence and +1 gold at the start of every round; Low and High mercs you hire are automatically set to their maximum face value.',
     activeTargeting: 'die+value',
   },
   necromancers: {
@@ -74,31 +74,31 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
     // giving free income — the gold-passive approach overcorrected to 61% in 1v1.
     mercDiscount: 1,
     activeLabel: 'Soul Recall',
-    activeDescription: 'Return one of your placed dice from any region back to barracks to reposition it. (Passive: all mercs cost 1 less gold — Soul Conversion turns used mercs into permanent dice.)',
+    activeDescription: 'Use once per round: return one of your placed dice from any region back to barracks to reposition it. Passives: earn +1 essence at the start of every round; all mercs cost 1 less gold; mercs you deploy this round become permanent dice instead of disappearing at round end.',
     activeTargeting: 'region',
   },
   merchants: {
     passiveStartOfRound: { gain: { gold: 2 } },
     activeLabel: 'Trade Deal',
-    activeDescription: 'Gain 1 gold immediately — a profitable side contract.',
+    activeDescription: 'Use once per round: gain +1 gold. Passives: earn +2 gold at the start of every round; each mercenary you hire also gives you +1 essence.',
     activeTargeting: 'none',
   },
   rangers: {
     passiveStartOfRound: { gain: { iron: 1 } },
     activeLabel: 'Pathfinder',
-    activeDescription: 'Gain 1 gold and 1 essence — scout the valuable routes.',
+    activeDescription: 'Use once per round: gain +1 gold and +1 essence. Passive: earn +1 iron at the start of every round.',
     activeTargeting: 'none',
   },
   paladins: {
     passiveStartOfRound: { gain: { iron: 1 } },
     activeLabel: 'Sacred Seal',
-    activeDescription: 'Gain 1 iron and 1 essence.',
+    activeDescription: 'Use once per round: gain +1 iron and +1 essence. Passive: earn +1 iron at the start of every round.',
     activeTargeting: 'none',
   },
   beastmasters: {
     passiveStartOfRound: { gain: { essence: 1 } },
     activeLabel: 'Wild Surge',
-    activeDescription: 'Add a temporary 1-6 die (face value 5) to your barracks for this round only.',
+    activeDescription: 'Use once per round: summon a temporary 1-6 die showing 5 into your barracks for this round. It disappears at round end. Passive: earn +1 essence at the start of every round.',
     activeTargeting: 'none',
   },
 };
