@@ -19,7 +19,7 @@ import { Rng } from './rng';
 import { rollDie } from './dice';
 import { canAfford, spend } from './resources';
 
-const HAND_LIMIT = 2;
+const HAND_LIMIT = 3; // rulebook §5: keep up to 3 cards free; extras cost 1 gold each
 const MARKET_SIZE = 4;
 
 /** Refresh the market — discard whatever is there and deal MARKET_SIZE fresh cards. */
