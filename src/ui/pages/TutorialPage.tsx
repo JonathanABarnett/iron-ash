@@ -82,7 +82,7 @@ const STEPS: Step[] = [
   {
     kind: 'info',
     title: 'Your Faction — Warriors',
-    body: 'Check your card on the right. You\'ve got 3 iron, 1 gold, 0 essence, and three dice: a 6, a 3, and a 2. The Warriors passive gives you -1 gold on all mercs. Your active ability, Iron Discipline, drops +2 iron whenever you use it — once per round.',
+    body: 'Check your card on the right. You\'ve got 3 iron, 1 gold, 0 essence, and three dice: a 6, a 3, and a 2. You start with 2 iron but Warriors earn +1 at the top of every round automatically — so you already have 3. Your active ability, Iron Discipline, adds another +2 iron when you use it once per round. Mercs also cost you 1 less gold.',
     anchor: 'player-cards',
   },
   {

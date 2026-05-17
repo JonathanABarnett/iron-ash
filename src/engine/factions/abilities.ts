@@ -52,7 +52,7 @@ export const FACTION_ABILITIES: Record<FactionId, FactionAbilities> = {
     passiveStartOfRound: { gain: { iron: 1 } },
     mercDiscount: 1,
     activeLabel: 'Iron Discipline',
-    activeDescription: 'Gain 2 iron immediately. (Passive: all mercs cost 1 less gold.)',
+    activeDescription: 'Use once per round: gain +2 iron. Passives: earn +1 iron at the start of every round; all mercs cost 1 less gold.',
     activeTargeting: 'none',
   },
   assassins: {
