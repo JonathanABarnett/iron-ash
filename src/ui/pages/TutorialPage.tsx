@@ -80,13 +80,14 @@ const STEPS: Step[] = [
     anchor: 'threat-bar',
   },
 
-  // ── Round 1: 7 action steps ──
+  // ── Round 1: 7 action steps. Each place step accepts ANY action — the
+  //     suggested action is a strong hint, not a hard requirement.
   {
     kind: 'place',
-    title: '👆 Round 1 — Your First Placement',
-    body: 'Three ways to act: (1) click any teal-bordered button in the action menu above, (2) click a green "★ Best by VP" button, or (3) click any glowing region on the map directly. Try any one of them.',
+    title: '👆 Round 1 — Make Any Move',
+    body: 'Any action advances this step: click any button in the action menu above, click a glowing region on the map, or click "Pass". The "★ Best by VP" buttons are highest scoring — start there.',
     anchor: 'action-menu',
-    doneBody: '✓ Placed. The Mages will respond.',
+    doneBody: '✓ Move made. The Mages will respond next.',
   },
   {
     kind: 'ai-turn',
@@ -95,10 +96,10 @@ const STEPS: Step[] = [
   },
   {
     kind: 'place',
-    title: '🏰 Try Garrisoning a Fortress',
-    body: 'Look at the fortress strip — any with "● free"? Place a die meeting that fortress\'s requirement to garrison it and start earning +1 VP/round.',
-    anchor: 'fortress-strip',
-    doneBody: '✓ Great move. The Mages may try to usurp you in future rounds — be ready.',
+    title: '🏰 Take Another Action',
+    body: 'Garrison a free fortress if you can (orange strip, ● free), upgrade a die for stronger range, build a structure, or just place another die. Any action moves the tutorial forward.',
+    anchor: 'action-menu',
+    doneBody: '✓ Action taken. The Mages\' response is next.',
   },
   {
     kind: 'ai-turn',
@@ -107,10 +108,10 @@ const STEPS: Step[] = [
   },
   {
     kind: 'place',
-    title: '⚡ Hire a Specialist Merc',
-    body: 'The Specialist merc in the merc bar is a 1-6 die with a known face. It costs only 2 gold in rounds 1–2 (and Warriors get -1 gold extra). Click "Merc" in the action menu to hire.',
+    title: '⚡ Try Something New',
+    body: 'Hire a merc (Specialist value-6 is just 2 gold + Warriors\' -1 discount = 1 gold!), draft a card from the action menu, or play a different placement. Any action works.',
     anchor: 'merc-bar',
-    doneBody: '✓ Mercs are temporary but powerful — and the Specialist often has the best face value on the board.',
+    doneBody: '✓ Another move logged. The Mages will go again.',
   },
   {
     kind: 'ai-turn',
@@ -120,9 +121,9 @@ const STEPS: Step[] = [
   {
     kind: 'place',
     title: '⏸ Pass to End Your Turn',
-    body: 'When you\'re done acting this round, click "⏸ Pass". The round ends when everyone passes. (You can still see the AI play before the round ends.)',
+    body: 'When you have no more good moves, click "⏸ Pass" at the bottom of the action menu. (If you\'d rather keep going, any other action also advances — but pass when you\'re ready.) The round ends when everyone has passed.',
     anchor: 'action-menu',
-    doneBody: '✓ You passed. The Mages will play their remaining moves and then the round will end.',
+    doneBody: '✓ You\'re done for the round. The Mages will play their remaining moves.',
   },
   {
     kind: 'ai-turn',
@@ -143,13 +144,13 @@ const STEPS: Step[] = [
     anchor: 'threat-bar',
   },
 
-  // ── Round 2: 5 action steps ──
+  // ── Round 2: 5 action steps — each accepts any action ──
   {
     kind: 'place',
-    title: '↑ Upgrade a Die',
-    body: 'Tap "↑ Upgrade" in your action menu to promote a Recruit (1-3) → Soldier (2-5). Costs iron + gold. Higher range = reach more regions. You should have enough iron now.',
+    title: '↑ Try Upgrading a Die',
+    body: 'See "↑ Recruit → Soldier" in the action menu? That upgrades a 1-3 die to a 2-5 die (costs iron + gold). If you don\'t have the resources, pick any other action — the tutorial advances on any move.',
     anchor: 'action-menu',
-    doneBody: '✓ Upgraded! That die can now roll up to 5 instead of 3.',
+    doneBody: '✓ Move made. The Mages\' response is next.',
   },
   {
     kind: 'ai-turn',
@@ -158,10 +159,10 @@ const STEPS: Step[] = [
   },
   {
     kind: 'place',
-    title: '✦ Use Your Active Ability',
-    body: 'Tap "✦ Iron Discipline" in your action menu — free +2 iron, once per round. Always worth using early. (If you don\'t see it, pick any other action.)',
+    title: '✦ Try Your Active Ability',
+    body: 'Look for "✦ Iron Discipline" in the action menu — free +2 iron, once per round. If you\'ve already used it (or don\'t see it), pick any other action.',
     anchor: 'action-menu',
-    doneBody: '✓ Active used. You won\'t see it again until next round.',
+    doneBody: '✓ Action logged. Mages move next.',
   },
   {
     kind: 'ai-turn',
@@ -171,9 +172,9 @@ const STEPS: Step[] = [
   {
     kind: 'place',
     title: '⏸ Pass to End Round 2',
-    body: 'Click "⏸ Pass" to wind down round 2. The Mages will finish their actions and round 2 will end.',
+    body: 'Click "⏸ Pass" (or any other action) to wind down round 2. The Mages will finish their actions and round 2 will end.',
     anchor: 'action-menu',
-    doneBody: '✓ Passed. The Mages will close out the round.',
+    doneBody: '✓ The Mages will close out the round.',
   },
   {
     kind: 'ai-turn',
