@@ -229,7 +229,7 @@ const STEPS: Step[] = [
 
 // ─── AI move narration ────────────────────────────────────────────────────────
 
-function describeAIMove(move: Move, reasoning: AIReasoning, state: GameState, factionName: string): string {
+function describeAIMove(move: Move, reasoning: AIReasoning, state: GameState, factionName: string, actingFactionId: string): string {
   const top = reasoning.candidates[0];
   const reasonHint = (() => {
     if (!top) return '';
@@ -268,8 +268,10 @@ function describeAIMove(move: Move, reasoning: AIReasoning, state: GameState, fa
       return `${factionName} hired the ${slotName}. Mercs are temporary dice they can deploy this round.${reasonHint}`;
     }
     case 'use-active': {
-      const ab = FACTION_ABILITIES[state.players[state.activePlayerId]!.factionId];
-      return `${factionName} used their active ability: ${ab?.activeLabel}. ${ab?.activeDescription}`;
+      // Use actingFactionId — NOT state.activePlayerId, which has already rotated
+      // to the next player by the time this function is called.
+      const ab = FACTION_ABILITIES[actingFactionId as keyof typeof FACTION_ABILITIES];
+      return `${factionName} used ${ab?.activeLabel ?? 'their active ability'}.${reasonHint}`;
     }
     case 'upgrade-die': {
       const die = findDieById(state, move.dieId);
@@ -556,15 +558,18 @@ export function TutorialPage() {
         ...structuresCtx, roundGoals: configs.roundGoals, secretGoals: configs.secretGoals,
         rng, difficulty: 'medium',
       });
-      const factionName = factionLabel(state.players[state.activePlayerId]!.factionId);
+      const actingFactionId = state.players[state.activePlayerId]!.factionId;
+      const factionName = factionLabel(actingFactionId);
       const before = state;
       state = apply(state, result.move, {
         rules: configs.rules, cards: configs.cards, costs: configs.costs,
         ...structuresCtx, rng,
       });
-      // Only narrate AI moves (not auto-passes from already-passed players)
+      // Only narrate AI moves (not auto-passes from already-passed players).
+      // Pass actingFactionId captured BEFORE apply() — state.activePlayerId
+      // rotates to the next player after the move is applied.
       if (before.activePlayerId !== humanPid) {
-        narrations.push(describeAIMove(result.move, result.reasoning, state, factionName));
+        narrations.push(describeAIMove(result.move, result.reasoning, state, factionName, actingFactionId));
       }
     }
 
