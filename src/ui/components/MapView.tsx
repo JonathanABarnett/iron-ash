@@ -168,12 +168,21 @@ export function MapView({ state, humanMoves = [], selectedDieId, onRegionClick }
           const border  = isPlayable ? '#14b8a6' : isLocked ? '#1f2030' : accent;
           const sw      = isPlayable ? 2.5 : region.isFortress ? 2 : 1.5;
 
-          // Placed dice
+          // Placed dice (single placements)
           const placedDice: Array<{ val: number | null; ownerId: string }> = [];
           for (const dieId of rt?.placedDieIds ?? []) {
             for (const player of Object.values(state.players)) {
               const die = player.dice.find((d) => d.id === dieId);
               if (die) { placedDice.push({ val: die.faceValue, ownerId: player.id }); break; }
+            }
+          }
+
+          // Garrisoned dice — look up face values so we can show them in the garrison bar
+          const garrisonDice: Array<{ val: number | null }> = [];
+          for (const dieId of rt?.garrisonedDieIds ?? []) {
+            for (const player of Object.values(state.players)) {
+              const die = player.dice.find((d) => d.id === dieId);
+              if (die) { garrisonDice.push({ val: die.faceValue }); break; }
             }
           }
 
@@ -289,6 +298,9 @@ export function MapView({ state, humanMoves = [], selectedDieId, onRegionClick }
               {/* ── Garrison bar ── */}
               {garrisonCount > 0 && garrisonOwner && (() => {
                 const color = getPlayerColor(garrisonOwner, state);
+                const heldLabel = (rt?.heldRounds ?? 0) > 0 ? `  ${rt?.heldRounds}r` : '';
+                // Die value squares — show each garrisoned die's face value
+                const diceStartX = x + NODE_W - 8 - garrisonDice.length * 19;
                 return (
                   <g filter="url(#garrison-glow)">
                     <rect x={x+8} y={y+40} width={NODE_W-16} height={18} rx={4}
@@ -299,9 +311,20 @@ export function MapView({ state, humanMoves = [], selectedDieId, onRegionClick }
                     />
                     <circle cx={x+18} cy={y+49} r={5} fill={color} opacity={0.9} />
                     <text x={x+27} y={y+53} fontSize={9.5} fill={color} fontWeight="700">
-                      {garrisonOwner} ×{garrisonCount}
-                      {(rt?.heldRounds ?? 0) > 0 ? `  ·  ${rt?.heldRounds}r` : ''}
+                      {garrisonOwner}{heldLabel}
                     </text>
+                    {/* Individual die values */}
+                    {garrisonDice.map((d, i) => (
+                      <g key={i}>
+                        <rect x={diceStartX + i * 19} y={y+41} width={16} height={15} rx={3}
+                          fill="#0e0e18" stroke={color} strokeWidth={1.2}
+                        />
+                        <text x={diceStartX + i * 19 + 8} y={y+53} textAnchor="middle"
+                          fontSize={9} fontWeight="900" fill={color}>
+                          {d.val ?? '?'}
+                        </text>
+                      </g>
+                    ))}
                   </g>
                 );
               })()}
