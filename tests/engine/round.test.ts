@@ -119,9 +119,12 @@ describe('round loop', () => {
 
   it('threat track ends the game early when threshold is met before final round', () => {
     const { factions, regions, roundGoals, secretGoals, cards } = configs();
+    // Override BOTH the fallback threshold AND the per-player-count map —
+    // the engine reads the player-count map first and falls back only if absent.
     const lowThresholdRules = {
       ...parseRules(rulesJson),
       threatTrackThreshold: 3,
+      threatTrackThresholdByPlayerCount: { '2': 3, '3': 3, '4': 3 },
       totalRounds: 7,
     };
 

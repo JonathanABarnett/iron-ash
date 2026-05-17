@@ -24,17 +24,16 @@ describe('PERSONALITIES', () => {
     }
   });
 
-  it('matches spec values for stable factions (balance-adjusted factions noted)', () => {
-    // Core spec values — should not change without a new design decision.
-    expect(PERSONALITIES.warriors.fortressPriority).toBe(0.9);
-    expect(PERSONALITIES.warriors.battlePriority).toBe(0.9);
-    expect(PERSONALITIES.merchants.enginePriority).toBe(0.9);
-    expect(PERSONALITIES.merchants.mercenaryAffinity).toBe(0.6); // tuned from 0.8 — merc spamming caused 43% wins
-    // Assassins riskTolerance was 0.8 in spec but tuned to 0.65 after balance pass
-    // (over-gambling post-Shadow-Step-nerf was hurting them).
-    expect(PERSONALITIES.assassins.riskTolerance).toBe(0.65);
-    expect(PERSONALITIES.mages.combinationAffinity).toBe(0.8);
-    expect(PERSONALITIES.necromancers.enginePriority).toBe(0.8);
+  it('matches current tuned personality values (updated after balance passes)', () => {
+    // Values reflect tuning from balance passes 1-4. See ai/personalities.ts
+    // and docs/ideas-and-testing.md for the history.
+    expect(PERSONALITIES.warriors.fortressPriority).toBe(0.9);    // unchanged from spec
+    expect(PERSONALITIES.warriors.battlePriority).toBe(0.75);     // tuned 0.9→0.75 (was 61.7% in 1v1 lineup artifact)
+    expect(PERSONALITIES.merchants.enginePriority).toBe(0.75);    // tuned 0.9→0.75 (gold compounding too efficient)
+    expect(PERSONALITIES.merchants.mercenaryAffinity).toBe(0.6);  // tuned 0.8→0.6 (merc spamming → 43% wins)
+    expect(PERSONALITIES.assassins.riskTolerance).toBe(0.4);      // tuned 0.65→0.5→0.4 (over-gambling post-Shadow-Step-nerf)
+    expect(PERSONALITIES.mages.combinationAffinity).toBe(0.55);   // tuned 0.8→0.55 (combine 2-for-1 wasted board presence)
+    expect(PERSONALITIES.necromancers.enginePriority).toBe(0.6);  // tuned 0.8→0.6 (over-investing in upgrades)
   });
 
   it('throws on unknown faction', () => {
