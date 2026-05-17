@@ -41,6 +41,12 @@ interface Step {
   anchor?: string;
   /** for 'place' steps — body to show after the user completes the action */
   doneBody?: string;
+  /**
+   * If true, this 'place' step auto-completes when the round is already over
+   * (happens when the user placed all dice naturally without an explicit pass).
+   * Used on the two "Pass your turn" steps so the tutorial never gets stuck.
+   */
+  skipIfRoundOver?: boolean;
 }
 
 const STEPS: Step[] = [
@@ -125,7 +131,8 @@ const STEPS: Step[] = [
     title: '⏸ Pass to End Your Turn',
     body: 'You\'ve made three big plays. Click "⏸ Pass (end turn)" at the bottom of the action menu. (Any unused Specialist will refund your 1 gold — but you can also place it first if you prefer.) The round ends when everyone has passed.',
     anchor: 'action-menu',
-    doneBody: '✓ Passed. The Mages will finish their remaining moves.',
+    doneBody: '✓ Round 1 ended — scoring fires next.',
+    skipIfRoundOver: true,
   },
   {
     kind: 'ai-turn',
@@ -176,7 +183,8 @@ const STEPS: Step[] = [
     title: '⏸ Pass to End Round 2',
     body: 'Click "⏸ Pass" to end your turn. The Mages will finish their actions and round 2 will end with another scoring pass.',
     anchor: 'action-menu',
-    doneBody: '✓ Passed. The Mages will close out round 2.',
+    doneBody: '✓ Round 2 ended — scoring fires next.',
+    skipIfRoundOver: true,
   },
   {
     kind: 'ai-turn',
@@ -583,11 +591,19 @@ export function TutorialPage() {
     setAiNarration(null);
   }
 
-  // Auto-trigger game transitions when entering end-of-round or new-round steps
+  // Auto-trigger game transitions when entering end-of-round or new-round steps.
+  // Also auto-completes 'place' steps flagged skipIfRoundOver when the round is
+  // already over (prevents the "Pass your turn" step from getting stuck when the
+  // player placed all dice naturally without an explicit pass).
   useEffect(() => {
     if (!started || !gameState) return;
     const s = STEPS[stepIdx];
     if (!s) return;
+    // If a pass step is reached but the round already ended naturally, skip it.
+    if (s.kind === 'place' && s.skipIfRoundOver && isRoundOver(gameState) && !stepDone) {
+      setStepDone(true);
+      return;
+    }
     if (s.kind === 'end-of-round' && isRoundOver(gameState)) {
       runEndOfRound();
     }
