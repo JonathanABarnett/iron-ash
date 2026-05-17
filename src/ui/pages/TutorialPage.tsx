@@ -94,7 +94,7 @@ const STEPS: Step[] = [
   {
     kind: 'ai-turn',
     title: '🧙 Mages\' Move',
-    body: 'Click ▶ Run AI Turn. The Mages will place one of their dice and I\'ll explain why.',
+    body: 'Mages have two dice (a 5 and a 3) plus 1 gold and 2 essence. They\'ll likely place one for VP. Click ▶ Run AI Turn — I\'ll explain their choice afterward.',
   },
   {
     kind: 'place',
@@ -106,7 +106,7 @@ const STEPS: Step[] = [
   {
     kind: 'ai-turn',
     title: '🧙 Mages Respond',
-    body: 'Click ▶ Run AI Turn. Watch how the Mages adapt to your placements.',
+    body: 'Mages have one die left (and Black Citadel is now yours). Click ▶ Run AI Turn — they\'ll place it for VP.',
   },
   {
     kind: 'place',
@@ -118,7 +118,7 @@ const STEPS: Step[] = [
   {
     kind: 'ai-turn',
     title: '🧙 Mages Move Again',
-    body: 'Click ▶ Run AI Turn.',
+    body: 'Mages are out of dice (both placed). They might hire a merc, draft a card, use their active "Arcane Precision", or pass. Click ▶ Run AI Turn.',
   },
   {
     kind: 'place',
@@ -130,7 +130,7 @@ const STEPS: Step[] = [
   {
     kind: 'ai-turn',
     title: '🧙 Mages Finish the Round',
-    body: 'Click ▶ Run AI Turn — this runs every remaining Mage action until they also pass.',
+    body: 'Both you and Mages are passing. Click ▶ Run AI Turn — Mages will finish any remaining moves and the round will close. End-of-round scoring is next.',
   },
 
   // ── End of Round 1 → Round 2 ──
@@ -157,8 +157,8 @@ const STEPS: Step[] = [
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages\' Turn',
-    body: 'Click ▶ Run AI Turn.',
+    title: '🧙 Mages\' Turn in R2',
+    body: 'Mages have fresh dice (4 and 2) plus their accumulated resources. Click ▶ Run AI Turn.',
   },
   {
     kind: 'place',
@@ -169,8 +169,8 @@ const STEPS: Step[] = [
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages Move',
-    body: 'Click ▶ Run AI Turn.',
+    title: '🧙 Mages Respond Again',
+    body: 'Mages still have one die left. Click ▶ Run AI Turn.',
   },
   {
     kind: 'place',
@@ -182,7 +182,7 @@ const STEPS: Step[] = [
   {
     kind: 'ai-turn',
     title: '🧙 Mages Close Round 2',
-    body: 'Click ▶ Run AI Turn — runs every remaining Mage action.',
+    body: 'Click ▶ Run AI Turn — Mages will finish any remaining moves and round 2 will end. End-of-round scoring is next.',
   },
   {
     kind: 'end-of-round',
@@ -262,33 +262,40 @@ function describeAIMove(move: Move, reasoning: AIReasoning, state: GameState, fa
   }
 }
 
-// ─── Forced tutorial dice (per round) ────────────────────────────────────────
+// ─── Forced tutorial dice (per round, per player) ────────────────────────────
 
-/** Force specific dice values for the human player each round, so step
- *  instructions can reference concrete values (e.g. "Place your 2"). */
-const TUTORIAL_DICE: Record<number, number[]> = {
-  // Round 1: [1-6 die: 6, then two 1-3 dice: 3 and 2]
-  // Enables: place 2 in Marshlands (≤2), place 6 in Black Citadel (≥4)
-  1: [6, 3, 2],
-  // Round 2: [two 1-3 dice: 3 and 2] (the 1-6:6 is locked garrisoning Black Citadel)
-  2: [3, 2],
+/** Force specific dice values for both players each round, so step instructions
+ *  can reference concrete values AND the AI's moves are reproducible (given the
+ *  fixed seed, deterministic AI scoring produces the same result every run). */
+const TUTORIAL_DICE: Record<number, Record<string, number[]>> = {
+  // Round 1
+  1: {
+    p1: [6, 3, 2],  // Warriors: 1-6→6, 1-3→3, 1-3→2
+    p2: [5, 3],     // Mages:    1-6→5, 1-3→3
+  },
+  // Round 2 — Warriors' 1-6:6 stays locked garrisoning Black Citadel from R1
+  2: {
+    p1: [3, 2],     // Warriors: two Recruits → 3, 2
+    p2: [4, 2],     // Mages:    1-6→4, 1-3→2
+  },
 };
 
-function applyForcedTutorialDice(state: GameState, humanPid: PlayerId): GameState {
-  const forced = TUTORIAL_DICE[state.round];
-  if (!forced) return state;
+function applyForcedTutorialDice(state: GameState): GameState {
+  const roundMap = TUTORIAL_DICE[state.round];
+  if (!roundMap) return state;
   return produce(state, (draft) => {
-    const w = draft.players[humanPid];
-    if (!w) return;
-    // Sort barracks dice with face values, biggest range first (1-6, 3-6, 2-5, 1-3)
     const tierOrder: Record<string, number> = { '1-6': 0, '3-6': 1, '2-5': 2, '1-3': 3 };
-    const barracksDice = w.dice
-      .filter((d) => d.location.kind === 'barracks' && d.faceValue !== null && !d.mercSource)
-      .sort((a, b) => (tierOrder[a.range] ?? 9) - (tierOrder[b.range] ?? 9));
-    barracksDice.forEach((d, i) => {
-      const v = forced[i];
-      if (v != null) d.faceValue = v;
-    });
+    for (const [pid, forced] of Object.entries(roundMap)) {
+      const player = draft.players[pid];
+      if (!player) continue;
+      const barracksDice = player.dice
+        .filter((d) => d.location.kind === 'barracks' && d.faceValue !== null && !d.mercSource)
+        .sort((a, b) => (tierOrder[a.range] ?? 9) - (tierOrder[b.range] ?? 9));
+      barracksDice.forEach((d, i) => {
+        const v = forced[i];
+        if (v != null) d.faceValue = v;
+      });
+    }
   });
 }
 
@@ -407,7 +414,7 @@ export function TutorialPage() {
     const rng = Rng.fromSnapshot(JSON.parse(state.rngState));
     const afterRoll = rollPhase(state, { rng, cards: configs.cards });
     // Force the human's dice to known values so step instructions can name them
-    const forced = applyForcedTutorialDice(afterRoll, humanPid);
+    const forced = applyForcedTutorialDice(afterRoll);
     setGameState(forced);
     setRngSnapshot(JSON.stringify(rng.snapshot()));
     setStarted(true);
@@ -558,7 +565,7 @@ export function TutorialPage() {
     const rng = Rng.fromSnapshot(JSON.parse(rngSnapshot));
     const rolled = rollPhase(gameState, { rng, cards: configs.cards });
     // Force tutorial dice for this round (if we have a forced set for it)
-    const state = applyForcedTutorialDice(rolled, humanPid);
+    const state = applyForcedTutorialDice(rolled);
     setGameState(state);
     setRngSnapshot(JSON.stringify(rng.snapshot()));
     setJustRolled(true);
