@@ -35,14 +35,22 @@ npx tsx scripts/test-tutorial.ts           # Happy-path: 22/22 steps
 npx tsx scripts/test-tutorial-deviation.ts # Resilience: any-action still advances
 ```
 
-## Deployment
+## Deployment — Two Branches, Two URLs
 
-**GitHub Pages** — auto-deploys via `.github/workflows/deploy.yml` on every push to `master`.
+Both branches auto-deploy via GitHub Actions (`.github/workflows/deploy.yml`) to the same `gh-pages` branch, using `peaceiris/actions-gh-pages` with `keep_files: true` so they coexist.
 
-- Live URL: https://JonathanABarnett.github.io/iron-ash/
-- Vite base: `/iron-ash/` — all asset and fetch paths must use `import.meta.env.BASE_URL`, **never** bare `/` paths
+| Branch | URL | Purpose |
+|---|---|---|
+| `master` | https://JonathanABarnett.github.io/iron-ash/ | **v1** — stable, locked |
+| `steam` | https://JonathanABarnett.github.io/iron-ash/next/ | **v2** — Steam / map redesign work |
+
+- `master` vite base: `/iron-ash/`
+- `steam` vite base: `/iron-ash/next/`
+- All asset and fetch paths must use `import.meta.env.BASE_URL` — **never** bare `/` paths
 - Common trap: `<img src="/art/factions/X.jpg">` breaks on Pages; use `` `${import.meta.env.BASE_URL}art/factions/${id}.jpg` ``
 - Same trap applies to `fetch()` calls (e.g. rulebook markdown)
+
+**Do not merge `steam` back into `master` without explicit intent** — they have different vite base URLs and are intentionally diverged.
 
 ## Project Structure
 
