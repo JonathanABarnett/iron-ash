@@ -41,7 +41,7 @@ type StepKind = 'info' | 'place' | 'ai-turn' | 'end-of-round' | 'new-round' | 'f
  * clickable. This locks the tutorial so the player can't deviate by accident.
  */
 type PrescribedMove =
-  | { kind: 'place';    regionId: string }
+  | { kind: 'place';    regionId: string; dieRange?: string }
   | { kind: 'combine';  regionId: string }
   | { kind: 'hire-merc'; mercSlot: 'low' | 'high' | 'specialist' }
   | { kind: 'use-active' }
@@ -139,7 +139,7 @@ const STEPS: Step[] = [
     body: 'Goldhaven is a high-value non-fortress region (≥3, 2 VP). Your 6 easily qualifies. Click Goldhaven on the map or use "[1-6:6] → Goldhaven" in the action menu. We\'ll save the fortress garrison for Round 2 (combine 6+3=9 → Stormwall Keep is safer there).',
     anchor: 'map',
     doneBody: '✓ Goldhaven claimed for +2 VP.',
-    prescribed: { kind: 'place', regionId: 'goldhaven' },
+    prescribed: { kind: 'place', regionId: 'goldhaven', dieRange: '1-6' },
   },
   {
     kind: 'ai-turn',
@@ -339,9 +339,17 @@ function findDieById(state: GameState, id: string) {
 }
 
 /** Returns true if `move` satisfies a prescribed-move descriptor. */
-function matchesPrescribed(move: Move, p: PrescribedMove): boolean {
+function matchesPrescribed(move: Move, p: PrescribedMove, state?: GameState): boolean {
   if (move.kind !== p.kind) return false;
-  if (p.kind === 'place'    && move.kind === 'place')    return move.regionId === p.regionId;
+  if (p.kind === 'place' && move.kind === 'place') {
+    if (move.regionId !== p.regionId) return false;
+    // Optional die-range filter — e.g. only allow the 1-6 die in a given region
+    if (p.dieRange && state) {
+      const die = findDieById(state, move.dieId);
+      if (die && die.range !== p.dieRange) return false;
+    }
+    return true;
+  }
   if (p.kind === 'combine'  && move.kind === 'combine')  return move.regionId === p.regionId;
   if (p.kind === 'hire-merc' && move.kind === 'hire-merc') return move.mercSlot === p.mercSlot;
   return true; // use-active, pass — any such move qualifies
@@ -499,7 +507,7 @@ export function TutorialPage() {
     // This prevents accidental clicks on the map or stale button state from
     // applying an off-script action.
     const prescribed = step?.prescribed;
-    if (prescribed && !matchesPrescribed(move, prescribed)) return;
+    if (prescribed && !matchesPrescribed(move, prescribed, gameState)) return;
     const rng = Rng.fromSnapshot(JSON.parse(rngSnapshot));
     let state = apply(gameState, move, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
 
@@ -725,7 +733,7 @@ export function TutorialPage() {
   const visibleMoves = (() => {
     const p = step?.prescribed;
     if (!p || !waitingForHuman) return pendingMoves;
-    const filtered = pendingMoves.filter((m) => matchesPrescribed(m, p));
+    const filtered = pendingMoves.filter((m) => matchesPrescribed(m, p, gameState));
     return filtered.length > 0 ? filtered : pendingMoves;
   })();
 
