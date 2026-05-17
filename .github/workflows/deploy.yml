@@ -1,17 +1,15 @@
-name: Deploy to GitHub Pages
+name: Deploy steam branch → /next/
 
 on:
   push:
-    branches: [master]
+    branches: [steam]
   workflow_dispatch:
 
 permissions:
   contents: write   # peaceiris needs write to push to gh-pages branch
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages-master
+  group: pages-steam
   cancel-in-progress: true
 
 jobs:
@@ -37,10 +35,11 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Deploy to gh-pages (root — v1)
+      - name: Deploy to gh-pages (/next/ — steam branch)
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-          keep_files: true   # preserves the /next/ dir deployed by the steam branch
-          commit_message: "deploy: v1 from master@${{ github.sha }}"
+          destination_dir: next   # deploys under /iron-ash/next/
+          keep_files: true        # preserves v1 at root
+          commit_message: "deploy: steam@${{ github.sha }} → /next/"
