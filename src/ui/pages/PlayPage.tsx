@@ -14,7 +14,7 @@ import { apply, enumerate } from '@engine/moves';
 import { endOfRound, isRoundOver, rollPhase } from '@engine/rounds';
 import { pickMove } from '@ai/decide';
 import type { Difficulty } from '@ai/types';
-import type { AIReasoning, FactionId, GameState, Move, PlayerId } from '@engine/types';
+import type { AIReasoning, CardDefinition, FactionId, GameState, Move, PlayerId } from '@engine/types';
 import { nextDieRange } from '@engine/types';
 import { FACTION_ABILITIES } from '@engine/factions/abilities';
 import { ROUND_GOAL_MEASURES } from '@engine/round-goals';
@@ -323,10 +323,10 @@ export function PlayPage() {
           </div>
 
           {/* ══ Two-column layout ══ */}
-          <div className="flex flex-col xl:flex-row xl:items-start">
+          <div className="flex flex-col xl:flex-row xl:items-start max-w-[1600px] mx-auto">
 
             {/* ── LEFT: Map column ── */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 xl:max-w-[900px]">
 
               {/* Goal standings bar */}
               <GoalStandingsBar state={active.state} roundGoals={configs.roundGoals} />
@@ -417,6 +417,17 @@ export function PlayPage() {
                   })}
                 </div>
               </div>
+
+              {/* Card market panel */}
+              <CardMarketPanel
+                market={active.state.market}
+                cards={configs.cards}
+                players={active.state.players}
+                humanPlayerId={active.humanPlayerId}
+                pendingMoves={active.pendingMoves}
+                waitingForHuman={active.waitingForHuman}
+                onChoose={applyHumanMove}
+              />
 
               {/* Human action panel */}
               {active.waitingForHuman && (
@@ -1617,6 +1628,149 @@ function EndGamePanel({ state, onExport }: { state: GameState; onExport: () => v
           📥 Export Replay
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── Card market panel ────────────────────────────────────────────────────────
+
+function CardMarketPanel({
+  market, cards, players, humanPlayerId,
+  pendingMoves, waitingForHuman, onChoose,
+}: {
+  market: string[];
+  cards: CardDefinition[];
+  players: GameState['players'];
+  humanPlayerId: string | null;
+  pendingMoves: Move[];
+  waitingForHuman: boolean;
+  onChoose: (m: Move) => void;
+}) {
+  if (market.length === 0) return null;
+
+  const humanPlayer = humanPlayerId ? players[humanPlayerId] : null;
+
+  // Cost icon helpers
+  function CostPip({ resource, amount }: { resource: string; amount: number }) {
+    const icon = resource === 'iron' ? '⚙' : resource === 'gold' ? '🪙' : '✨';
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[10px] text-neutral-400">
+        <span>{icon}</span>
+        <span className="tabular-nums">{amount}</span>
+      </span>
+    );
+  }
+
+  function canAfford(card: CardDefinition): boolean {
+    if (!humanPlayer) return false;
+    for (const [res, needed] of Object.entries(card.cost)) {
+      const have = humanPlayer.resources[res as 'iron' | 'gold' | 'essence'] ?? 0;
+      if (have < (needed ?? 0)) return false;
+    }
+    return true;
+  }
+
+  const handCardIds = new Set(humanPlayer?.hand ?? []);
+  const handCards = humanPlayerId
+    ? cards.filter((c) => handCardIds.has(c.id))
+    : [];
+
+  const rowBase =
+    'flex items-center gap-1.5 rounded-lg px-2 py-1 transition-colors';
+  const dimStyle = 'opacity-40';
+
+  return (
+    <div className="px-3 pb-2">
+      {/* Market */}
+      <div className="text-[9px] font-bold uppercase tracking-widest text-neutral-600 mb-1.5">Market</div>
+      <div
+        className="rounded-xl overflow-hidden"
+        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+      >
+        {market.map((cardId) => {
+          const card = cards.find((c) => c.id === cardId);
+          if (!card) return null;
+          const draftMove = waitingForHuman
+            ? pendingMoves.find((m) => m.kind === 'draft-card' && m.cardId === cardId)
+            : undefined;
+          const affordable = canAfford(card);
+          const dim = !draftMove && !affordable;
+          const hasCost = Object.keys(card.cost).length > 0;
+          return (
+            <div key={cardId} className={`${rowBase} ${dim ? dimStyle : ''}`}>
+              <span className="text-[11px] shrink-0">🃏</span>
+              <span className="flex-1 min-w-0 text-[10px] font-medium text-neutral-200 truncate">
+                {card.name}
+              </span>
+              {hasCost && (
+                <div className="flex items-center gap-1 shrink-0">
+                  {((['iron', 'gold', 'essence'] as const)).map((res) => {
+                    const amt = card.cost[res];
+                    return amt ? <CostPip key={res} resource={res} amount={amt} /> : null;
+                  })}
+                </div>
+              )}
+              {card.description && (
+                <span className="text-[9px] text-neutral-600 truncate max-w-[80px] shrink-0 hidden xl:block">
+                  {card.description}
+                </span>
+              )}
+              {draftMove && (
+                <button
+                  type="button"
+                  onClick={() => onChoose(draftMove)}
+                  className="ml-1 shrink-0 rounded-md border border-teal-600/50 bg-teal-950/50 px-1.5 py-0.5 text-[9px] font-bold text-teal-300 hover:bg-teal-900/60 transition"
+                >
+                  Draft
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Hand */}
+      {handCards.length > 0 && (
+        <>
+          <div className="text-[9px] font-bold uppercase tracking-widest text-neutral-600 mt-2 mb-1.5">Your Hand</div>
+          <div
+            className="rounded-xl overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+          >
+            {handCards.map((card) => {
+              const playMove = waitingForHuman
+                ? pendingMoves.find((m) => m.kind === 'play-card' && m.cardId === card.id)
+                : undefined;
+              const hasCost = Object.keys(card.cost).length > 0;
+              return (
+                <div key={card.id} className={rowBase}>
+                  <span className="text-[11px] shrink-0">🃏</span>
+                  <span className="flex-1 min-w-0 text-[10px] font-medium text-neutral-200 truncate">
+                    {card.name}
+                  </span>
+                  {hasCost && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      {((['iron', 'gold', 'essence'] as const)).map((res) => {
+                        const amt = card.cost[res];
+                        return amt ? <CostPip key={res} resource={res} amount={amt} /> : null;
+                      })}
+                    </div>
+                  )}
+                  {playMove && (
+                    <button
+                      type="button"
+                      onClick={() => onChoose(playMove)}
+                      className="ml-1 shrink-0 rounded-md border border-violet-600/50 bg-violet-950/50 px-1.5 py-0.5 text-[9px] font-bold text-violet-300 hover:bg-violet-900/60 transition"
+                    >
+                      Play
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }
