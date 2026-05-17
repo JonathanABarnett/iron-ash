@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { produce } from 'immer';
 import { Rng } from '@engine/rng';
 import { createGame } from '@engine/setup';
 import { apply, enumerate } from '@engine/moves';
@@ -80,26 +81,26 @@ const STEPS: Step[] = [
     anchor: 'threat-bar',
   },
 
-  // ── Round 1: 7 action steps. Each place step accepts ANY action — the
-  //     suggested action is a strong hint, not a hard requirement.
+  // ── Round 1: 7 action steps. Dice are forced to [6, 3, 2] so instructions
+  //     can reference exact values. Any action still advances (failsafe).
   {
     kind: 'place',
-    title: '👆 Round 1 — Make Any Move',
-    body: 'Any action advances this step: click any button in the action menu above, click a glowing region on the map, or click "Pass". The "★ Best by VP" buttons are highest scoring — start there.',
+    title: '👆 Place Your 2 in Marshlands',
+    body: 'Your dice this round: 6 (purple Specialist range), 3 and 2 (gray Recruits). Start with the easy play: click Marshlands on the map (the green ≤2 region in the top-right area). Your 2 satisfies the requirement → +1 VP claimed.',
     anchor: 'action-menu',
-    doneBody: '✓ Move made. The Mages will respond next.',
+    doneBody: '✓ Marshlands claimed. The Mages will play next.',
   },
   {
     kind: 'ai-turn',
     title: '🧙 Mages\' Move',
-    body: 'Click ▶ Run AI Turn to watch the Mages play. After the move, I\'ll explain what they chose and why.',
+    body: 'Click ▶ Run AI Turn. The Mages will place one of their dice and I\'ll explain why.',
   },
   {
     kind: 'place',
-    title: '🏰 Take Another Action',
-    body: 'Garrison a free fortress if you can (orange strip, ● free), upgrade a die for stronger range, build a structure, or just place another die. Any action moves the tutorial forward.',
-    anchor: 'action-menu',
-    doneBody: '✓ Action taken. The Mages\' response is next.',
+    title: '🏰 Garrison Black Citadel With Your 6',
+    body: 'Black Citadel is a fortress (orange castle icon, ≥4 requirement). Your 6 easily qualifies. Click Black Citadel on the map, or find the "[1-6:6] → Black Citadel" button in the action menu. You earn 3 VP now plus +1 VP every round you hold it.',
+    anchor: 'fortress-strip',
+    doneBody: '✓ Black Citadel garrisoned. The Mages may try to usurp later — be ready.',
   },
   {
     kind: 'ai-turn',
@@ -108,10 +109,10 @@ const STEPS: Step[] = [
   },
   {
     kind: 'place',
-    title: '⚡ Try Something New',
-    body: 'Hire a merc (Specialist value-6 is just 2 gold + Warriors\' -1 discount = 1 gold!), draft a card from the action menu, or play a different placement. Any action works.',
+    title: '⚡ Hire the Specialist Merc',
+    body: 'Look at the merc bar: Specialist value is 6 (the white number). Cost is 2 gold normally, but Warriors get -1 discount = just 1 gold. Open the action menu and find the "Merc" / "Hire specialist" button. You\'ll get an extra value-6 die.',
     anchor: 'merc-bar',
-    doneBody: '✓ Another move logged. The Mages will go again.',
+    doneBody: '✓ Specialist hired. You now have an extra die you can place this round (or refund next round if unused).',
   },
   {
     kind: 'ai-turn',
@@ -121,9 +122,9 @@ const STEPS: Step[] = [
   {
     kind: 'place',
     title: '⏸ Pass to End Your Turn',
-    body: 'When you have no more good moves, click "⏸ Pass" at the bottom of the action menu. (If you\'d rather keep going, any other action also advances — but pass when you\'re ready.) The round ends when everyone has passed.',
+    body: 'You\'ve made three big plays. Click "⏸ Pass (end turn)" at the bottom of the action menu. (Any unused Specialist will refund your 1 gold — but you can also place it first if you prefer.) The round ends when everyone has passed.',
     anchor: 'action-menu',
-    doneBody: '✓ You\'re done for the round. The Mages will play their remaining moves.',
+    doneBody: '✓ Passed. The Mages will finish their remaining moves.',
   },
   {
     kind: 'ai-turn',
@@ -144,13 +145,14 @@ const STEPS: Step[] = [
     anchor: 'threat-bar',
   },
 
-  // ── Round 2: 5 action steps — each accepts any action ──
+  // ── Round 2: dice forced to [3, 2] for the two free Recruits.
+  //    The 1-6:6 die stays locked in Black Citadel garrison from R1.
   {
     kind: 'place',
-    title: '↑ Try Upgrading a Die',
-    body: 'See "↑ Recruit → Soldier" in the action menu? That upgrades a 1-3 die to a 2-5 die (costs iron + gold). If you don\'t have the resources, pick any other action — the tutorial advances on any move.',
+    title: '↑ Upgrade a Recruit to Soldier',
+    body: 'Round 2: your barracks has two Recruits (1-3 dice with face 3 and 2). The 1-6:6 stays locked garrisoning Black Citadel. Click "↑ Recruit → Soldier" in the action menu (costs 2 iron + 1 gold). That converts a 1-3 die to a 2-5 die — much stronger range.',
     anchor: 'action-menu',
-    doneBody: '✓ Move made. The Mages\' response is next.',
+    doneBody: '✓ Upgraded! That die can now roll 2–5 instead of 1–3.',
   },
   {
     kind: 'ai-turn',
@@ -159,10 +161,10 @@ const STEPS: Step[] = [
   },
   {
     kind: 'place',
-    title: '✦ Try Your Active Ability',
-    body: 'Look for "✦ Iron Discipline" in the action menu — free +2 iron, once per round. If you\'ve already used it (or don\'t see it), pick any other action.',
+    title: '✦ Use Iron Discipline',
+    body: 'Active abilities reset every round. Click "✦ Iron Discipline" in the action menu — free +2 iron. Stockpile iron for more upgrades and structure builds later in the game.',
     anchor: 'action-menu',
-    doneBody: '✓ Action logged. Mages move next.',
+    doneBody: '✓ +2 iron added. You won\'t see Iron Discipline again until round 3.',
   },
   {
     kind: 'ai-turn',
@@ -172,9 +174,9 @@ const STEPS: Step[] = [
   {
     kind: 'place',
     title: '⏸ Pass to End Round 2',
-    body: 'Click "⏸ Pass" (or any other action) to wind down round 2. The Mages will finish their actions and round 2 will end.',
+    body: 'Click "⏸ Pass" to end your turn. The Mages will finish their actions and round 2 will end with another scoring pass.',
     anchor: 'action-menu',
-    doneBody: '✓ The Mages will close out the round.',
+    doneBody: '✓ Passed. The Mages will close out round 2.',
   },
   {
     kind: 'ai-turn',
@@ -257,6 +259,36 @@ function describeAIMove(move: Move, reasoning: AIReasoning, state: GameState, fa
     case 'pass':
       return `${factionName} passed. They're saving resources or out of good moves.${reasonHint}`;
   }
+}
+
+// ─── Forced tutorial dice (per round) ────────────────────────────────────────
+
+/** Force specific dice values for the human player each round, so step
+ *  instructions can reference concrete values (e.g. "Place your 2"). */
+const TUTORIAL_DICE: Record<number, number[]> = {
+  // Round 1: [1-6 die: 6, then two 1-3 dice: 3 and 2]
+  // Enables: place 2 in Marshlands (≤2), place 6 in Black Citadel (≥4)
+  1: [6, 3, 2],
+  // Round 2: [two 1-3 dice: 3 and 2] (the 1-6:6 is locked garrisoning Black Citadel)
+  2: [3, 2],
+};
+
+function applyForcedTutorialDice(state: GameState, humanPid: PlayerId): GameState {
+  const forced = TUTORIAL_DICE[state.round];
+  if (!forced) return state;
+  return produce(state, (draft) => {
+    const w = draft.players[humanPid];
+    if (!w) return;
+    // Sort barracks dice with face values, biggest range first (1-6, 3-6, 2-5, 1-3)
+    const tierOrder: Record<string, number> = { '1-6': 0, '3-6': 1, '2-5': 2, '1-3': 3 };
+    const barracksDice = w.dice
+      .filter((d) => d.location.kind === 'barracks' && d.faceValue !== null && !d.mercSource)
+      .sort((a, b) => (tierOrder[a.range] ?? 9) - (tierOrder[b.range] ?? 9));
+    barracksDice.forEach((d, i) => {
+      const v = forced[i];
+      if (v != null) d.faceValue = v;
+    });
+  });
 }
 
 function findDieById(state: GameState, id: string) {
@@ -373,7 +405,9 @@ export function TutorialPage() {
     // Skip the initial roll phase so the first step shows ready-to-play state
     const rng = Rng.fromSnapshot(JSON.parse(state.rngState));
     const afterRoll = rollPhase(state, { rng, cards: configs.cards });
-    setGameState(afterRoll);
+    // Force the human's dice to known values so step instructions can name them
+    const forced = applyForcedTutorialDice(afterRoll, humanPid);
+    setGameState(forced);
     setRngSnapshot(JSON.stringify(rng.snapshot()));
     setStarted(true);
     setStepIdx(0);
@@ -521,7 +555,9 @@ export function TutorialPage() {
   function runRollPhase() {
     if (!gameState || gameState.phase !== 'roll') return;
     const rng = Rng.fromSnapshot(JSON.parse(rngSnapshot));
-    const state = rollPhase(gameState, { rng, cards: configs.cards });
+    const rolled = rollPhase(gameState, { rng, cards: configs.cards });
+    // Force tutorial dice for this round (if we have a forced set for it)
+    const state = applyForcedTutorialDice(rolled, humanPid);
     setGameState(state);
     setRngSnapshot(JSON.stringify(rng.snapshot()));
     setJustRolled(true);
