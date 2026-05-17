@@ -34,6 +34,19 @@ import { GoalStandingsBar, FortressStrip } from '@ui/pages/PlayPage';
 // ─── Tutorial step definitions ────────────────────────────────────────────────
 
 type StepKind = 'info' | 'place' | 'ai-turn' | 'end-of-round' | 'new-round' | 'finish';
+
+/**
+ * Describes the one move the player is allowed to make on a 'place' step.
+ * The action menu and map are filtered to this move only — nothing else is
+ * clickable. This locks the tutorial so the player can't deviate by accident.
+ */
+type PrescribedMove =
+  | { kind: 'place';    regionId: string }
+  | { kind: 'combine';  regionId: string }
+  | { kind: 'hire-merc'; mercSlot: 'low' | 'high' | 'specialist' }
+  | { kind: 'use-active' }
+  | { kind: 'pass' };
+
 interface Step {
   kind: StepKind;
   title: string;
@@ -42,9 +55,13 @@ interface Step {
   /** for 'place' steps — body to show after the user completes the action */
   doneBody?: string;
   /**
-   * If true, this 'place' step auto-completes when the round is already over
-   * (happens when the user placed all dice naturally without an explicit pass).
-   * Used on the two "Pass your turn" steps so the tutorial never gets stuck.
+   * The one move the player may make on this step. The action menu and map are
+   * filtered to only show/respond to this move. Required on all 'place' steps.
+   */
+  prescribed?: PrescribedMove;
+  /**
+   * If true, this 'place' step auto-completes when the round is already over.
+   * Safety net — with prescribed moves this shouldn't normally fire.
    */
   skipIfRoundOver?: boolean;
 }
@@ -96,6 +113,7 @@ const STEPS: Step[] = [
     body: 'Your dice: 6 (Specialist range), 3 and 2 (Recruits). Start safe: click Marshlands on the map (green ≤2 region) or use "[1-3:2] → Marshlands" in the action menu. Your 2 satisfies ≤2 → +1 VP claimed.',
     anchor: 'action-menu',
     doneBody: '✓ Marshlands claimed. The Mages will respond.',
+    prescribed: { kind: 'place', regionId: 'marshlands' },
   },
   {
     kind: 'ai-turn',
@@ -108,6 +126,7 @@ const STEPS: Step[] = [
     body: 'The merc bar shows Specialist=6. Cost: 2 gold normally, but Warriors get -1 discount = just 1 gold. Mages also wants this — beat them to it! Open the action menu and click the "Merc" / "Hire specialist" button.',
     anchor: 'merc-bar',
     doneBody: '✓ Specialist hired. You now have an extra value-6 die for the round.',
+    prescribed: { kind: 'hire-merc', mercSlot: 'specialist' },
   },
   {
     kind: 'ai-turn',
@@ -120,6 +139,7 @@ const STEPS: Step[] = [
     body: 'Goldhaven is a high-value non-fortress region (≥3, 2 VP). Your 6 easily qualifies. Click Goldhaven on the map or use "[1-6:6] → Goldhaven" in the action menu. We\'ll save the fortress garrison for Round 2 (combine 6+3=9 → Stormwall Keep is safer there).',
     anchor: 'map',
     doneBody: '✓ Goldhaven claimed for +2 VP.',
+    prescribed: { kind: 'place', regionId: 'goldhaven' },
   },
   {
     kind: 'ai-turn',
@@ -129,9 +149,10 @@ const STEPS: Step[] = [
   {
     kind: 'place',
     title: '⏸ Pass to End Your Turn',
-    body: 'You\'ve made three big plays. Click "⏸ Pass (end turn)" at the bottom of the action menu. (Any unused Specialist will refund your 1 gold — but you can also place it first if you prefer.) The round ends when everyone has passed.',
+    body: 'You\'ve used the Specialist and claimed two regions. Click "⏸ Pass (end turn)" in the action menu — this signals you\'re done for the round. The round ends once both players have passed.',
     anchor: 'action-menu',
-    doneBody: '✓ Round 1 ended — scoring fires next.',
+    doneBody: '✓ Passed. Round 1 ended — scoring fires next.',
+    prescribed: { kind: 'pass' },
     skipIfRoundOver: true,
   },
   {
@@ -160,6 +181,7 @@ const STEPS: Step[] = [
     body: 'Round 2 dice: 6, 3, 2 (rolled fresh). Stormwall Keep is a fortress requiring Σ≥7 (combined sum). Your 6+3=9 qualifies AND is too high for Mages to usurp (their max combine is 8). Click Stormwall Keep on the map or use "combine 3+6=9 → Stormwall Keep" in the action menu. Big +3 VP and a safe fortress hold.',
     anchor: 'fortress-strip',
     doneBody: '✓ Stormwall Keep garrisoned with a sum of 9 — Mages can\'t usurp it.',
+    prescribed: { kind: 'combine', regionId: 'stormwall-keep' },
   },
   {
     kind: 'ai-turn',
@@ -172,6 +194,7 @@ const STEPS: Step[] = [
     body: 'Active abilities reset every round. Click "✦ Iron Discipline" in the action menu — free +2 iron. Stockpile iron for more upgrades and structure builds later in the game.',
     anchor: 'action-menu',
     doneBody: '✓ +2 iron added. You won\'t see Iron Discipline again until round 3.',
+    prescribed: { kind: 'use-active' },
   },
   {
     kind: 'ai-turn',
@@ -183,7 +206,8 @@ const STEPS: Step[] = [
     title: '⏸ Pass to End Round 2',
     body: 'Click "⏸ Pass" to end your turn. The Mages will finish their actions and round 2 will end with another scoring pass.',
     anchor: 'action-menu',
-    doneBody: '✓ Round 2 ended — scoring fires next.',
+    doneBody: '✓ Passed. Round 2 ended — scoring fires next.',
+    prescribed: { kind: 'pass' },
     skipIfRoundOver: true,
   },
   {
@@ -312,6 +336,15 @@ function findDieById(state: GameState, id: string) {
     if (d) return d;
   }
   return undefined;
+}
+
+/** Returns true if `move` satisfies a prescribed-move descriptor. */
+function matchesPrescribed(move: Move, p: PrescribedMove): boolean {
+  if (move.kind !== p.kind) return false;
+  if (p.kind === 'place'    && move.kind === 'place')    return move.regionId === p.regionId;
+  if (p.kind === 'combine'  && move.kind === 'combine')  return move.regionId === p.regionId;
+  if (p.kind === 'hire-merc' && move.kind === 'hire-merc') return move.mercSlot === p.mercSlot;
+  return true; // use-active, pass — any such move qualifies
 }
 
 // ─── Splash ───────────────────────────────────────────────────────────────────
@@ -458,6 +491,11 @@ export function TutorialPage() {
 
   function applyHumanMove(move: Move) {
     if (!gameState) return;
+    // If this step prescribes a specific move, silently reject anything else.
+    // This prevents accidental clicks on the map or stale button state from
+    // applying an off-script action.
+    const prescribed = step?.prescribed;
+    if (prescribed && !matchesPrescribed(move, prescribed)) return;
     const rng = Rng.fromSnapshot(JSON.parse(rngSnapshot));
     let state = apply(gameState, move, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
 
@@ -678,6 +716,15 @@ export function TutorialPage() {
     step.kind === 'ai-turn'      ? !!aiNarration :
     false;
 
+  // Filter pending moves to only the prescribed move for this step.
+  // Falls back to the full set if no prescription or nothing matches (safety).
+  const visibleMoves = (() => {
+    const p = step?.prescribed;
+    if (!p || !waitingForHuman) return pendingMoves;
+    const filtered = pendingMoves.filter((m) => matchesPrescribed(m, p));
+    return filtered.length > 0 ? filtered : pendingMoves;
+  })();
+
   return (
     <main className="relative min-h-screen animate-fade-in page-bg-dots pb-64" style={{ background: 'var(--color-bg)' }}>
 
@@ -741,12 +788,21 @@ export function TutorialPage() {
           }}>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-black text-teal-300 uppercase tracking-wide">⚔ Your Turn — Warriors</span>
-            {selectedDieId && (
-              <button type="button" onClick={() => setSelectedDieId(null)}
-                className="text-[10px] text-neutral-400 hover:text-neutral-200 transition">✕ clear</button>
+            {/* Lock badge — shown when the tutorial restricts available moves */}
+            {step?.prescribed && (
+              <span className="rounded-md bg-purple-900/60 px-2 py-0.5 text-[9px] font-bold text-purple-300 border border-purple-700/40">
+                🔒 Tutorial locked
+              </span>
             )}
           </div>
-          <HumanActionMenu moves={pendingMoves} state={gameState} selectedDieId={selectedDieId} onChoose={applyHumanMove} />
+          {/* Pass visibleMoves (filtered to prescribed move) and suppress die selection
+              so the player can't accidentally narrow to no valid moves */}
+          <HumanActionMenu
+            moves={visibleMoves}
+            state={gameState}
+            selectedDieId={step?.prescribed ? null : selectedDieId}
+            onChoose={applyHumanMove}
+          />
         </div>
       )}
 
@@ -754,13 +810,13 @@ export function TutorialPage() {
       <div data-tour="map" className="px-4 pt-2 pb-4">
         <MapView
           state={gameState}
-          humanMoves={waitingForHuman ? pendingMoves : []}
-          selectedDieId={selectedDieId}
+          humanMoves={waitingForHuman ? visibleMoves : []}
+          selectedDieId={step?.prescribed ? null : selectedDieId}
           onRegionClick={(_id, moves) => {
             if (moves.length === 0) return;
-            // If a die is selected, only apply moves using it. Otherwise pick the highest-VP
-            // legal move (the one the user would probably want anyway).
-            const filtered = selectedDieId
+            // In tutorial: moves is already filtered to the prescribed one by humanMoves.
+            // In free-play: respect die selection as before.
+            const filtered = (!step?.prescribed && selectedDieId)
               ? moves.filter((m) =>
                   (m.kind === 'place'   && m.dieId === selectedDieId) ||
                   (m.kind === 'combine' && (m.dieIds[0] === selectedDieId || m.dieIds[1] === selectedDieId)) ||
