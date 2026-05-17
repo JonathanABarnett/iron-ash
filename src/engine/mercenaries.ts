@@ -37,18 +37,25 @@ export function mercCost(
   slot?: MercSource,
 ): number {
   if (state.freeForAll && rules.freeForAllToggles.allMercsFree) return 0;
+
+  // Base cost: 3 gold default, 2 gold for Specialist in rounds 1-2 (encourages
+  // early contesting of the high-value Specialist die — R2 claim rate target ≥40%).
+  let cost = DEFAULT_MERC_COST;
+  if (slot === 'specialist' && state.round <= 2) cost = 2;
+
+  // Faction-specific special cases that REPLACE the base cost
   if (hirerId && slot === 'low') {
     const player = state.players[hirerId];
-    if (player?.factionId === 'assassins') return 2; // First Refusal: 2 gold, not 3
+    if (player?.factionId === 'assassins') cost = Math.min(cost, 2); // First Refusal
   }
-  // Specialist is 2 gold in rounds 1-2 (R2 claim rate was 32%, target ≥40%).
-  // Value-5 in R2 is still compelling but at 3 gold the AI passed too often.
-  if (slot === 'specialist' && state.round <= 2) return 2;
-  let cost = DEFAULT_MERC_COST;
+
+  // Stacking: faction mercDiscount (-1 for Warriors / Necromancers) applies to
+  // every slot AFTER the base/special cost is set. Min 0.
   if (hirerId) {
     const player = state.players[hirerId];
     if (player) cost = Math.max(0, cost - getMercDiscount(player.factionId, hirerId));
   }
+
   return cost;
 }
 

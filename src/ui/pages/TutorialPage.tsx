@@ -87,38 +87,38 @@ const STEPS: Step[] = [
   {
     kind: 'place',
     title: '👆 Place Your 2 in Marshlands',
-    body: 'Your dice this round: 6 (purple Specialist range), 3 and 2 (gray Recruits). Start with the easy play: click Marshlands on the map (the green ≤2 region in the top-right area). Your 2 satisfies the requirement → +1 VP claimed.',
+    body: 'Your dice: 6 (Specialist range), 3 and 2 (Recruits). Start safe: click Marshlands on the map (green ≤2 region) or use "[1-3:2] → Marshlands" in the action menu. Your 2 satisfies ≤2 → +1 VP claimed.',
     anchor: 'action-menu',
-    doneBody: '✓ Marshlands claimed. The Mages will play next.',
+    doneBody: '✓ Marshlands claimed. The Mages will respond.',
   },
   {
     kind: 'ai-turn',
     title: '🧙 Mages\' Move',
-    body: 'Mages have two dice (a 5 and a 3) plus 1 gold and 2 essence. They\'ll likely place one for VP. Click ▶ Run AI Turn — I\'ll explain their choice afterward.',
+    body: 'Mages have a 5 and a 3 plus 2 gold and 3 essence. They\'ll likely combine 5+3=8 to garrison Black Citadel (≥4, fortress) — watch for it. Click ▶ Run AI Turn.',
   },
   {
     kind: 'place',
-    title: '🏰 Garrison Black Citadel With Your 6',
-    body: 'Black Citadel is a fortress (orange castle icon, ≥4 requirement). Your 6 easily qualifies. Click Black Citadel on the map, or find the "[1-6:6] → Black Citadel" button in the action menu. You earn 3 VP now plus +1 VP every round you hold it.',
-    anchor: 'fortress-strip',
-    doneBody: '✓ Black Citadel garrisoned. The Mages may try to usurp later — be ready.',
+    title: '⚡ Hire the Specialist Now (Before Mages Do!)',
+    body: 'The merc bar shows Specialist=6. Cost: 2 gold normally, but Warriors get -1 discount = just 1 gold. Mages also wants this — beat them to it! Open the action menu and click the "Merc" / "Hire specialist" button.',
+    anchor: 'merc-bar',
+    doneBody: '✓ Specialist hired. You now have an extra value-6 die for the round.',
   },
   {
     kind: 'ai-turn',
     title: '🧙 Mages Respond',
-    body: 'Mages have one die left (and Black Citadel is now yours). Click ▶ Run AI Turn — they\'ll place it for VP.',
+    body: 'Mages are out of dice (both garrisoning Black Citadel) and out of gold for mercs (you got the Specialist!). They might use Arcane Precision, draft a card, or pass. Click ▶ Run AI Turn.',
   },
   {
     kind: 'place',
-    title: '⚡ Hire the Specialist Merc',
-    body: 'Look at the merc bar: Specialist value is 6 (the white number). Cost is 2 gold normally, but Warriors get -1 discount = just 1 gold. Open the action menu and find the "Merc" / "Hire specialist" button. You\'ll get an extra value-6 die.',
-    anchor: 'merc-bar',
-    doneBody: '✓ Specialist hired. You now have an extra die you can place this round (or refund next round if unused).',
+    title: '👆 Place Your 6 in Goldhaven (2 VP)',
+    body: 'Goldhaven is a high-value non-fortress region (≥3, 2 VP). Your 6 easily qualifies. Click Goldhaven on the map or use "[1-6:6] → Goldhaven" in the action menu. We\'ll save the fortress garrison for Round 2 (combine 6+3=9 → Stormwall Keep is safer there).',
+    anchor: 'map',
+    doneBody: '✓ Goldhaven claimed for +2 VP.',
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages Move Again',
-    body: 'Mages are out of dice (both placed). They might hire a merc, draft a card, use their active "Arcane Precision", or pass. Click ▶ Run AI Turn.',
+    title: '🧙 Mages\' Last Move',
+    body: 'Mages have no dice and can\'t afford non-Specialist mercs. They\'ll likely pass. Click ▶ Run AI Turn.',
   },
   {
     kind: 'place',
@@ -129,8 +129,8 @@ const STEPS: Step[] = [
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages Finish the Round',
-    body: 'Both you and Mages are passing. Click ▶ Run AI Turn — Mages will finish any remaining moves and the round will close. End-of-round scoring is next.',
+    title: '🧙 Round Ends',
+    body: 'Both players have passed. Click ▶ Run AI Turn — it\'ll confirm the round is over and scoring is next.',
   },
 
   // ── End of Round 1 → Round 2 ──
@@ -146,19 +146,18 @@ const STEPS: Step[] = [
     anchor: 'threat-bar',
   },
 
-  // ── Round 2: dice forced to [3, 2] for the two free Recruits.
-  //    The 1-6:6 die stays locked in Black Citadel garrison from R1.
+  // ── Round 2: dice forced to [6, 3, 2] again so we can combine for Stormwall Keep.
   {
     kind: 'place',
-    title: '↑ Upgrade a Recruit to Soldier',
-    body: 'Round 2: your barracks has two Recruits (1-3 dice with face 3 and 2). The 1-6:6 stays locked garrisoning Black Citadel. Click "↑ Recruit → Soldier" in the action menu (costs 2 iron + 1 gold). That converts a 1-3 die to a 2-5 die — much stronger range.',
-    anchor: 'action-menu',
-    doneBody: '✓ Upgraded! That die can now roll 2–5 instead of 1–3.',
+    title: '🏰 Combine 6+3=9 → Garrison Stormwall Keep',
+    body: 'Round 2 dice: 6, 3, 2 (rolled fresh). Stormwall Keep is a fortress requiring Σ≥7 (combined sum). Your 6+3=9 qualifies AND is too high for Mages to usurp (their max combine is 8). Click Stormwall Keep on the map or use "combine 3+6=9 → Stormwall Keep" in the action menu. Big +3 VP and a safe fortress hold.',
+    anchor: 'fortress-strip',
+    doneBody: '✓ Stormwall Keep garrisoned with a sum of 9 — Mages can\'t usurp it.',
   },
   {
     kind: 'ai-turn',
     title: '🧙 Mages\' Turn in R2',
-    body: 'Mages have fresh dice (4 and 2) plus their accumulated resources. Click ▶ Run AI Turn.',
+    body: 'Mages has no barracks dice (both garrisoning Black Citadel from R1) but 3 gold and 4 essence. They\'ll likely hire the Specialist (value 5 in R2) to garrison Highspire (≥5). Click ▶ Run AI Turn.',
   },
   {
     kind: 'place',
@@ -169,8 +168,8 @@ const STEPS: Step[] = [
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages Respond Again',
-    body: 'Mages still have one die left. Click ▶ Run AI Turn.',
+    title: '🧙 Mages Place the Merc',
+    body: 'Mages will likely place their Specialist 5 in Highspire (≥5, fortress). Note: merc dice disappear at end of round, so Mages will lose Highspire next round! Click ▶ Run AI Turn.',
   },
   {
     kind: 'place',
@@ -181,8 +180,8 @@ const STEPS: Step[] = [
   },
   {
     kind: 'ai-turn',
-    title: '🧙 Mages Close Round 2',
-    body: 'Click ▶ Run AI Turn — Mages will finish any remaining moves and round 2 will end. End-of-round scoring is next.',
+    title: '🧙 Round 2 Ends',
+    body: 'Both players are done. Click ▶ Run AI Turn — the round closes and Round 2 scoring fires. (Mages\' Highspire garrison will dissolve since it was a merc die.)',
   },
   {
     kind: 'end-of-round',
@@ -273,10 +272,10 @@ const TUTORIAL_DICE: Record<number, Record<string, number[]>> = {
     p1: [6, 3, 2],  // Warriors: 1-6→6, 1-3→3, 1-3→2
     p2: [5, 3],     // Mages:    1-6→5, 1-3→3
   },
-  // Round 2 — Warriors' 1-6:6 stays locked garrisoning Black Citadel from R1
+  // Round 2 — Warriors placed (didn't garrison) in R1, so all 3 dice are back
   2: {
-    p1: [3, 2],     // Warriors: two Recruits → 3, 2
-    p2: [4, 2],     // Mages:    1-6→4, 1-3→2
+    p1: [6, 3, 2],  // Warriors: 1-6→6, 1-3→3, 1-3→2 (re-rolled fresh)
+    p2: [4, 2],     // Mages:    1-6→4, 1-3→2 (Mages dice depend on R1 outcome)
   },
 };
 
