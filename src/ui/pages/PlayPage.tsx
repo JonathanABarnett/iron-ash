@@ -57,7 +57,7 @@ interface RoundSummary {
 interface ActiveGame {
   state: GameState; log: AILogEntry[]; rngSnapshot: string;
   humanPlayerId: PlayerId | null; waitingForHuman: boolean;
-  pendingMoves: Move[]; selectedDieId: string | null;
+  pendingMoves: Move[]; selectedDieIds: readonly string[];
   roundSummary: RoundSummary | null;
   /** VP totals per player after each round, for sparkline display. */
   vpHistory: Record<string, number[]>;
@@ -130,7 +130,7 @@ export function PlayPage() {
       });
       const humanIdx      = humanFaction ? lineup.indexOf(humanFaction) : -1;
       const humanPlayerId = humanIdx >= 0 ? `p${humanIdx + 1}` : null;
-      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieId: null, roundSummary: null, vpHistory: {}, lastBattle: null, focusedRegionId: null });
+      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieIds: [], roundSummary: null, vpHistory: {}, lastBattle: null, focusedRegionId: null });
       setAutoplay(false);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
@@ -176,7 +176,7 @@ export function PlayPage() {
     } else {
       if (prev.humanPlayerId && state.activePlayerId === prev.humanPlayerId) {
         const pending = enumerate(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
-        return { ...prev, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: true, pendingMoves: pending, selectedDieId: null };
+        return { ...prev, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: true, pendingMoves: pending, selectedDieIds: [] };
       }
       const playerIdAtMove = state.activePlayerId, turnAtMove = state.turn, roundAtMove = state.round;
       // Per-player difficulty: p1→index 0, p2→index 1, etc.
@@ -202,12 +202,27 @@ export function PlayPage() {
       if (!prev || !prev.waitingForHuman) return prev;
       const rng   = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
       const state = apply(prev.state, move, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
-      return step({ ...prev, state, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], selectedDieId: null });
+      return step({ ...prev, state, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], selectedDieIds: [] });
     });
   }
 
   function selectDie(dieId: string) {
-    setActive((prev) => !prev?.waitingForHuman ? prev : { ...prev, selectedDieId: prev.selectedDieId === dieId ? null : dieId });
+    setActive((prev) => {
+      if (!prev?.waitingForHuman) return prev;
+      const ids = prev.selectedDieIds;
+      let next: readonly string[];
+      if (ids.includes(dieId)) {
+        // Deselect
+        next = ids.filter((id) => id !== dieId);
+      } else if (ids.length >= 2) {
+        // Replace entire selection with just this die
+        next = [dieId];
+      } else {
+        // Add to selection
+        next = [...ids, dieId];
+      }
+      return { ...prev, selectedDieIds: next };
+    });
   }
 
   function stepOnce() { setActive((prev) => prev ? step(prev) : prev); }
@@ -341,10 +356,18 @@ export function PlayPage() {
                 <MapView
                   state={active.state}
                   humanMoves={active.waitingForHuman ? active.pendingMoves : []}
-                  selectedDieId={active.selectedDieId}
+                  selectedDieIds={active.selectedDieIds}
                   onRegionClick={(id, moves) => {
                     // Toggle focus for detail panel; also auto-apply if 1 legal move
                     setActive((p) => p ? { ...p, focusedRegionId: p.focusedRegionId === id ? null : id } : p);
+                    // With 2 dice selected, auto-apply if exactly one combine matches both dice
+                    if (active.selectedDieIds.length === 2) {
+                      const [dA, dB] = active.selectedDieIds;
+                      const combineMatch = moves.filter(
+                        (m) => m.kind === 'combine' && m.dieIds.includes(dA as never) && m.dieIds.includes(dB as never),
+                      );
+                      if (combineMatch.length === 1) { applyHumanMove(combineMatch[0]!); return; }
+                    }
                     if (moves.length === 1) applyHumanMove(moves[0]!);
                   }}
                 />
@@ -397,12 +420,12 @@ export function PlayPage() {
                     <span className="text-xs font-black text-teal-300 uppercase tracking-wide">
                       ⚔ Your Turn
                     </span>
-                    {active.selectedDieId && (
-                      <button type="button" onClick={() => setActive((p) => p ? { ...p, selectedDieId: null } : p)}
+                    {active.selectedDieIds.length > 0 && (
+                      <button type="button" onClick={() => setActive((p) => p ? { ...p, selectedDieIds: [] } : p)}
                         className="text-[10px] text-neutral-400 hover:text-neutral-200 transition">✕ clear</button>
                     )}
                   </div>
-                  <HumanActionMenu moves={active.pendingMoves} state={active.state} selectedDieId={active.selectedDieId} onChoose={applyHumanMove} compact />
+                  <HumanActionMenu moves={active.pendingMoves} state={active.state} selectedDieIds={active.selectedDieIds} onChoose={applyHumanMove} compact />
                 </div>
               )}
 
@@ -418,7 +441,7 @@ export function PlayPage() {
                       isHuman={pid === active.humanPlayerId}
                       isLeader={maxVP > 0 && (active.state.players[pid]?.vp ?? 0) === maxVP}
                       waitingForHuman={active.waitingForHuman}
-                      selectedDieId={active.selectedDieId}
+                      selectedDieIds={active.selectedDieIds}
                       onSelectDie={selectDie}
                       pendingMoves={active.pendingMoves}
                       onChooseMove={applyHumanMove}
@@ -1155,17 +1178,27 @@ function MercSlot({
 
 // ─── Human action menu ────────────────────────────────────────────────────────
 
-function HumanActionMenu({ moves, state, selectedDieId, onChoose }: {
-  moves: Move[]; state: GameState; selectedDieId?: string | null; onChoose: (m: Move) => void;
+function HumanActionMenu({ moves, state, selectedDieIds = [], onChoose }: {
+  moves: Move[]; state: GameState; selectedDieIds?: readonly string[]; onChoose: (m: Move) => void;
   compact?: boolean; // reserved for future use
 }) {
   const [showAll, setShowAll] = useState(false);
   const player = state.players[state.activePlayerId];
   if (!player) return null;
 
-  const visible = selectedDieId
-    ? moves.filter((m) => (m.kind === 'place' && m.dieId === selectedDieId) || (m.kind === 'combine' && (m.dieIds[0] === selectedDieId || m.dieIds[1] === selectedDieId)) || (m.kind === 'battle' && m.attackerDieId === selectedDieId) || m.kind === 'pass')
-    : moves;
+  let visible: Move[];
+  if (selectedDieIds.length === 2) {
+    const [dA, dB] = selectedDieIds;
+    // Only show combine moves that use BOTH selected dice
+    visible = moves.filter(
+      (m) => (m.kind === 'combine' && m.dieIds.includes(dA as never) && m.dieIds.includes(dB as never)) || m.kind === 'pass',
+    );
+  } else if (selectedDieIds.length === 1) {
+    const selectedDieId = selectedDieIds[0]!;
+    visible = moves.filter((m) => (m.kind === 'place' && m.dieId === selectedDieId) || (m.kind === 'combine' && (m.dieIds[0] === selectedDieId || m.dieIds[1] === selectedDieId)) || (m.kind === 'battle' && m.attackerDieId === selectedDieId) || m.kind === 'pass');
+  } else {
+    visible = moves;
+  }
 
   const vp = (m: Move) => (m.kind === 'place' || m.kind === 'combine') ? (state.regionDefs[m.regionId]?.vp ?? 0) + (state.regionDefs[m.regionId]?.isFortress ? 2 : 0) : 0;
   const placement = visible.filter((m) => m.kind === 'place' || m.kind === 'combine');
@@ -1255,9 +1288,9 @@ function VPSparkline({ history, width = 88, height = 18 }: { history: number[]; 
   );
 }
 
-function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieId, onSelectDie, pendingMoves, onChooseMove, configs, vpHistory, vpGain = 0, isRolling = false, resourcePulsed = false, sidebarMode = false }: {
+function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieIds, onSelectDie, pendingMoves, onChooseMove, configs, vpHistory, vpGain = 0, isRolling = false, resourcePulsed = false, sidebarMode = false }: {
   player: NonNullable<GameState['players'][string]>; isActive: boolean; isHuman: boolean; isLeader: boolean;
-  waitingForHuman: boolean; selectedDieId: string | null; onSelectDie: (id: string) => void;
+  waitingForHuman: boolean; selectedDieIds: readonly string[]; onSelectDie: (id: string) => void;
   pendingMoves: Move[]; onChooseMove: (m: Move) => void; configs: ReturnType<typeof loadConfigs>;
   vpHistory?: number[] | undefined;
   vpGain?: number | undefined;
@@ -1350,20 +1383,35 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
         <div className="mb-2">
           <div className="mb-1 text-[9px] uppercase tracking-widest text-neutral-700">Barracks</div>
           <div className="flex flex-wrap gap-1.5">
-            {barracksDice.map((d, idx) => (
-              <Die
-                key={d.id}
-                value={d.faceValue}
-                range={d.range}
-                size={30}
-                isSelected={d.id === selectedDieId}
-                isRolling={isRolling}
-                rollDelay={idx * 55}
-                onClick={isHumanTurn ? () => onSelectDie(d.id) : undefined}
-              />
-            ))}
+            {barracksDice.map((d, idx) => {
+              const selIdx = selectedDieIds.indexOf(d.id);
+              const isFirst  = selIdx === 0;
+              const isSecond = selIdx === 1;
+              return (
+                <div key={d.id} className="relative">
+                  <Die
+                    value={d.faceValue}
+                    range={d.range}
+                    size={30}
+                    isSelected={selIdx >= 0}
+                    isRolling={isRolling}
+                    rollDelay={idx * 55}
+                    onClick={isHumanTurn ? () => onSelectDie(d.id) : undefined}
+                  />
+                  {isSecond && (
+                    <span className="pointer-events-none absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-[8px] font-black text-black">+</span>
+                  )}
+                  {isFirst && selectedDieIds.length === 2 && (
+                    <span className="pointer-events-none absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-teal-400 text-[8px] font-black text-black">1</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          {isHumanTurn && <p className="mt-1 text-[9px] text-teal-400/60">Click die to filter · click glowing region</p>}
+          {isHumanTurn && selectedDieIds.length === 2 && (
+            <p className="mt-1 text-[9px] text-amber-400/70">2 dice selected — click a glowing region to combine</p>
+          )}
+          {isHumanTurn && selectedDieIds.length < 2 && <p className="mt-1 text-[9px] text-teal-400/60">Click die to filter · click glowing region · select 2 for combine</p>}
         </div>
       )}
 

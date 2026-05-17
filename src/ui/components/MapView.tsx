@@ -60,17 +60,35 @@ function getPlayerColor(pid: PlayerId, state: GameState): string {
 interface MapViewProps {
   state: GameState;
   humanMoves?: Move[];
+  /** Single-die filter (backward compat — used by TutorialPage). */
   selectedDieId?: string | null;
+  /** Multi-die filter: when 2 entries, only show regions where a combine of BOTH dice is valid. */
+  selectedDieIds?: readonly string[];
   onRegionClick?: (regionId: RegionId, moves: Move[]) => void;
 }
 
-export function MapView({ state, humanMoves = [], selectedDieId, onRegionClick }: MapViewProps) {
+export function MapView({ state, humanMoves = [], selectedDieId, selectedDieIds, onRegionClick }: MapViewProps) {
+  // Resolve effective selection — selectedDieIds takes priority when provided.
+  const effectiveDieIds: readonly string[] =
+    selectedDieIds !== undefined ? selectedDieIds :
+    selectedDieId ? [selectedDieId] : [];
+
   const humanTargetRegions = new Set<string>();
   for (const m of humanMoves) {
-    const dieOk = !selectedDieId ||
-      (m.kind === 'place'   && m.dieId === selectedDieId) ||
-      (m.kind === 'combine' && m.dieIds.includes(selectedDieId as never)) ||
-      (m.kind === 'battle'  && m.attackerDieId === selectedDieId);
+    let dieOk: boolean;
+    if (effectiveDieIds.length === 2) {
+      const [dA, dB] = effectiveDieIds;
+      // Only highlight regions where a combine of BOTH dice is valid
+      dieOk = m.kind === 'combine' && m.dieIds.includes(dA as never) && m.dieIds.includes(dB as never);
+    } else if (effectiveDieIds.length === 1) {
+      const id = effectiveDieIds[0]!;
+      dieOk =
+        (m.kind === 'place'   && m.dieId === id) ||
+        (m.kind === 'combine' && m.dieIds.includes(id as never)) ||
+        (m.kind === 'battle'  && m.attackerDieId === id);
+    } else {
+      dieOk = true;
+    }
     if (!dieOk) continue;
     if (m.kind === 'place' || m.kind === 'combine') humanTargetRegions.add(m.regionId);
     if (m.kind === 'battle') humanTargetRegions.add(m.targetRegionId);
