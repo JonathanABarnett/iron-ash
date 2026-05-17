@@ -4,13 +4,16 @@
 
 import type {
   CardDefinition,
+  CardEffect,
   GameState,
   Move,
   PlayerId,
+  Region,
   RoundGoalDefinition,
   SecretGoalDefinition,
 } from '../engine/types';
 import { defenderSum } from '../engine/battle';
+import { meetsRequirement, isRegionUnlocked } from '../engine/map';
 import { ROUND_GOAL_MEASURES } from '../engine/round-goals';
 import { SECRET_GOAL_CHECKS } from '../engine/secret-goals';
 
@@ -40,9 +43,11 @@ export function estimateVPGain(move: Move, state: GameState): number {
       // Specialist gets a value-aware bump in score.ts via evaluateSpecialistHire.
       return move.mercSlot === 'specialist' ? 1.5 : 1.0;
     case 'draft-card':
-      return 0;
+      // Drafting a card is always incrementally valuable — having options matters.
+      return 0.3;
     case 'play-card':
-      return 0.5; // most card effects approximate ~0.5 VP equivalent
+      // Scored by scorePlayCard below; return 0 here so the resource path handles it.
+      return 0;
     case 'upgrade-die':
       return 1.5;
     case 'expand-barracks':
@@ -99,6 +104,190 @@ export function estimateResourceGain(
       // Building a structure costs 3-5 resources; deduct opportunity cost.
       return -1.0;
     default:
+      return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Play-card VP scoring helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Count how many regions in `state.regionDefs` the player's barracks die with
+ * `faceValue` would newly be able to place on after a `delta` modification.
+ * "Newly reachable" means the region is legal with `faceValue + delta` but not
+ * with the original `faceValue`.
+ */
+function newlyReachableCount(
+  faceValue: number,
+  delta: number,
+  state: GameState,
+  ownerId: PlayerId,
+): number {
+  const modified = faceValue + delta;
+  let count = 0;
+  for (const region of Object.values(state.regionDefs) as Region[]) {
+    if (!isRegionUnlocked(region, state.round)) continue;
+    const lockOwner = state.lockedRegions[region.id];
+    if (lockOwner && lockOwner !== ownerId) continue;
+    const wasOk = meetsRequirement(faceValue, region.valueRequirement);
+    const isOk = meetsRequirement(modified, region.valueRequirement);
+    if (!wasOk && isOk) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Score the VP-equivalent of playing a specific card effect given the current
+ * game state. Returns a value in [0, 2.0] compatible with the rest of the
+ * scoring scale.
+ */
+export function scorePlayCard(
+  effect: CardEffect,
+  state: GameState,
+  playerId: PlayerId,
+): number {
+  const player = state.players[playerId];
+  if (!player) return 0;
+
+  switch (effect.kind) {
+    case 'modify-die': {
+      const delta = effect.delta;
+      if (delta < 0) {
+        // Whisper Step (-1): situational but occasionally useful for max-restricted regions.
+        return 0.3;
+      }
+      // Find the best barracks die (highest face value, or most likely to benefit).
+      const barracksDice = player.dice.filter(
+        (d) => d.location.kind === 'barracks' && d.faceValue !== null,
+      );
+      if (barracksDice.length === 0) return 0.2;
+      // Score based on how much the die changes relative to its range, plus newly
+      // reachable region bonus.
+      let bestScore = 0;
+      for (const die of barracksDice) {
+        if (die.faceValue === null) continue;
+        const reachable = newlyReachableCount(die.faceValue, delta, state, playerId);
+        const reach = Math.min(reachable * 0.15, 0.6);
+        const base = 0.4 + (delta / 6) * 1.5;
+        const s = Math.min(base + reach, 2.0);
+        if (s > bestScore) bestScore = s;
+      }
+      return bestScore;
+    }
+
+    case 'reroll-die': {
+      // Second Wind: valuable when dice show low values relative to their range midpoint.
+      const barracksDice = player.dice.filter(
+        (d) => d.location.kind === 'barracks' && d.faceValue !== null,
+      );
+      if (barracksDice.length === 0) return 0.2;
+      const rangeMax: Record<string, number> = { '1-3': 3, '2-5': 5, '3-6': 6, '1-6': 6 };
+      const rangeMin: Record<string, number> = { '1-3': 1, '2-5': 2, '3-6': 3, '1-6': 1 };
+      let wastedCount = 0;
+      for (const die of barracksDice) {
+        if (die.faceValue === null) continue;
+        const max = rangeMax[die.range] ?? 6;
+        const min = rangeMin[die.range] ?? 1;
+        const mid = (max + min) / 2;
+        if (die.faceValue < mid) wastedCount += 1;
+      }
+      return wastedCount >= 2 ? 0.7 : wastedCount >= 1 ? 0.4 : 0.2;
+    }
+
+    case 'combine-bonus': {
+      // Tactical Synergy: high value if a legal combine is available right now.
+      const barracksDice = player.dice.filter(
+        (d) => d.location.kind === 'barracks' && d.faceValue !== null,
+      );
+      if (barracksDice.length < 2) return 0.2;
+      // Check whether any pair of barracks dice together meets any region requirement.
+      const regions = Object.values(state.regionDefs) as Region[];
+      for (let i = 0; i < barracksDice.length; i++) {
+        for (let j = i + 1; j < barracksDice.length; j++) {
+          const a = barracksDice[i]!;
+          const b = barracksDice[j]!;
+          if (a.faceValue === null || b.faceValue === null) continue;
+          const sum = a.faceValue + b.faceValue;
+          for (const region of regions) {
+            if (!isRegionUnlocked(region, state.round)) continue;
+            const lockOwner = state.lockedRegions[region.id];
+            if (lockOwner && lockOwner !== playerId) continue;
+            if (meetsRequirement(sum, region.valueRequirement)) {
+              return 0.8; // at least one legal combine exists
+            }
+          }
+        }
+      }
+      return 0.2;
+    }
+
+    case 'forced-march': {
+      // Valuable when we have placed dice in contested regions (repositioning value).
+      let contestedPlaced = 0;
+      let hasGarrison = false;
+      for (const [regionId, rt] of Object.entries(state.regions)) {
+        const def = state.regionDefs[regionId];
+        if (!def) continue;
+        const myDiceHere = rt.placedDieIds.some((id) =>
+          player.dice.some((d) => d.id === id),
+        );
+        if (!myDiceHere) continue;
+        // Check if opponent also has dice here.
+        const hasOpponent = rt.placedDieIds.some((id) =>
+          !player.dice.some((d) => d.id === id),
+        );
+        if (hasOpponent) contestedPlaced += 1;
+        if (def.isFortress && rt.garrisonOwnerId === playerId) hasGarrison = true;
+      }
+      const base = contestedPlaced > 0 ? 0.6 : 0.2;
+      const garrisonBonus = hasGarrison ? 0.4 : 0;
+      return Math.min(base + garrisonBonus, 2.0);
+    }
+
+    case 'lock-region': {
+      // Sealed Ground: score based on highest-VP region the opponent is threatening.
+      let maxThreatenedVP = 0;
+      for (const [regionId, _rt] of Object.entries(state.regions)) {
+        const def = state.regionDefs[regionId];
+        if (!def) continue;
+        // A region is "threatened" if any opponent has a legal placement there.
+        for (const [oppId, opp] of Object.entries(state.players)) {
+          if (oppId === playerId) continue;
+          for (const die of opp.dice) {
+            if (die.location.kind !== 'barracks' || die.faceValue === null) continue;
+            const lockOwner = state.lockedRegions[regionId];
+            if (lockOwner && lockOwner !== oppId) continue;
+            if (!isRegionUnlocked(def, state.round)) continue;
+            if (meetsRequirement(die.faceValue, def.valueRequirement)) {
+              if (def.vp > maxThreatenedVP) maxThreatenedVP = def.vp;
+            }
+          }
+        }
+      }
+      return Math.min(0.3 + maxThreatenedVP * 0.1, 1.0);
+    }
+
+    case 'steal-resource': {
+      // Hand of the Thief: score = (best stealable amount) / 6, up to ~0.5.
+      let maxStealable = 0;
+      for (const [oppId, opp] of Object.entries(state.players)) {
+        if (oppId === playerId) continue;
+        for (const res of ['iron', 'gold', 'essence'] as const) {
+          if ((opp.resources[res] ?? 0) > maxStealable) {
+            maxStealable = opp.resources[res] ?? 0;
+          }
+        }
+      }
+      return Math.min(maxStealable / 6, 0.5);
+    }
+
+    case 'gain-resource':
+      // Already handled in estimateResourceGain; return 0 here to avoid double-count.
+      return 0;
+
+    case 'gain-vp':
+      // Also handled via estimateResourceGain (gain-vp is a direct VP value there).
       return 0;
   }
 }

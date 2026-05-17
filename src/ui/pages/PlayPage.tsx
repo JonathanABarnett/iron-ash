@@ -54,6 +54,17 @@ interface RoundSummary {
   standings: Array<{ playerId: string; totalVP: number; factionId: FactionId }>;
 }
 
+// ── Card targeting ────────────────────────────────────────────────────────────
+
+type CardTargetingState =
+  | { phase: 'idle' }
+  /** Waiting for the player to pick one of their barracks dice */
+  | { phase: 'pick-die'; cardId: string }
+  /** Forced March step 1: pick one of the player's placed dice */
+  | { phase: 'pick-placed'; cardId: string }
+  /** Forced March step 2 (dieId = placed die chosen) or Sealed Ground: pick a region */
+  | { phase: 'pick-region'; cardId: string; dieId?: string };
+
 interface ActiveGame {
   state: GameState; log: AILogEntry[]; rngSnapshot: string;
   humanPlayerId: PlayerId | null; waitingForHuman: boolean;
@@ -65,6 +76,8 @@ interface ActiveGame {
   lastBattle: { regionName: string; won: boolean; attackerPid: string } | null;
   /** Region the user has tapped for details. */
   focusedRegionId: string | null;
+  /** Card targeting flow state; 'idle' when no card is being played. */
+  cardTargeting: CardTargetingState;
 }
 
 export function PlayPage() {
@@ -130,7 +143,7 @@ export function PlayPage() {
       });
       const humanIdx      = humanFaction ? lineup.indexOf(humanFaction) : -1;
       const humanPlayerId = humanIdx >= 0 ? `p${humanIdx + 1}` : null;
-      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieIds: [], roundSummary: null, vpHistory: {}, lastBattle: null, focusedRegionId: null });
+      setActive({ state, log: [], rngSnapshot: state.rngState, humanPlayerId, waitingForHuman: false, pendingMoves: [], selectedDieIds: [], roundSummary: null, vpHistory: {}, lastBattle: null, focusedRegionId: null, cardTargeting: { phase: 'idle' } });
       setAutoplay(false);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
@@ -176,7 +189,7 @@ export function PlayPage() {
     } else {
       if (prev.humanPlayerId && state.activePlayerId === prev.humanPlayerId) {
         const pending = enumerate(state, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
-        return { ...prev, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: true, pendingMoves: pending, selectedDieIds: [] };
+        return { ...prev, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: true, pendingMoves: pending, selectedDieIds: [], cardTargeting: { phase: 'idle' } };
       }
       const playerIdAtMove = state.activePlayerId, turnAtMove = state.turn, roundAtMove = state.round;
       // Per-player difficulty: p1→index 0, p2→index 1, etc.
@@ -202,8 +215,81 @@ export function PlayPage() {
       if (!prev || !prev.waitingForHuman) return prev;
       const rng   = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
       const state = apply(prev.state, move, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
-      return step({ ...prev, state, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], selectedDieIds: [] });
+      return step({ ...prev, state, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], selectedDieIds: [], cardTargeting: { phase: 'idle' } });
     });
+  }
+
+  /** Cards that apply immediately (no targeting needed). */
+  const NO_TARGET_CARDS = new Set(['card-combine-bonus', 'card-steal']);
+
+  /**
+   * Called when the human clicks "Play" on a card.
+   * Cards needing no target apply immediately; others enter a targeting flow.
+   */
+  function handlePlayCard(cardId: string) {
+    if (NO_TARGET_CARDS.has(cardId)) {
+      applyHumanMove({ kind: 'play-card', cardId });
+      return;
+    }
+    const card = configs.cards.find((c) => c.id === cardId);
+    if (!card) return;
+    setActive((prev) => {
+      if (!prev || !prev.waitingForHuman) return prev;
+      let cardTargeting: CardTargetingState;
+      if (card.effect.kind === 'modify-die' || card.effect.kind === 'reroll-die') {
+        cardTargeting = { phase: 'pick-die', cardId };
+      } else if (card.effect.kind === 'forced-march') {
+        cardTargeting = { phase: 'pick-placed', cardId };
+      } else if (card.effect.kind === 'lock-region') {
+        cardTargeting = { phase: 'pick-region', cardId };
+      } else {
+        // Fallback: apply immediately
+        return prev; // will be handled by applyHumanMove below
+      }
+      return { ...prev, cardTargeting };
+    });
+    // For effect types that don't match any targeting phase, apply immediately
+    const effect = card.effect;
+    if (effect.kind !== 'modify-die' && effect.kind !== 'reroll-die' && effect.kind !== 'forced-march' && effect.kind !== 'lock-region') {
+      applyHumanMove({ kind: 'play-card', cardId });
+    }
+  }
+
+  function cancelCardTargeting() {
+    setActive((prev) => prev ? { ...prev, cardTargeting: { phase: 'idle' } } : prev);
+  }
+
+  function handleTargetDieClick(dieId: string) {
+    setActive((prev) => {
+      if (!prev) return prev;
+      const ct = prev.cardTargeting;
+      if (ct.phase === 'pick-die') {
+        // Apply the card immediately with this barracks die as target
+        const rng   = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
+        const state = apply(prev.state, { kind: 'play-card', cardId: ct.cardId, targetDieId: dieId }, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
+        return step({ ...prev, state, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], selectedDieIds: [], cardTargeting: { phase: 'idle' } });
+      }
+      if (ct.phase === 'pick-placed') {
+        // Move to picking destination region
+        return { ...prev, cardTargeting: { phase: 'pick-region', cardId: ct.cardId, dieId } };
+      }
+      return prev;
+    });
+  }
+
+  function handleTargetRegionClick(regionId: string): boolean {
+    // Returns true if targeting consumed the click (caller should not process it further).
+    // Reads current active state directly (not via updater) to determine synchronously.
+    if (!active || active.cardTargeting.phase !== 'pick-region') return false;
+    const ct = active.cardTargeting;
+    setActive((prev) => {
+      if (!prev) return prev;
+      const rng   = Rng.fromSnapshot(JSON.parse(prev.rngSnapshot));
+      const move: Move = { kind: 'play-card', cardId: ct.cardId, targetRegionId: regionId, ...(ct.dieId ? { targetDieId: ct.dieId } : {}) };
+      const state = apply(prev.state, move, { rules: configs.rules, cards: configs.cards, costs: configs.costs, ...structuresCtx, rng });
+      return step({ ...prev, state, rngSnapshot: JSON.stringify(rng.snapshot()), waitingForHuman: false, pendingMoves: [], selectedDieIds: [], cardTargeting: { phase: 'idle' } });
+    });
+    return true;
   }
 
   function selectDie(dieId: string) {
@@ -358,6 +444,8 @@ export function PlayPage() {
                   humanMoves={active.waitingForHuman ? active.pendingMoves : []}
                   selectedDieIds={active.selectedDieIds}
                   onRegionClick={(id, moves) => {
+                    // Card targeting takes priority — region pick for Sealed Ground / Forced March
+                    if (handleTargetRegionClick(id)) return;
                     // Toggle focus for detail panel; also auto-apply if 1 legal move
                     setActive((p) => p ? { ...p, focusedRegionId: p.focusedRegionId === id ? null : id } : p);
                     // With 2 dice selected, auto-apply if exactly one combine matches both dice
@@ -427,10 +515,22 @@ export function PlayPage() {
                 pendingMoves={active.pendingMoves}
                 waitingForHuman={active.waitingForHuman}
                 onChoose={applyHumanMove}
+                onPlayCard={handlePlayCard}
               />
 
+              {/* Card targeting panel — shown above the action panel when targeting is active */}
+              {active.waitingForHuman && active.cardTargeting.phase !== 'idle' && (
+                <CardTargetingPanel
+                  targeting={active.cardTargeting}
+                  state={active.state}
+                  cards={configs.cards}
+                  onDieClick={handleTargetDieClick}
+                  onCancel={cancelCardTargeting}
+                />
+              )}
+
               {/* Human action panel */}
-              {active.waitingForHuman && (
+              {active.waitingForHuman && active.cardTargeting.phase === 'idle' && (
                 <div className="mx-3 mb-3 rounded-2xl p-3"
                   style={{
                     background: 'linear-gradient(135deg, rgba(20,184,166,0.08), rgba(6,182,212,0.04))',
@@ -465,6 +565,9 @@ export function PlayPage() {
                       onSelectDie={selectDie}
                       pendingMoves={active.pendingMoves}
                       onChooseMove={applyHumanMove}
+                      onPlayCard={handlePlayCard}
+                      cardTargeting={active.cardTargeting}
+                      onTargetDieClick={handleTargetDieClick}
                       configs={configs}
                       vpHistory={active.vpHistory[pid]}
                       vpGain={vpGains[pid] ?? 0}
@@ -1320,10 +1423,17 @@ function VPSparkline({ history, width = 88, height = 18 }: { history: number[]; 
   );
 }
 
-function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieIds, onSelectDie, pendingMoves, onChooseMove, configs, vpHistory, vpGain = 0, isRolling = false, resourcePulsed = false, sidebarMode = false }: {
+function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuman, selectedDieIds, onSelectDie, pendingMoves, onChooseMove, onPlayCard, cardTargeting, onTargetDieClick, configs, vpHistory, vpGain = 0, isRolling = false, resourcePulsed = false, sidebarMode = false }: {
   player: NonNullable<GameState['players'][string]>; isActive: boolean; isHuman: boolean; isLeader: boolean;
   waitingForHuman: boolean; selectedDieIds: readonly string[]; onSelectDie: (id: string) => void;
-  pendingMoves: Move[]; onChooseMove: (m: Move) => void; configs: ReturnType<typeof loadConfigs>;
+  pendingMoves: Move[]; onChooseMove: (m: Move) => void;
+  /** Called when player clicks Play on a hand card; starts targeting flow if needed. */
+  onPlayCard?: (cardId: string) => void;
+  /** Current card targeting state — used to highlight targetable dice. */
+  cardTargeting?: CardTargetingState;
+  /** Called when a die is clicked during targeting flow. */
+  onTargetDieClick?: (dieId: string) => void;
+  configs: ReturnType<typeof loadConfigs>;
   vpHistory?: number[] | undefined;
   vpGain?: number | undefined;
   isRolling?: boolean | undefined;
@@ -1419,31 +1529,39 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
               const selIdx = selectedDieIds.indexOf(d.id);
               const isFirst  = selIdx === 0;
               const isSecond = selIdx === 1;
+              const isTargeting = cardTargeting?.phase === 'pick-die';
+              const isClickable = isHumanTurn && (isTargeting ? !!onTargetDieClick : true);
               return (
                 <div key={d.id} className="relative">
                   <Die
                     value={d.faceValue}
                     range={d.range}
                     size={30}
-                    isSelected={selIdx >= 0}
+                    isSelected={isTargeting ? false : selIdx >= 0}
                     isRolling={isRolling}
                     rollDelay={idx * 55}
-                    onClick={isHumanTurn ? () => onSelectDie(d.id) : undefined}
+                    onClick={isClickable ? () => isTargeting ? onTargetDieClick!(d.id) : onSelectDie(d.id) : undefined}
                   />
-                  {isSecond && (
+                  {!isTargeting && isSecond && (
                     <span className="pointer-events-none absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-[8px] font-black text-black">+</span>
                   )}
-                  {isFirst && selectedDieIds.length === 2 && (
+                  {!isTargeting && isFirst && selectedDieIds.length === 2 && (
                     <span className="pointer-events-none absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-teal-400 text-[8px] font-black text-black">1</span>
+                  )}
+                  {isTargeting && (
+                    <span className="pointer-events-none absolute -top-1.5 -right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-[8px] font-black text-black animate-pulse">▶</span>
                   )}
                 </div>
               );
             })}
           </div>
-          {isHumanTurn && selectedDieIds.length === 2 && (
+          {isHumanTurn && cardTargeting?.phase === 'pick-die' && (
+            <p className="mt-1 text-[9px] text-amber-400/80">Pick a barracks die to apply the card</p>
+          )}
+          {isHumanTurn && cardTargeting?.phase !== 'pick-die' && selectedDieIds.length === 2 && (
             <p className="mt-1 text-[9px] text-amber-400/70">2 dice selected — click a glowing region to combine</p>
           )}
-          {isHumanTurn && selectedDieIds.length < 2 && <p className="mt-1 text-[9px] text-teal-400/60">Click die to filter · click glowing region · select 2 for combine</p>}
+          {isHumanTurn && cardTargeting?.phase !== 'pick-die' && selectedDieIds.length < 2 && <p className="mt-1 text-[9px] text-teal-400/60">Click die to filter · click glowing region · select 2 for combine</p>}
         </div>
       )}
 
@@ -1457,7 +1575,7 @@ function CompactPlayerCard({ player, isActive, isHuman, isLeader, waitingForHuma
               const ok = isHumanTurn && pendingMoves.some((m) => m.kind === 'play-card' && m.cardId === cardId);
               return (
                 <button key={cardId} type="button" disabled={!ok}
-                  onClick={() => ok && onChooseMove({ kind: 'play-card', cardId })}
+                  onClick={() => ok && (onPlayCard ? onPlayCard(cardId) : onChooseMove({ kind: 'play-card', cardId }))}
                   title={cd?.description}
                   className={`rounded-lg border px-2 py-0.5 text-[9px] font-medium transition ${
                     ok ? 'border-teal-600/60 bg-teal-950/40 text-teal-200 hover:bg-teal-900/50 cursor-pointer' : 'border-white/5 bg-white/[0.02] text-neutral-600'
@@ -1632,11 +1750,128 @@ function EndGamePanel({ state, onExport }: { state: GameState; onExport: () => v
   );
 }
 
+// ─── Card targeting panel ─────────────────────────────────────────────────────
+
+/**
+ * Inline sidebar panel shown while the human is in a card targeting flow.
+ * Displayed above the normal action panel; replaces it visually.
+ */
+function CardTargetingPanel({
+  targeting, state, cards, onDieClick, onCancel,
+}: {
+  targeting: Exclude<CardTargetingState, { phase: 'idle' }>;
+  state: GameState;
+  cards: CardDefinition[];
+  onDieClick: (dieId: string) => void;
+  onCancel: () => void;
+}) {
+  const card = cards.find((c) => c.id === targeting.cardId);
+  const humanPlayer = state.players[state.activePlayerId];
+
+  if (!humanPlayer) return null;
+
+  const barracksDice = humanPlayer.dice.filter(
+    (d) => d.location.kind === 'barracks' && d.faceValue !== null,
+  );
+  const placedDice = humanPlayer.dice.filter((d) => d.location.kind === 'region');
+
+  return (
+    <div
+      className="mx-3 mb-3 rounded-2xl p-3 animate-fade-in"
+      style={{
+        background: 'linear-gradient(135deg, rgba(245,158,11,0.10), rgba(251,191,36,0.05))',
+        border: '1px solid rgba(245,158,11,0.45)',
+        boxShadow: '0 0 18px rgba(245,158,11,0.08)',
+      }}
+    >
+      {/* Header */}
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm">🃏</span>
+          <span className="text-xs font-black text-amber-300 uppercase tracking-wide">
+            {card?.name ?? targeting.cardId.replace('card-', '')}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-[10px] text-neutral-400 hover:text-neutral-200 transition"
+        >
+          ✕ Cancel
+        </button>
+      </div>
+
+      {/* Instruction */}
+      <div className="mb-2 text-[10px] text-amber-200/80">
+        {targeting.phase === 'pick-die' && 'Pick a barracks die to apply this card:'}
+        {targeting.phase === 'pick-placed' && 'Pick one of your placed dice to move:'}
+        {targeting.phase === 'pick-region' && 'Click a region on the map to target it.'}
+      </div>
+
+      {/* Die picker — barracks dice for pick-die */}
+      {targeting.phase === 'pick-die' && (
+        <div className="flex flex-wrap gap-1.5">
+          {barracksDice.length === 0 && (
+            <span className="text-[10px] text-neutral-600 italic">No barracks dice available.</span>
+          )}
+          {barracksDice.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => onDieClick(d.id)}
+              className="flex items-center gap-1 rounded-lg border border-amber-600/60 bg-amber-950/40 px-2 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-900/50 transition"
+            >
+              <Die value={d.faceValue} range={d.range} size={24} isSelected={false} />
+              <span className="text-[9px] font-normal text-neutral-400">{DIE_NAMES[d.range]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Placed die picker — for Forced March step 1 */}
+      {targeting.phase === 'pick-placed' && (
+        <div className="flex flex-wrap gap-1.5">
+          {placedDice.length === 0 && (
+            <span className="text-[10px] text-neutral-600 italic">No placed dice to move.</span>
+          )}
+          {placedDice.map((d) => {
+            const regionId = d.location.kind === 'region' ? d.location.regionId : null;
+            const regionName = regionId ? (state.regionDefs[regionId]?.name ?? regionId) : '?';
+            return (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => onDieClick(d.id)}
+                className="flex items-center gap-1.5 rounded-lg border border-amber-600/60 bg-amber-950/40 px-2 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-900/50 transition"
+              >
+                <Die value={d.faceValue} range={d.range} size={24} isSelected={false} />
+                <div className="text-left">
+                  <div className="text-[9px] font-semibold text-neutral-300">{regionName}</div>
+                  <div className="text-[8px] text-neutral-500">{DIE_NAMES[d.range]}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Region targeting hint */}
+      {targeting.phase === 'pick-region' && (
+        <div className="rounded-lg border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-[10px] text-amber-300/80">
+          {targeting.dieId
+            ? 'Click any region on the map as the destination for Forced March.'
+            : 'Click any region on the map to seal it this round.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Card market panel ────────────────────────────────────────────────────────
 
 function CardMarketPanel({
   market, cards, players, humanPlayerId,
-  pendingMoves, waitingForHuman, onChoose,
+  pendingMoves, waitingForHuman, onChoose, onPlayCard,
 }: {
   market: string[];
   cards: CardDefinition[];
@@ -1645,6 +1880,8 @@ function CardMarketPanel({
   pendingMoves: Move[];
   waitingForHuman: boolean;
   onChoose: (m: Move) => void;
+  /** Called when the player clicks "Play" on a hand card; handles targeting flow. */
+  onPlayCard?: (cardId: string) => void;
 }) {
   if (market.length === 0) return null;
 
@@ -1759,7 +1996,7 @@ function CardMarketPanel({
                   {playMove && (
                     <button
                       type="button"
-                      onClick={() => onChoose(playMove)}
+                      onClick={() => onPlayCard ? onPlayCard(card.id) : onChoose(playMove)}
                       className="ml-1 shrink-0 rounded-md border border-violet-600/50 bg-violet-950/50 px-1.5 py-0.5 text-[9px] font-bold text-violet-300 hover:bg-violet-900/60 transition"
                     >
                       Play

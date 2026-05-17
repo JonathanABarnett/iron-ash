@@ -20,6 +20,7 @@ import {
   estimateVPGain,
   expectedLoss,
   roundGoalAlignment,
+  scorePlayCard,
   secretGoalAlignment,
 } from './heuristics';
 import { evaluateSpecialistHire } from './specialist-merc';
@@ -61,6 +62,13 @@ export function scoreMove(move: Move, ctx: ScoreContext): ScoredCandidate {
     const currentValue = state.mercs.specialistValue;
     const eval_ = evaluateSpecialistHire(currentValue, state, factionId, rules);
     vpGain = vpGain * (1 + eval_);
+  }
+  // play-card: replace the flat fallback with context-aware card-effect scoring.
+  if (move.kind === 'play-card' && cards) {
+    const card = cards.find((c) => c.id === move.cardId);
+    if (card) {
+      vpGain = scorePlayCard(card.effect, state, playerId);
+    }
   }
   const resourceGain = estimateResourceGain(move, state, cards);
   const denial = estimateDenialValue(move, state, playerId);
