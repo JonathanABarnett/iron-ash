@@ -404,7 +404,16 @@ export function PlayPage() {
                     const claimerFactionId = claimedBy ? active.state.players[claimedBy]?.factionId : undefined;
                     const die = active.state.mercs[slot];
                     const specVal = active.state.mercs.specialistValue;
-                    return <MercSlot key={slot} slot={slot} die={die} claimedBy={claimedBy} claimerFactionId={claimerFactionId} specialistValue={specVal} />;
+                    const hireMove = active.waitingForHuman
+                      ? active.pendingMoves.find((m) => m.kind === 'hire-merc' && m.mercSlot === slot)
+                      : undefined;
+                    return (
+                      <MercSlot key={slot} slot={slot} die={die}
+                        claimedBy={claimedBy} claimerFactionId={claimerFactionId}
+                        specialistValue={specVal}
+                        {...(hireMove ? { onHire: () => applyHumanMove(hireMove) } : {})}
+                      />
+                    );
                   })}
                 </div>
               </div>
@@ -1128,25 +1137,34 @@ function SpecialistDots({ value, max = 6 }: { value: number; max?: number }) {
 }
 
 function MercSlot({
-  slot, die, claimedBy, claimerFactionId, specialistValue,
+  slot, die, claimedBy, claimerFactionId, specialistValue, onHire,
 }: {
   slot: 'low' | 'high' | 'specialist';
   die: { faceValue: number | null; range?: string } | null;
   claimedBy?: string | undefined;
   claimerFactionId?: FactionId | undefined;
   specialistValue?: number;
+  /** If provided, clicking this slot will hire the merc. */
+  onHire?: () => void;
 }) {
   const isSpec = slot === 'specialist';
   const slotLabel = isSpec ? 'Specialist' : slot === 'low' ? 'Low (1-3)' : 'High (3-6)';
   const rangeLabel = isSpec ? '1–6' : slot === 'low' ? '1–3' : '3–6';
+  const isHireable = !!onHire && !!die && !claimedBy;
+  const Tag = isHireable ? 'button' : 'div';
   return (
-    <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${
-      claimedBy
-        ? 'border border-amber-700/40 bg-amber-950/20'
-        : die
-          ? 'border border-neutral-700/60 bg-neutral-900/50'
-          : 'border border-neutral-800/40 bg-neutral-950/30 opacity-50'
-    }`}>
+    <Tag
+      type={isHireable ? 'button' : undefined}
+      onClick={isHireable ? onHire : undefined}
+      className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs transition-all ${
+        claimedBy
+          ? 'border border-amber-700/40 bg-amber-950/20'
+          : isHireable
+            ? 'border border-blue-600/60 bg-blue-950/30 hover:bg-blue-900/40 hover:border-blue-500/70 cursor-pointer ring-0 hover:ring-1 hover:ring-blue-500/30'
+            : die
+              ? 'border border-neutral-700/60 bg-neutral-900/50'
+              : 'border border-neutral-800/40 bg-neutral-950/30 opacity-50'
+      }`}>
       {/* Slot info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
@@ -1172,7 +1190,10 @@ function MercSlot({
           <span className="text-[10px]">{factionLabel(claimerFactionId)}</span>
         </div>
       )}
-    </div>
+      {isHireable && (
+        <span className="text-[9px] font-bold text-blue-400/80 shrink-0">Hire</span>
+      )}
+    </Tag>
   );
 }
 

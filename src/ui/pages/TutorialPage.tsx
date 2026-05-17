@@ -784,13 +784,27 @@ export function TutorialPage() {
           const die = gameState.mercs[slot];
           const claimed = gameState.mercs.claimed[slot];
           const label = slot === 'specialist' ? `Spec·${gameState.mercs.specialistValue}` : slot === 'low' ? 'Low' : 'High';
+          // Hireable when it's the player's turn and a hire-merc move exists for this slot
+          const hireMove = waitingForHuman && step.kind === 'place' && !stepDone
+            ? visibleMoves.find((m) => m.kind === 'hire-merc' && m.mercSlot === slot)
+            : undefined;
+          const isHireable = !!hireMove && !!die && !claimed;
+          const Tag = isHireable ? 'button' : 'div';
           return (
-            <div key={slot} className={`flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] ${claimed ? 'border-amber-700/60 bg-amber-950/30 text-amber-200' : die ? 'border-neutral-700 bg-neutral-900 text-neutral-300' : 'border-neutral-800 bg-neutral-950 text-neutral-600'}`}>
+            <Tag key={slot} type={isHireable ? 'button' : undefined}
+              onClick={isHireable ? () => applyHumanMove(hireMove) : undefined}
+              className={`flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] transition-all ${
+                claimed ? 'border-amber-700/60 bg-amber-950/30 text-amber-200'
+                : isHireable ? 'border-blue-600/60 bg-blue-950/30 text-blue-200 hover:bg-blue-900/40 cursor-pointer'
+                : die ? 'border-neutral-700 bg-neutral-900 text-neutral-300'
+                : 'border-neutral-800 bg-neutral-950 text-neutral-600'
+              }`}>
               <span className="font-medium">{label}</span>
+              {isHireable && <span className="text-[8px] text-blue-400/70 font-bold">Hire</span>}
               {die?.faceValue != null && <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-xs font-bold">{die.faceValue}</span>}
               {claimed && <span className="text-amber-400/70">→ {gameState.players[claimed]?.factionId && factionLabel(gameState.players[claimed]!.factionId)}</span>}
               {!die && !claimed && <span>—</span>}
-            </div>
+            </Tag>
           );
         })}
       </div>
