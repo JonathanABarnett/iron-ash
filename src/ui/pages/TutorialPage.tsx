@@ -424,6 +424,8 @@ export function TutorialPage() {
   const freePlayAutoplayRef = useRef(freePlayAutoplay);
   freePlayAutoplayRef.current = freePlayAutoplay;
   const [vpGains, setVpGains]                 = useState<Record<string, number>>({});
+  // lastRoundGains persists until the next round rolls — shown in the score card
+  const [lastRoundGains, setLastRoundGains]   = useState<Record<string, number>>({});
 
   useEffect(() => { if (!justRolled) return; const t = setTimeout(() => setJustRolled(false), 650); return () => clearTimeout(t); }, [justRolled]);
   useEffect(() => { if (!Object.keys(vpGains).length) return; const t = setTimeout(() => setVpGains({}), 1400); return () => clearTimeout(t); }, [vpGains]);
@@ -613,7 +615,7 @@ export function TutorialPage() {
       const pv = before.players[pid]?.vp ?? 0;
       if (np.vp > pv) gains[pid] = np.vp - pv;
     }
-    if (Object.keys(gains).length) setVpGains(gains);
+    if (Object.keys(gains).length) { setVpGains(gains); setLastRoundGains(gains); }
     setGameState(state);
     setRngSnapshot(JSON.stringify(rng.snapshot()));
   }
@@ -957,6 +959,9 @@ export function TutorialPage() {
           aiNarration={aiNarration}
           canAdvance={canAdvance}
           stepDone={stepDone}
+          gameState={gameState}
+          lastRoundGains={lastRoundGains}
+          turnOrder={gameState.turnOrder}
           onNext={() => {
             if (step.kind === 'ai-turn' && !aiNarration) { runOneAIStep(); return; }
             nextStep();
@@ -975,6 +980,7 @@ export function TutorialPage() {
 
 function TutorialStepPanel({
   step, stepIdx, totalSteps, aiNarration, canAdvance, stepDone,
+  gameState, lastRoundGains, turnOrder,
   onNext, onBack, onPlayGame, onReplay, onContinueFreePlay,
 }: {
   step: Step;
@@ -983,6 +989,9 @@ function TutorialStepPanel({
   aiNarration: string | null;
   canAdvance: boolean;
   stepDone: boolean;
+  gameState: GameState;
+  lastRoundGains: Record<string, number>;
+  turnOrder: string[];
   onNext: () => void;
   onBack: () => void;
   onPlayGame: () => void;
@@ -1036,6 +1045,43 @@ function TutorialStepPanel({
           </div>
           <div className="mb-2 text-base font-black text-white">{step.title}</div>
           <p className="text-sm leading-relaxed" style={{ color: 'var(--color-muted)' }}>{displayBody}</p>
+
+          {/* Score card — shown on end-of-round and new-round steps */}
+          {(step.kind === 'end-of-round' || step.kind === 'new-round') && (
+            <div className="mt-3 rounded-xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest"
+                style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--color-subtle)' }}>
+                Scores after round {step.kind === 'new-round' ? gameState.round - 1 : gameState.round}
+              </div>
+              {turnOrder.map((pid) => {
+                const player = gameState.players[pid];
+                if (!player) return null;
+                const gain = lastRoundGains[pid] ?? 0;
+                const maxVp = Math.max(...Object.values(gameState.players).map(p => p?.vp ?? 0));
+                const isLeader = player.vp === maxVp && maxVp > 0;
+                const PALETTE: Record<string, string> = { p1:'#2dd4bf', p2:'#a78bfa', p3:'#fb923c', p4:'#f472b6' };
+                const col = PALETTE[pid] ?? '#9ca3af';
+                return (
+                  <div key={pid} className="flex items-center gap-2.5 px-3 py-2"
+                    style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: col }} />
+                    <span className="flex-1 text-xs font-semibold text-neutral-200">
+                      {factionLabel(player.factionId)}
+                    </span>
+                    {gain > 0 && (
+                      <span className="rounded-md px-1.5 py-0.5 text-[10px] font-bold text-emerald-300"
+                        style={{ background: 'rgba(52,211,153,0.12)' }}>
+                        +{gain}
+                      </span>
+                    )}
+                    <span className="text-lg font-black" style={{ color: col }}>{player.vp}</span>
+                    <span className="text-[10px] text-neutral-500">VP</span>
+                    {isLeader && <span className="text-sm">👑</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {step.kind === 'finish' ? (
             <div className="mt-4 grid grid-cols-3 gap-2">
