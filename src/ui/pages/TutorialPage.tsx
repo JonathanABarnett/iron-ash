@@ -795,69 +795,71 @@ export function TutorialPage() {
         })}
       </div>
 
-      {/* ── Action banner — only visible on 'place' steps so info/ai-turn steps
-           can't be skipped by accidentally making a move ── */}
-      {waitingForHuman && step.kind === 'place' && !stepDone && (
-        <div data-tour="action-menu" className="sticky top-[52px] z-10 mx-4 mt-3 rounded-2xl p-4"
-          style={{
-            background: 'linear-gradient(135deg, rgba(20,184,166,0.12), rgba(6,182,212,0.08))',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(20,184,166,0.3)',
-          }}>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-black text-teal-300 uppercase tracking-wide">⚔ Your Turn — Warriors</span>
-            {/* Lock badge — shown when the tutorial restricts available moves */}
-            {step?.prescribed && (
-              <span className="rounded-md bg-purple-900/60 px-2 py-0.5 text-[9px] font-bold text-purple-300 border border-purple-700/40">
-                🔒 Tutorial locked
-              </span>
-            )}
+      {/* ── Two-column layout on xl screens: map left, players right ─────────── */}
+      <div className="xl:flex xl:items-start xl:gap-4 xl:px-4 xl:pt-2">
+
+        {/* Left column: action banner + map */}
+        <div className="xl:flex-1 xl:min-w-0">
+
+          {/* ── Action banner — only visible on 'place' steps ── */}
+          {waitingForHuman && step.kind === 'place' && !stepDone && (
+            <div data-tour="action-menu" className="sticky top-[52px] z-10 mx-4 xl:mx-0 mt-3 rounded-2xl p-4"
+              style={{
+                background: 'linear-gradient(135deg, rgba(20,184,166,0.12), rgba(6,182,212,0.08))',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(20,184,166,0.3)',
+              }}>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-black text-teal-300 uppercase tracking-wide">⚔ Your Turn — Warriors</span>
+                {step?.prescribed && (
+                  <span className="rounded-md bg-purple-900/60 px-2 py-0.5 text-[9px] font-bold text-purple-300 border border-purple-700/40">
+                    🔒 Tutorial locked
+                  </span>
+                )}
+              </div>
+              <HumanActionMenu
+                moves={visibleMoves}
+                state={gameState}
+                selectedDieId={step?.prescribed ? null : selectedDieId}
+                onChoose={applyHumanMove}
+                showPass={!step?.prescribed || step.prescribed.kind === 'pass'}
+              />
+            </div>
+          )}
+
+          {/* ── Map ── */}
+          <div data-tour="map" className="px-4 xl:px-0 pt-2 pb-4">
+            <MapView
+              state={gameState}
+              humanMoves={waitingForHuman && step.kind === 'place' && !stepDone ? visibleMoves : []}
+              selectedDieId={step?.prescribed ? null : selectedDieId}
+              onRegionClick={(_id, moves) => {
+                if (moves.length === 0) return;
+                const filtered = (!step?.prescribed && selectedDieId)
+                  ? moves.filter((m) =>
+                      (m.kind === 'place'   && m.dieId === selectedDieId) ||
+                      (m.kind === 'combine' && (m.dieIds[0] === selectedDieId || m.dieIds[1] === selectedDieId)) ||
+                      (m.kind === 'battle'  && m.attackerDieId === selectedDieId)
+                    )
+                  : moves;
+                if (filtered.length >= 1) applyHumanMove(filtered[0]!);
+              }}
+            />
           </div>
-          {/* Pass visibleMoves (filtered to prescribed move) and suppress die selection
-              so the player can't accidentally narrow to no valid moves */}
-          <HumanActionMenu
-            moves={visibleMoves}
-            state={gameState}
-            selectedDieId={step?.prescribed ? null : selectedDieId}
-            onChoose={applyHumanMove}
-            showPass={!step?.prescribed || step.prescribed.kind === 'pass'}
-          />
+
+          {/* ── End-game ── */}
+          {gameState.phase === 'finished' && (
+            <div className="mx-4 xl:mx-0 mt-4 rounded-2xl p-6 text-center" style={{ background: 'rgba(18,12,30,0.97)', border: '1px solid rgba(124,58,237,0.4)' }}>
+              <div className="mb-2 text-3xl">🏁</div>
+              <div className="text-xl font-black text-white">Tutorial Complete!</div>
+              <div className="mt-1 text-sm text-neutral-400">{gameState.winnerId === humanPid ? 'You won! ' : ''}Ready to play a full game with any faction?</div>
+            </div>
+          )}
         </div>
-      )}
 
-      {/* ── Map ── */}
-      <div data-tour="map" className="px-4 pt-2 pb-4">
-        <MapView
-          state={gameState}
-          humanMoves={waitingForHuman && step.kind === 'place' && !stepDone ? visibleMoves : []}
-          selectedDieId={step?.prescribed ? null : selectedDieId}
-          onRegionClick={(_id, moves) => {
-            if (moves.length === 0) return;
-            // In tutorial: moves is already filtered to the prescribed one by humanMoves.
-            // In free-play: respect die selection as before.
-            const filtered = (!step?.prescribed && selectedDieId)
-              ? moves.filter((m) =>
-                  (m.kind === 'place'   && m.dieId === selectedDieId) ||
-                  (m.kind === 'combine' && (m.dieIds[0] === selectedDieId || m.dieIds[1] === selectedDieId)) ||
-                  (m.kind === 'battle'  && m.attackerDieId === selectedDieId)
-                )
-              : moves;
-            if (filtered.length >= 1) applyHumanMove(filtered[0]!);
-          }}
-        />
-      </div>
-
-      {/* ── End-game ── */}
-      {gameState.phase === 'finished' && (
-        <div className="mx-4 mt-4 rounded-2xl p-6 text-center" style={{ background: 'rgba(18,12,30,0.97)', border: '1px solid rgba(124,58,237,0.4)' }}>
-          <div className="mb-2 text-3xl">🏁</div>
-          <div className="text-xl font-black text-white">Tutorial Complete!</div>
-          <div className="mt-1 text-sm text-neutral-400">{gameState.winnerId === humanPid ? 'You won! ' : ''}Ready to play a full game with any faction?</div>
-        </div>
-      )}
-
-      {/* ── Player strip ── */}
-      <div data-tour="player-cards" className="flex gap-2.5 overflow-x-auto px-4 py-3">
+        {/* Right column: player cards — horizontal scroll on mobile, stacked on xl */}
+        <div data-tour="player-cards"
+          className="flex gap-2.5 overflow-x-auto px-4 py-3 xl:flex-col xl:overflow-x-visible xl:px-0 xl:py-0 xl:w-72 xl:shrink-0 xl:sticky xl:top-[60px]">
         {gameState.turnOrder.map((pid) => {
           const player = gameState.players[pid]!;
           const isHuman = pid === humanPid;
@@ -923,7 +925,8 @@ export function TutorialPage() {
             </div>
           );
         })}
-      </div>
+        </div>{/* end right column / player cards */}
+      </div>{/* end two-column wrapper */}
 
       {/* ── Free-play mode banner + autoplay controls (after tutorial ends) ── */}
       {freePlayMode && (
