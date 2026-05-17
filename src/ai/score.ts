@@ -111,7 +111,11 @@ export function scoreMove(move: Move, ctx: ScoreContext): ScoredCandidate {
   const loss = expectedLoss(move, state);
   const riskDiscount = -loss * (1 - w.riskTolerance);
 
-  const finalScore = tiltedScore + lateGameBoost + freeForAllBoost + riskDiscount;
+  // draft-card: the move is only enumerated when the player can afford it, so the
+  // cost is already gated. Floor at 0.01 so the AI never actively avoids drafting
+  // an affordable card — at minimum, having options is marginally positive.
+  const rawFinal = tiltedScore + lateGameBoost + freeForAllBoost + riskDiscount;
+  const finalScore = move.kind === 'draft-card' ? Math.max(0.01, rawFinal) : rawFinal;
 
   const breakdown: AIScoreBreakdown = {
     vpGain,
