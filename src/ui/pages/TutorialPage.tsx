@@ -885,6 +885,46 @@ export function TutorialPage() {
             </div>
           </div>
 
+          {/* Market panel — read-only during scripted steps; Draft opens in free-play */}
+          {gameState.market.length > 0 && (
+            <div className="px-4 py-3 xl:px-0 xl:py-0">
+              <div className="rounded-xl border border-neutral-800/60 bg-neutral-900/40 p-3">
+                <div className="mb-2 text-[9px] font-bold uppercase tracking-widest text-neutral-600">Market</div>
+                <div className="space-y-1">
+                  {gameState.market.map((cardId) => {
+                    const card = configs.cards.find((c) => c.id === cardId);
+                    if (!card) return null;
+                    const cost = card.cost as Record<string, number>;
+                    // Draft allowed only in free-play mode
+                    const draftMove = freePlayMode && waitingForHuman
+                      ? pendingMoves.find((m) => m.kind === 'draft-card' && m.cardId === cardId)
+                      : undefined;
+                    return (
+                      <div key={cardId} className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-[10px] border border-neutral-800/40 bg-neutral-950/30">
+                        <span className="shrink-0 text-neutral-500">🃏</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-neutral-200 truncate">{card.name}</div>
+                          <div className="text-neutral-600 truncate leading-tight mt-0.5">{card.description}</div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {cost.iron    ? <span className="text-neutral-400">⚙{cost.iron}</span>    : null}
+                          {cost.gold    ? <span className="text-neutral-400">🪙{cost.gold}</span>    : null}
+                          {cost.essence ? <span className="text-neutral-400">💎{cost.essence}</span> : null}
+                          {draftMove && (
+                            <button type="button" onClick={() => applyHumanMove(draftMove)}
+                              className="rounded px-1.5 py-0.5 text-[9px] font-bold text-teal-300 border border-teal-700/50 bg-teal-950/30 hover:bg-teal-900/40 transition ml-1">
+                              Draft
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Player cards — horizontal scroll on mobile, stacked on xl */}
           <div data-tour="player-cards"
             className="flex gap-2.5 overflow-x-auto px-4 py-3 xl:flex-col xl:overflow-x-visible xl:px-0 xl:py-0">
