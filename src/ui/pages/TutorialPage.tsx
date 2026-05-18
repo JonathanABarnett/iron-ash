@@ -777,38 +777,6 @@ export function TutorialPage() {
       {/* ── Fortress strip ── */}
       <FortressStrip state={gameState} />
 
-      {/* ── Merc bar ── */}
-      <div data-tour="merc-bar" className="flex items-center gap-3 border-b border-neutral-800/60 bg-neutral-900/30 px-4 py-1.5 mt-2">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-600">Mercs</span>
-        {(['low','high','specialist'] as const).map((slot) => {
-          const die = gameState.mercs[slot];
-          const claimed = gameState.mercs.claimed[slot];
-          const label = slot === 'specialist' ? `Spec·${gameState.mercs.specialistValue}` : slot === 'low' ? 'Low' : 'High';
-          // Hireable when it's the player's turn and a hire-merc move exists for this slot
-          const hireMove = waitingForHuman && step.kind === 'place' && !stepDone
-            ? visibleMoves.find((m) => m.kind === 'hire-merc' && m.mercSlot === slot)
-            : undefined;
-          const isHireable = !!hireMove && !!die && !claimed;
-          const Tag = isHireable ? 'button' : 'div';
-          return (
-            <Tag key={slot} type={isHireable ? 'button' : undefined}
-              onClick={isHireable ? () => applyHumanMove(hireMove) : undefined}
-              className={`flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] transition-all ${
-                claimed ? 'border-amber-700/60 bg-amber-950/30 text-amber-200'
-                : isHireable ? 'border-blue-600/60 bg-blue-950/30 text-blue-200 hover:bg-blue-900/40 cursor-pointer'
-                : die ? 'border-neutral-700 bg-neutral-900 text-neutral-300'
-                : 'border-neutral-800 bg-neutral-950 text-neutral-600'
-              }`}>
-              <span className="font-medium">{label}</span>
-              {isHireable && <span className="text-[8px] text-blue-400/70 font-bold">Hire</span>}
-              {die?.faceValue != null && <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-xs font-bold">{die.faceValue}</span>}
-              {claimed && <span className="text-amber-400/70">→ {gameState.players[claimed]?.factionId && factionLabel(gameState.players[claimed]!.factionId)}</span>}
-              {!die && !claimed && <span>—</span>}
-            </Tag>
-          );
-        })}
-      </div>
-
       {/* ── Two-column layout on xl screens: map left, players right ─────────── */}
       <div className="xl:flex xl:items-start xl:gap-4 xl:px-4 xl:pt-2">
 
@@ -871,75 +839,122 @@ export function TutorialPage() {
           )}
         </div>
 
-        {/* Right column: player cards — horizontal scroll on mobile, stacked on xl */}
-        <div data-tour="player-cards"
-          className="flex gap-2.5 overflow-x-auto px-4 py-3 xl:flex-col xl:overflow-x-visible xl:px-0 xl:py-0 xl:w-72 xl:shrink-0 xl:sticky xl:top-[60px]">
-        {gameState.turnOrder.map((pid) => {
-          const player = gameState.players[pid]!;
-          const isHuman = pid === humanPid;
-          const isActive = pid === gameState.activePlayerId && gameState.phase === 'action';
-          const barracksDice = player.dice.filter((d) => d.location.kind === 'barracks' && d.faceValue !== null);
-          const ab = FACTION_ABILITIES[player.factionId];
-          const isLeader = maxVP > 0 && player.vp === maxVP;
-          const gain = vpGains[pid] ?? 0;
-          return (
-            <div key={pid}
-              className={`relative w-56 shrink-0 rounded-2xl p-3 text-xs transition-all ${
-                isHuman && waitingForHuman ? 'border border-teal-500/60 bg-teal-950/20'
-                : isActive ? 'border border-purple-500/50 bg-purple-950/15'
-                : 'glass border-transparent'}`}>
-              <div className="mb-2.5 flex items-center gap-2">
-                <div className="group relative shrink-0">
-                  <FactionEmblem factionId={player.factionId} size={34} className="rounded-xl" />
-                  {isActive && !waitingForHuman && (
-                    <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-purple-400 ring-2 ring-neutral-950 animate-pulse" />
-                  )}
-                  <div className="pointer-events-none absolute left-full top-0 z-50 ml-2 w-52 rounded-2xl p-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                    style={{ background: 'rgba(12,8,22,0.97)', border: '1px solid rgba(124,58,237,0.3)' }}>
-                    <div className="mb-1 text-[10px] font-black text-purple-300 uppercase tracking-wide">{ab?.activeLabel}</div>
-                    <div className="text-[10px] leading-relaxed text-neutral-400">{ab?.activeDescription}</div>
-                  </div>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-0.5 flex items-center gap-1">
-                    <span className="text-[11px] font-bold text-neutral-100 truncate">{factionLabel(player.factionId)}</span>
-                    {isHuman && <span className="shrink-0 rounded-md bg-teal-600 px-1 py-0.5 text-[8px] font-black uppercase tracking-wide">YOU</span>}
-                  </div>
-                  <div className="text-[9px] text-neutral-600">{barracksDice.length}d ready · {player.dice.filter(d => d.location.kind === 'region').length}p</div>
-                </div>
-                <div className="relative shrink-0">
-                  <VPMedallion vp={player.vp} isLeader={isLeader} size="md" />
-                  {gain > 0 && (
-                    <div key={player.vp} className="vp-float absolute -top-5 left-1/2 -translate-x-1/2 text-[11px] font-black text-emerald-400 whitespace-nowrap" style={{ textShadow: '0 0 8px rgba(52,211,153,0.6)' }}>
-                      +{gain} VP
-                    </div>
-                  )}
-                </div>
+        {/* Right column: mercs + player cards — stacked vertically on xl */}
+        <div className="xl:w-72 xl:shrink-0 xl:sticky xl:top-[60px] xl:space-y-3">
+
+          {/* Mercs section */}
+          <div data-tour="merc-bar" className="px-4 py-3 xl:px-0 xl:py-0">
+            <div className="rounded-xl border border-neutral-800/60 bg-neutral-900/40 p-3">
+              <div className="mb-2 text-[9px] font-bold uppercase tracking-widest text-neutral-600">Mercenaries</div>
+              <div className="space-y-1.5">
+                {(['low','high','specialist'] as const).map((slot) => {
+                  const die = gameState.mercs[slot];
+                  const claimed = gameState.mercs.claimed[slot];
+                  const label = slot === 'specialist' ? `Spec·${gameState.mercs.specialistValue}` : slot === 'low' ? 'Low 1–3' : 'High 3–6';
+                  const hireMove = waitingForHuman && step.kind === 'place' && !stepDone
+                    ? visibleMoves.find((m) => m.kind === 'hire-merc' && m.mercSlot === slot)
+                    : undefined;
+                  const isHireable = !!hireMove && !!die && !claimed;
+                  const Tag = isHireable ? 'button' : 'div';
+                  return (
+                    <Tag key={slot} type={isHireable ? 'button' : undefined}
+                      onClick={isHireable ? () => applyHumanMove(hireMove) : undefined}
+                      className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs transition-all ${
+                        claimed       ? 'border border-amber-700/40 bg-amber-950/20 text-amber-200'
+                        : isHireable  ? 'border border-blue-600/60 bg-blue-950/30 text-blue-200 hover:bg-blue-900/40 cursor-pointer'
+                        : die         ? 'border border-neutral-700/60 bg-neutral-900/50 text-neutral-300'
+                        :               'border border-neutral-800/40 bg-neutral-950/30 text-neutral-600 opacity-50'
+                      }`}>
+                      <span className="flex-1 font-medium">{label}</span>
+                      {isHireable && <span className="text-[9px] font-bold text-blue-400/70">Hire</span>}
+                      {die?.faceValue != null && (
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-xs font-bold">
+                          {die.faceValue}
+                        </span>
+                      )}
+                      {claimed && (
+                        <span className="text-[10px] text-amber-400/70">
+                          → {gameState.players[claimed]?.factionId && factionLabel(gameState.players[claimed]!.factionId)}
+                        </span>
+                      )}
+                      {!die && !claimed && <span className="text-neutral-700">—</span>}
+                    </Tag>
+                  );
+                })}
               </div>
-              <div className="mb-2.5 flex items-center gap-1.5">
-                <ResourceCount resource="iron"    value={player.resources.iron}    size={13} />
-                <ResourceCount resource="gold"    value={player.resources.gold}    size={13} />
-                <ResourceCount resource="essence" value={player.resources.essence} size={13} />
-              </div>
-              {barracksDice.length > 0 && (
-                <div>
-                  <div className="mb-1 text-[9px] uppercase tracking-widest text-neutral-700">Barracks</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {barracksDice.slice(0, 6).map((d, idx) => (
-                      <Die key={d.id} value={d.faceValue} range={d.range} size={28}
-                        isSelected={d.id === selectedDieId}
-                        isRolling={justRolled}
-                        rollDelay={idx * 55}
-                        onClick={waitingForHuman && isHuman ? () => setSelectedDieId((prev) => prev === d.id ? null : d.id) : undefined}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
-          );
-        })}
-        </div>{/* end right column / player cards */}
+          </div>
+
+          {/* Player cards — horizontal scroll on mobile, stacked on xl */}
+          <div data-tour="player-cards"
+            className="flex gap-2.5 overflow-x-auto px-4 py-3 xl:flex-col xl:overflow-x-visible xl:px-0 xl:py-0">
+          {gameState.turnOrder.map((pid) => {
+            const player = gameState.players[pid]!;
+            const isHuman = pid === humanPid;
+            const isActive = pid === gameState.activePlayerId && gameState.phase === 'action';
+            const barracksDice = player.dice.filter((d) => d.location.kind === 'barracks' && d.faceValue !== null);
+            const ab = FACTION_ABILITIES[player.factionId];
+            const isLeader = maxVP > 0 && player.vp === maxVP;
+            const gain = vpGains[pid] ?? 0;
+            return (
+              <div key={pid}
+                className={`relative w-56 shrink-0 rounded-2xl p-3 text-xs transition-all ${
+                  isHuman && waitingForHuman ? 'border border-teal-500/60 bg-teal-950/20'
+                  : isActive ? 'border border-purple-500/50 bg-purple-950/15'
+                  : 'glass border-transparent'}`}>
+                <div className="mb-2.5 flex items-center gap-2">
+                  <div className="group relative shrink-0">
+                    <FactionEmblem factionId={player.factionId} size={34} className="rounded-xl" />
+                    {isActive && !waitingForHuman && (
+                      <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-purple-400 ring-2 ring-neutral-950 animate-pulse" />
+                    )}
+                    <div className="pointer-events-none absolute left-full top-0 z-50 ml-2 w-52 rounded-2xl p-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                      style={{ background: 'rgba(12,8,22,0.97)', border: '1px solid rgba(124,58,237,0.3)' }}>
+                      <div className="mb-1 text-[10px] font-black text-purple-300 uppercase tracking-wide">{ab?.activeLabel}</div>
+                      <div className="text-[10px] leading-relaxed text-neutral-400">{ab?.activeDescription}</div>
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-0.5 flex items-center gap-1">
+                      <span className="text-[11px] font-bold text-neutral-100 truncate">{factionLabel(player.factionId)}</span>
+                      {isHuman && <span className="shrink-0 rounded-md bg-teal-600 px-1 py-0.5 text-[8px] font-black uppercase tracking-wide">YOU</span>}
+                    </div>
+                    <div className="text-[9px] text-neutral-600">{barracksDice.length}d ready · {player.dice.filter(d => d.location.kind === 'region').length}p</div>
+                  </div>
+                  <div className="relative shrink-0">
+                    <VPMedallion vp={player.vp} isLeader={isLeader} size="md" />
+                    {gain > 0 && (
+                      <div key={player.vp} className="vp-float absolute -top-5 left-1/2 -translate-x-1/2 text-[11px] font-black text-emerald-400 whitespace-nowrap" style={{ textShadow: '0 0 8px rgba(52,211,153,0.6)' }}>
+                        +{gain} VP
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mb-2.5 flex items-center gap-1.5">
+                  <ResourceCount resource="iron"    value={player.resources.iron}    size={13} />
+                  <ResourceCount resource="gold"    value={player.resources.gold}    size={13} />
+                  <ResourceCount resource="essence" value={player.resources.essence} size={13} />
+                </div>
+                {barracksDice.length > 0 && (
+                  <div>
+                    <div className="mb-1 text-[9px] uppercase tracking-widest text-neutral-700">Barracks</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {barracksDice.slice(0, 6).map((d, idx) => (
+                        <Die key={d.id} value={d.faceValue} range={d.range} size={28}
+                          isSelected={d.id === selectedDieId}
+                          isRolling={justRolled}
+                          rollDelay={idx * 55}
+                          onClick={waitingForHuman && isHuman ? () => setSelectedDieId((prev) => prev === d.id ? null : d.id) : undefined}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          </div>{/* end player cards */}
+        </div>{/* end right column */}
       </div>{/* end two-column wrapper */}
 
       {/* ── Free-play mode banner + autoplay controls (after tutorial ends) ── */}
