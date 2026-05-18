@@ -990,6 +990,22 @@ export function TutorialPage() {
                     </div>
                   </div>
                 )}
+                {/* Secret goals — only shown to the human player */}
+                {isHuman && player.secretGoals.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <div className="text-[9px] uppercase tracking-widest text-neutral-700">Secret Goal</div>
+                    {player.secretGoals.map((goalId) => {
+                      const g = configs.secretGoals.find((s) => s.id === goalId);
+                      if (!g) return null;
+                      return (
+                        <div key={goalId} className="rounded-lg border border-violet-800/40 bg-violet-950/20 px-2 py-1.5">
+                          <div className="text-[9px] font-bold text-violet-300">{g.name} <span className="text-violet-500">+{g.vp}VP</span></div>
+                          <div className="text-[8px] text-neutral-500 leading-tight mt-0.5">{g.description}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1174,8 +1190,11 @@ function TutorialStepPanel({
             </div>
           ) : (
             <div className="mt-4 flex items-center gap-2">
-              <button type="button" onClick={onBack} disabled={stepIdx === 0}
-                className="rounded-xl border border-neutral-700 px-4 py-2 text-xs font-semibold text-neutral-400 transition hover:bg-neutral-800 disabled:opacity-30">
+              {/* Back is only safe on info steps — going back from a game-action
+                   step doesn't revert game state, so it would de-sync the UI. */}
+              <button type="button" onClick={onBack}
+                disabled={stepIdx === 0 || step.kind !== 'info'}
+                className="rounded-xl border border-neutral-700 px-4 py-2 text-xs font-semibold text-neutral-400 transition hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed">
                 ← Back
               </button>
               <button type="button" onClick={onNext} disabled={!canAdvance && step.kind !== 'ai-turn'}
