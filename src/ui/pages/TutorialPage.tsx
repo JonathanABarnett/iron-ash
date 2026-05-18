@@ -866,12 +866,12 @@ export function TutorialPage() {
                         :               'border border-neutral-800/40 bg-neutral-950/30 text-neutral-600 opacity-50'
                       }`}>
                       <span className="flex-1 font-medium">{label}</span>
-                      {isHireable && <span className="text-[9px] font-bold text-blue-400/70">Hire</span>}
                       {die?.faceValue != null && (
                         <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-neutral-800 text-xs font-bold">
                           {die.faceValue}
                         </span>
                       )}
+                      {isHireable && <span className="text-[9px] font-bold text-blue-400/70 ml-1">Hire</span>}
                       {claimed && (
                         <span className="text-[10px] text-amber-400/70">
                           → {gameState.players[claimed]?.factionId && factionLabel(gameState.players[claimed]!.factionId)}
