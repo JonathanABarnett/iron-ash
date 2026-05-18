@@ -231,65 +231,72 @@ const STEPS: Step[] = [
 
 function describeAIMove(move: Move, reasoning: AIReasoning, state: GameState, factionName: string, actingFactionId: string): string {
   const top = reasoning.candidates[0];
+  // Plain-English reason hints — replaces the jargon-heavy AI breakdown labels
   const reasonHint = (() => {
     if (!top) return '';
     const b = top.breakdown;
     const factors: string[] = [];
-    if ((b.vpGain ?? 0) >= 1)              factors.push('VP-rich region');
-    if ((b.roundGoalAlignment ?? 0) >= 0.6) factors.push('progresses the round goal');
-    if ((b.denial ?? 0) >= 0.6)             factors.push('denies you territory');
-    if ((b.factionTilt ?? 0) >= 1.4)        factors.push('strong faction synergy');
-    if ((b.secretGoalAlignment ?? 0) >= 0.5) factors.push('matches a secret objective');
-    return factors.length ? ` Why: ${factors.join(', ')}.` : '';
+    if ((b.vpGain ?? 0) >= 1)               factors.push('scores VP here');
+    if ((b.roundGoalAlignment ?? 0) >= 0.6)  factors.push('helps with the round goal');
+    if ((b.denial ?? 0) >= 0.6)              factors.push('blocks a region you might want');
+    if ((b.secretGoalAlignment ?? 0) >= 0.5) factors.push('fits their hidden objective');
+    return factors.length ? ` (${factors.join('; ')})` : '';
   })();
 
   switch (move.kind) {
     case 'place': {
       const region = state.regionDefs[move.regionId];
       const die = findDieById(state, move.dieId);
-      const dieName = die ? DIE_NAMES[die.range] : 'a die';
       const face = die?.faceValue ?? '?';
-      return `${factionName} placed their ${dieName} (face ${face}) at ${region?.name ?? move.regionId}.${reasonHint}`;
+      return `${factionName} placed a die showing ${face} at ${region?.name ?? move.regionId}${reasonHint}.`;
     }
     case 'combine': {
       const region = state.regionDefs[move.regionId];
       const a = findDieById(state, move.dieIds[0]);
       const b = findDieById(state, move.dieIds[1]);
       const sum = (a?.faceValue ?? 0) + (b?.faceValue ?? 0);
-      return `${factionName} combined two dice (${a?.faceValue}+${b?.faceValue}=${sum}) into ${region?.name ?? move.regionId} — a big swing for a high-requirement region.${reasonHint}`;
+      const isFortress = region?.isFortress ?? false;
+      return `${factionName} combined two dice (${a?.faceValue}+${b?.faceValue}=${sum}) into ${region?.name ?? move.regionId}${isFortress ? ' to garrison the fortress' : ''}${reasonHint}. A combine stacks two dice so you can meet high sum requirements.`;
     }
     case 'battle': {
       const region = state.regionDefs[move.targetRegionId];
-      return `${factionName} launched an attack on ${region?.name ?? move.targetRegionId}! Watch for the result in the banner above.${reasonHint}`;
+      return `${factionName} attacked ${region?.name ?? move.targetRegionId}! Battles let you challenge an opponent's placed die — the higher face wins.`;
     }
     case 'hire-merc': {
       const slot = move.mercSlot;
-      const slotName = slot === 'specialist' ? `Specialist (value ${state.mercs.specialistValue})` : slot === 'low' ? 'Low merc (1-3)' : 'High merc (3-6)';
-      return `${factionName} hired the ${slotName}. Mercs are temporary dice they can deploy this round.${reasonHint}`;
+      const slotName = slot === 'specialist' ? `Specialist (value ${state.mercs.specialistValue})` : slot === 'low' ? 'Low merc (1–3)' : 'High merc (3–6)';
+      return `${factionName} hired the ${slotName}. Mercs are hired dice that can be placed this round but vanish at round end.`;
     }
     case 'use-active': {
-      // Use actingFactionId — NOT state.activePlayerId, which has already rotated
-      // to the next player by the time this function is called.
+      // Use actingFactionId — NOT state.activePlayerId, which rotates to the
+      // next player before this function is called.
       const ab = FACTION_ABILITIES[actingFactionId as keyof typeof FACTION_ABILITIES];
-      return `${factionName} used ${ab?.activeLabel ?? 'their active ability'}.${reasonHint}`;
+      // Strip the "Use once per round:" prefix and the Passives section so the
+      // description is brief and action-focused.
+      const rawDesc = ab?.activeDescription ?? '';
+      const brief = rawDesc
+        .split(/\.\s*Passive/i)[0]
+        ?.replace(/^Use once per round:\s*/i, '')
+        .trim() ?? '';
+      return `${factionName} used their active ability — ${ab?.activeLabel ?? 'special'}${brief ? `: ${brief.charAt(0).toLowerCase()}${brief.slice(1)}` : ''}.`;
     }
     case 'upgrade-die': {
       const die = findDieById(state, move.dieId);
       const next = die ? nextDieRange(die.range) : '?';
-      return `${factionName} upgraded a die from ${die ? DIE_NAMES[die.range] : '?'} → ${next && next !== '?' ? DIE_NAMES[next as keyof typeof DIE_NAMES] : '?'}. Better range = more region options.${reasonHint}`;
+      return `${factionName} upgraded a die (${die ? DIE_NAMES[die.range] : '?'} → ${next && next !== '?' ? DIE_NAMES[next as keyof typeof DIE_NAMES] : '?'}). A stronger range means it can reach more regions.`;
     }
     case 'expand-barracks':
-      return `${factionName} expanded their barracks (more dice next round).${reasonHint}`;
+      return `${factionName} expanded their barracks. They'll roll an extra die next round.`;
     case 'draft-card':
-      return `${factionName} drafted a card from the market. They might play it later for a tactical edge.${reasonHint}`;
+      return `${factionName} drafted a card from the market — a one-use ability they can play later this game.`;
     case 'play-card':
-      return `${factionName} played a card to manipulate the board.${reasonHint}`;
+      return `${factionName} played a card from their hand.`;
     case 'build-structure': {
       const region = state.regionDefs[move.regionId];
-      return `${factionName} built a structure at ${region?.name ?? move.regionId} for permanent VP.${reasonHint}`;
+      return `${factionName} built a structure at ${region?.name ?? move.regionId}. Structures give permanent VP bonuses.`;
     }
     case 'pass':
-      return `${factionName} passed. They're saving resources or out of good moves.${reasonHint}`;
+      return `${factionName} passed — they're either out of good moves or saving resources for later.`;
   }
 }
 
