@@ -785,7 +785,7 @@ export function TutorialPage() {
 
           {/* ── Action banner — only visible on 'place' steps ── */}
           {waitingForHuman && step.kind === 'place' && !stepDone && (
-            <div data-tour="action-menu" className="sticky top-[52px] z-10 mx-4 xl:mx-0 mt-3 rounded-2xl p-4"
+            <div data-tour="action-menu" className="mx-4 xl:mx-0 mt-3 rounded-2xl p-4"
               style={{
                 background: 'linear-gradient(135deg, rgba(20,184,166,0.12), rgba(6,182,212,0.08))',
                 backdropFilter: 'blur(12px)',
