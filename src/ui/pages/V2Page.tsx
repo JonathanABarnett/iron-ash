@@ -144,13 +144,17 @@ function freshGame(counter: number): {
 }
 
 export function V2Page() {
-  // A counter mixed into the seed so "New game" reseeds deterministically-ish.
-  const [seedCounter, setSeedCounter] = useState(0);
+  // Seed counter feeds the dice RNG. Start it RANDOM so every page load is a
+  // different game (a fixed start made each reload replay the identical round-1
+  // hand, which read as "rigged"). Math.random is fine here — this is the UI,
+  // not the pure engine; the underlying Rng is still seeded from this value, so
+  // a given counter is reproducible.
+  const [seedCounter, setSeedCounter] = useState(() => Math.floor(Math.random() * 1e9));
 
   // The mutable game + its rng live in refs; `version` forces re-renders after
   // the model mutates in place. Lazy-init once so no setState fires in render.
   const initial = useRef<{ game: GameV2; rng: Rng; hand: RolledDie[]; ai: Record<number, number[]> } | null>(null);
-  if (initial.current === null) initial.current = freshGame(0);
+  if (initial.current === null) initial.current = freshGame(seedCounter);
   const gameRef = useRef<GameV2>(initial.current.game);
   const rngRef = useRef<Rng>(initial.current.rng);
   const [, setVersion] = useState(0);
