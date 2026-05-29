@@ -53,19 +53,25 @@ export function resolveContest(input: ContestInput): ContestResult {
     allSides.filter((p) => p !== owner).length > 0 && // someone other than the owner is pushing
     (allSides.length > 1 || owner === null);          // ...into a contested or neutral space
 
-  // Pick the highest effective total; ties go to the current owner.
-  let best: number | null = owner;
-  let bestVal = owner !== null ? (effective[owner] ?? 0) : -1;
+  // Find the strict maximum effective total. Ties resolve to "no change":
+  //   • owned territory → the owner holds (defender's edge)
+  //   • neutral territory → stays neutral (you must strictly out-commit to claim)
+  // This removes the lower-seat bias that a "first-found max" tie-break caused.
+  let maxVal = -1;
+  let maxCount = 0;
+  let maxPid = -1;
   for (const pid of allSides) {
-    if (pid === owner) continue;
     const v = effective[pid]!;
-    if (v > bestVal) { best = pid; bestVal = v; }
+    if (v > maxVal) { maxVal = v; maxCount = 1; maxPid = pid; }
+    else if (v === maxVal) { maxCount += 1; }
   }
-  // Neutral territory with a single uncontested claimant → they take it.
-  if (owner === null && allSides.length >= 1) {
-    let topPid = allSides[0]!, topVal = effective[topPid]!;
-    for (const pid of allSides) { if (effective[pid]! > topVal) { topPid = pid; topVal = effective[pid]!; } }
-    best = topPid;
+  let best: number | null;
+  if (owner !== null) {
+    // Owner keeps it unless someone STRICTLY beats their effective total.
+    best = (maxCount === 1 && maxPid !== owner && maxVal > (effective[owner] ?? 0)) ? maxPid : owner;
+  } else {
+    // Neutral: a unique strict leader claims it; a tie leaves it neutral.
+    best = maxCount === 1 ? maxPid : null;
   }
 
   return {

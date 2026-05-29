@@ -12,15 +12,26 @@
 
 import { Rng } from '../engine/rng';
 import { generateBoard, type BoardV2 } from './board';
-import { defaultPool, rollPool, type RolledDie, type Unit } from './units';
+import { defaultPool, makeUnits, rollPool, type RolledDie, type Unit } from './units';
 import { resolveContest } from './combat';
+import { assignObjectives } from './objectives';
 
 export const ROUNDS = 6;
+
+export interface PlayerStats {
+  /** Contested territories this player won (won a fight, not a walk-in). */
+  contestsWon: number;
+  /** Fortresses/passes/throne captured FROM a rival. */
+  strongpointsCaptured: number;
+}
 
 export interface PlayerV2 {
   id: number;
   pool: Unit[];           // persistent dice types (renewed each round)
-  vp: number;
+  vp: number;             // visible accrued VP (the main engine)
+  objectiveId: string;    // hidden endgame objective
+  objectiveVp: number;    // resolved at game end
+  stats: PlayerStats;
 }
 
 export interface GameV2 {
@@ -37,11 +48,16 @@ export function createGameV2(playerCount: number, seed: string): GameV2 {
   const board = generateBoard(playerCount, seed);
   const players: PlayerV2[] = Array.from({ length: playerCount }, (_, i) => ({
     id: i, pool: defaultPool(i), vp: 0,
+    objectiveId: '', objectiveVp: 0,
+    stats: { contestsWon: 0, strongpointsCaptured: 0 },
   }));
   // Each player starts owning their home.
   const owner: Record<string, number> = {};
   board.homeIds.forEach((h, i) => { owner[h] = i; });
-  return { board, players, owner, round: 0, clock: 0 };
+  const game: GameV2 = { board, players, owner, round: 0, clock: 0 };
+  // Deal hidden objectives from a seeded, board-independent stream.
+  assignObjectives(game, new Rng(`v2-obj-${seed}-${playerCount}`));
+  return game;
 }
 
 /** Territories a player may deploy into: ones they own, or adjacent to ones they own. */
@@ -55,8 +71,28 @@ export function reachable(game: GameV2, playerId: number): Set<string> {
   return out;
 }
 
+// ── Catch-up ("underdog reinforcements") ──
+// A trailing player rolls extra dice this round — scaled to how far behind the
+// leader they are. This counters the centre-snowball WITHOUT gutting accrual:
+// it grants FORCE to contest with, not free VP. 2p has no third party to
+// police a leader, so this is its main self-correction; 4p table politics
+// already curbs runaways, and the gap thresholds mean close games are untouched.
+export const CATCHUP = { gap1: 4, gap2: 10 } as const;
+
+export function catchUpDiceCount(game: GameV2, playerId: number): number {
+  const leadVp = Math.max(...game.players.map((p) => p.vp));
+  const deficit = leadVp - game.players[playerId]!.vp;
+  if (deficit >= CATCHUP.gap2) return 2;
+  if (deficit >= CATCHUP.gap1) return 1;
+  return 0;
+}
+
 export function rollHand(game: GameV2, playerId: number, rng: Rng): RolledDie[] {
-  return rollPool(game.players[playerId]!.pool, rng);
+  const base = rollPool(game.players[playerId]!.pool, rng);
+  const bonus = catchUpDiceCount(game, playerId);
+  if (bonus === 0) return base;
+  const reinforcements = makeUnits('2-5', bonus, `catchup-p${playerId}-r${game.round}`);
+  return [...base, ...rollPool(reinforcements, rng)];
 }
 
 /** A deployment: which player put how much total value onto a territory this round. */
@@ -77,8 +113,19 @@ export function resolveRound(game: GameV2, deployments: Deployments): {
       owner: game.owner[tid] ?? null,
       terrainBonus: terr.defenseBonus,
     });
+    const prevOwner = game.owner[tid] ?? null;
     if (r.newOwner !== null) game.owner[tid] = r.newOwner;
     if (r.changed) game.clock += 1;
+
+    // Stats for hidden objectives.
+    if (r.newOwner !== null && r.newOwner !== prevOwner) {
+      if (r.contested) game.players[r.newOwner]!.stats.contestsWon += 1;
+      // Captured a strongpoint (pass or throne) from a rival?
+      const captured = prevOwner !== null;
+      if (captured && (terr.role === 'choke' || terr.role === 'center')) {
+        game.players[r.newOwner]!.stats.strongpointsCaptured += 1;
+      }
+    }
     results.push({ territoryId: tid, changed: r.changed, contested: r.contested, newOwner: r.newOwner });
   }
   return results;
