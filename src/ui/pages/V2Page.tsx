@@ -231,7 +231,9 @@ export function V2Page() {
     return out;
   }, [game]);
 
-  // Reset all per-round deploy state and hand the first turn to the human.
+  // Reset all per-round deploy state and hand the first turn to the round's
+  // START PLAYER. Rotating it each round (player (round-1) % N goes first)
+  // cancels the last-mover edge that a fixed order would compound over 6 rounds.
   const beginRoundDeploy = useCallback(
     (humanHand: RolledDie[]) => {
       setHand(humanHand);
@@ -241,11 +243,11 @@ export function V2Page() {
       setAiRemaining(rollAiHands());
       setPassed(new Set());
       setDeployDone(false);
-      setTurn(HUMAN_ID);
+      setTurn((game.round - 1) % game.players.length);
       setLog([]);
       setPhase('deploy');
     },
-    [rollAiHands],
+    [rollAiHands, game],
   );
 
   // Start a brand-new game. Only called from event handlers, so setState is safe.
