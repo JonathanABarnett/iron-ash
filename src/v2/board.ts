@@ -64,7 +64,7 @@ export interface BoardV2 {
 // defenseBonus / income / vpPerRound per terrain — the levers the sim tunes.
 
 const TERRAIN_PROFILE: Record<TerrainV2, { defenseBonus: number; income: number; vpPerRound: number }> = {
-  center:   { defenseBonus: 3, income: 3, vpPerRound: 2 }, // the prize
+  center:   { defenseBonus: 2, income: 3, vpPerRound: 2 }, // the prize — high value (5 VP) but takeable (def 2, not a fortress) so it changes hands and stays contested
   fortress: { defenseBonus: 3, income: 1, vpPerRound: 1 }, // strongholds anchor the spokes
   mountain: { defenseBonus: 2, income: 1, vpPerRound: 0 }, // defensible chokepoints
   home:     { defenseBonus: 1, income: 2, vpPerRound: 0 }, // safe base, decent income

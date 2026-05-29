@@ -8,7 +8,7 @@
 // Shared by the headless sim and the interactive sandbox so both use one brain.
 
 import { FACTIONS, valueOf } from './factions';
-import { reachable, type GameV2 } from './game';
+import { reachable, depletedYield, type GameV2 } from './game';
 
 export interface RolledLike { value: number }
 
@@ -44,7 +44,13 @@ export function pickOneDie(
   let bestScore = -Infinity;
   for (const tid of reach) {
     const t = game.board.territories[tid]!;
-    const v = valueOf(faction, t.spoil);
+    // Value this tile by what it would yield ME *now*, accounting for depletion:
+    // a tile I already hold has decayed (low marginal value), while capturing a
+    // fresh/enemy tile pays full — so the AI abandons camped ground and goes for
+    // new territory, which is what creates conflict.
+    const ownedByMe = game.owner[tid] === playerId;
+    const streak = ownedByMe ? (game.heldStreak[tid] ?? 0) : 0;
+    const v = depletedYield(valueOf(faction, t.spoil), streak);
     const mine = eff(tid, playerId);
     // strongest opponent presence (committed or the current owner via terrain)
     let oppMax = 0;
@@ -54,11 +60,16 @@ export function pickOneDie(
       if (pid !== playerId) oppMax = Math.max(oppMax, eff(tid, pid));
     }
     const wouldLead = mine + dieValue > oppMax;
+    const gap = oppMax - (mine + dieValue); // how far behind we'd still be (<0 = leading)
     const contested = oppMax > 0;
-    let s = v * 2;
-    if (wouldLead) s += 2; else s -= 1;     // don't throw a die where I'd still lose
-    if (contested) s += 1;                  // pressing an active fight
-    if (t.role === 'center') s += 1;
+    let s = v * 2;                          // faction value dominates (primary 6 / sec 4 / other 2)
+    // Reward seizing the lead, but only LIGHTLY penalise investing in a tile
+    // we don't yet lead — so the AI will build up across turns toward a
+    // valuable contested prize instead of always fleeing to safe ground.
+    if (wouldLead) s += 2;
+    else s -= Math.min(1.5, gap * 0.4);     // mild, scales with how hopeless it is
+    if (contested) s += 1;                  // pressing an active fight is good
+    if (t.role === 'center') s += 2;        // the prize — strong pull
     if (s > bestScore) { bestScore = s; best = tid; }
   }
   if (best === null) return null;

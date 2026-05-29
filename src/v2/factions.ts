@@ -59,9 +59,15 @@ export const RING: readonly FactionId[] = ['warriors', 'merchants', 'rangers', '
 
 const RING_INDEX: Record<FactionId, number> = Object.fromEntries(RING.map((f, i) => [f, i])) as Record<FactionId, number>;
 
-/** A faction's VP valuation of a tile's spoil. Centre is universal (3 to all). */
+/**
+ * A faction's VP valuation of a tile's spoil. The centre (universal) is the
+ * PRIZE — worth 5 to everyone, clearly above any primary (3) — so both sides
+ * are pulled to fight over it. (Paired with a lower centre defense in board.ts
+ * so it actually changes hands, generating conflict rather than a first-grab
+ * hold.)
+ */
 export function valueOf(faction: FactionDef, spoil: Spoil | 'universal'): number {
-  if (spoil === 'universal') return 3;
+  if (spoil === 'universal') return 5;
   if (spoil === faction.primary) return 3;
   if (faction.secondary.includes(spoil)) return 2;
   return 1;

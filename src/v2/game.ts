@@ -44,6 +44,20 @@ export interface GameV2 {
   round: number;
   /** War-exhaustion clock — ticks on every control change; flavour + future endgame. */
   clock: number;
+  /**
+   * Times the CURRENT owner has already scored each tile — drives DEPLETION:
+   * a tile's yield drops by 1 per consecutive scoring (floor 1), and resets to
+   * 0 when the tile changes hands. So camping gives diminishing returns and
+   * fresh ground pays full — pushing players to keep moving (→ conflict, and
+   * anti-snowball). Reset on capture, incremented at scoring.
+   */
+  heldStreak: Record<string, number>;
+}
+
+/** Per-round yield of a tile after depletion: full value minus how many times
+ *  its current owner has already scored it, floored at 1. */
+export function depletedYield(baseValue: number, streak: number): number {
+  return Math.max(1, baseValue - streak);
 }
 
 export function createGameV2(factionIds: FactionId[], seed: string): GameV2 {
@@ -56,7 +70,7 @@ export function createGameV2(factionIds: FactionId[], seed: string): GameV2 {
   // Each player starts owning their home.
   const owner: Record<string, number> = {};
   board.homeIds.forEach((h, i) => { owner[h] = i; });
-  const game: GameV2 = { board, players, owner, round: 0, clock: 0 };
+  const game: GameV2 = { board, players, owner, round: 0, clock: 0, heldStreak: {} };
   // Deal hidden objectives from a seeded, board-independent stream.
   assignObjectives(game, new Rng(`v2-obj-${seed}-${factionIds.join('-')}`));
   return game;
@@ -117,7 +131,7 @@ export function resolveRound(game: GameV2, deployments: Deployments): {
     });
     const prevOwner = game.owner[tid] ?? null;
     if (r.newOwner !== null) game.owner[tid] = r.newOwner;
-    if (r.changed) game.clock += 1;
+    if (r.changed) { game.clock += 1; game.heldStreak[tid] = 0; } // fresh capture → full yield
 
     // Stats for hidden objectives.
     if (r.newOwner !== null && r.newOwner !== prevOwner) {
@@ -134,17 +148,19 @@ export function resolveRound(game: GameV2, deployments: Deployments): {
 }
 
 /**
- * Score the round by ASYMMETRIC SPOIL VALUATION: each controlled territory is
- * worth what its spoil is to THAT player's faction — primary 3, secondary 2,
- * else 1; the centre is universal (3 to anyone). Home (your primary) gives a
- * base economy floor, but the points are in the contested spoils + centre, so
- * expansion still dominates and rival factions are pulled to different tiles.
+ * Score the round by ASYMMETRIC SPOIL VALUATION × DEPLETION: each controlled
+ * territory is worth its spoil to that faction (primary 3 / secondary 2 / other
+ * 1; centre universal 5), MINUS how many times the owner has already scored it
+ * (floor 1). So a freshly-taken tile pays full and a long-camped one dwindles —
+ * pushing players off their corners onto fresh, contested ground.
  */
 export function scoreRound(game: GameV2): void {
   for (const [tid, ownerId] of Object.entries(game.owner)) {
     const terr = game.board.territories[tid]!;
     const faction = FACTIONS[game.players[ownerId]!.faction];
-    game.players[ownerId]!.vp += valueOf(faction, terr.spoil);
+    const streak = game.heldStreak[tid] ?? 0;
+    game.players[ownerId]!.vp += depletedYield(valueOf(faction, terr.spoil), streak);
+    game.heldStreak[tid] = streak + 1; // one more scoring under the current owner
   }
 }
 
