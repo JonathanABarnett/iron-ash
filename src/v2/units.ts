@@ -67,7 +67,12 @@ export function makeUnits(range: UnitRange, count: number, idPrefix: string): Un
   return Array.from({ length: count }, (_, i) => ({ id: `${idPrefix}-${range}-${i}`, range }));
 }
 
-/** Default starting pool — 5 dice spanning the tiers (tune via sim). */
+/** Build a pool from an explicit list of ranges (faction-specific). */
+export function poolFromRanges(ranges: readonly UnitRange[], idPrefix: string): Unit[] {
+  return ranges.map((range, i) => ({ id: `${idPrefix}-${i}-${range}`, range }));
+}
+
+/** Default starting pool — 5 dice spanning the tiers (fallback / tests). */
 export function defaultPool(playerIndex: number): Unit[] {
   return [
     ...makeUnits('2-5', 2, `p${playerIndex}`), // two reliable soldiers

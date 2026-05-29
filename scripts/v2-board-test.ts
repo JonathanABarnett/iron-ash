@@ -8,7 +8,7 @@ import {
   createGameV2, rollHand, resolveRound, scoreRound, ROUNDS,
   type Deployments,
 } from '../src/v2/game';
-import { planDeployment } from '../src/v2/ai';
+import { pickOneDie, type CommittedSums } from '../src/v2/ai';
 import { scoreObjectives, objectiveById } from '../src/v2/objectives';
 import {
   FACTIONS, RING, valueOf, validCombos, opposite, ringArc,
@@ -38,15 +38,89 @@ for (const fid of RING) {
 }
 for (const [s, ws] of Object.entries(wanters)) console.log(`    ${s.padEnd(8)} ← ${ws.join(', ')}`);
 
-// ─── greedy AI: pursue tiles VALUED BY MY FACTION (the asymmetry driver) ──────
-
-// AI deployment is shared with the sandbox UI — single brain in src/v2/ai.ts.
-const aiPlace = planDeployment;
-
 interface GameResult {
   decisions: number; contested: number; changes: number;
   players: { faction: FactionId; visible: number; final: number; objVp: number;
              heldVals: number[]; heldPrimary: number; heldCount: number }[];
+}
+
+// Sum the live per-player commitments into the CommittedSums pickOneDie reads.
+function toSums(commit: Record<string, Record<number, number[]>>): CommittedSums {
+  const out: CommittedSums = {};
+  for (const tid of Object.keys(commit)) {
+    out[tid] = {};
+    for (const k of Object.keys(commit[tid]!)) {
+      const pid = Number(k);
+      out[tid]![pid] = commit[tid]![pid]!.reduce((a, b) => a + b, 0);
+    }
+  }
+  return out;
+}
+
+// Play ONE round in place: roll hands, sequential turn-by-turn deploy (start
+// player rotates each round), resolve + score. Shared by runGame and the
+// sample-game section so both exercise the real model.
+function playRound(game: ReturnType<typeof createGameV2>, rng: Rng, round: number): {
+  decisions: number; contested: number; changes: number;
+} {
+  game.round = round;
+  const N = game.players.length;
+  let decisions = 0;
+
+  const remaining: number[][] = [];
+  for (let p = 0; p < N; p++) {
+    const hand = rollHand(game, p, rng);
+    decisions += hand.length;
+    remaining[p] = hand.map((d) => d.value);
+  }
+
+  const commit: Record<string, Record<number, number[]>> = {};
+  const passed = new Set<number>();
+  let turn = (round - 1) % N;
+  let safety = 1000;
+  while (safety-- > 0) {
+    const allDone = Array.from({ length: N }, (_, p) => p).every(
+      (p) => passed.has(p) || remaining[p]!.length === 0,
+    );
+    if (allDone) break;
+
+    const p = turn;
+    if (!passed.has(p) && remaining[p]!.length > 0) {
+      const choice = pickOneDie(game, p, remaining[p]!, toSums(commit));
+      if (choice) {
+        ((commit[choice.tid] ??= {})[p] ??= []).push(choice.dieValue);
+        const idx = remaining[p]!.indexOf(choice.dieValue);
+        if (idx >= 0) remaining[p]!.splice(idx, 1);
+      } else {
+        passed.add(p);
+      }
+    } else {
+      passed.add(p);
+    }
+    let nxt = -1;
+    for (let s = 1; s <= N; s++) {
+      const q = (p + s) % N;
+      if (!passed.has(q) && remaining[q]!.length > 0) { nxt = q; break; }
+    }
+    if (nxt === -1) break;
+    turn = nxt;
+  }
+
+  const deployments: Deployments = {};
+  for (const tid of Object.keys(commit)) {
+    deployments[tid] = {};
+    for (const k of Object.keys(commit[tid]!)) {
+      const pid = Number(k);
+      deployments[tid]![pid] = commit[tid]![pid]!.reduce((a, b) => a + b, 0);
+    }
+  }
+  const results = resolveRound(game, deployments);
+  scoreRound(game);
+  return {
+    decisions,
+    contested: results.filter((r) => r.contested).length,
+    changes: results.filter((r) => r.changed).length,
+  };
 }
 
 function runGame(factionIds: FactionId[], seed: string): GameResult {
@@ -55,19 +129,8 @@ function runGame(factionIds: FactionId[], seed: string): GameResult {
   let decisions = 0, contested = 0, changes = 0;
 
   for (let round = 1; round <= ROUNDS; round++) {
-    game.round = round;
-    const deployments: Deployments = {};
-    for (let p = 0; p < factionIds.length; p++) {
-      const hand = rollHand(game, p, rng);
-      decisions += hand.length;
-      for (const [tid, val] of Object.entries(aiPlace(game, p, hand))) {
-        (deployments[tid] ??= {})[p] = (deployments[tid]![p] ?? 0) + val;
-      }
-    }
-    const results = resolveRound(game, deployments);
-    contested += results.filter((r) => r.contested).length;
-    changes += results.filter((r) => r.changed).length;
-    scoreRound(game);
+    const m = playRound(game, rng, round);
+    decisions += m.decisions; contested += m.contested; changes += m.changes;
   }
   const visible = game.players.map((p) => p.vp);
   scoreObjectives(game);
@@ -171,14 +234,7 @@ hr('5. SAMPLE 2P GAME — Warriors vs Merchants (strong rivals: Iron & Gold)');
   const game = createGameV2(combo, 'arc-wm');
   console.log();
   for (let round = 1; round <= ROUNDS; round++) {
-    game.round = round;
-    const deployments: Deployments = {};
-    for (let p = 0; p < 2; p++) {
-      const hand = rollHand(game, p, rng);
-      for (const [tid, val] of Object.entries(aiPlace(game, p, hand))) (deployments[tid] ??= {})[p] = val;
-    }
-    resolveRound(game, deployments);
-    scoreRound(game);
+    playRound(game, rng, round);
     const held = (p: number) => Object.entries(game.owner).filter(([, o]) => o === p).map(([tid]) => game.board.territories[tid]!.spoil);
     const centre = game.owner[game.board.centerId];
     console.log(`  R${round}: VP ${game.players.map((p) => p.vp).join(' – ')} · centre ${centre === undefined ? '—' : 'P' + (centre + 1)} · P1 holds [${held(0).join(',')}] · P2 holds [${held(1).join(',')}]`);

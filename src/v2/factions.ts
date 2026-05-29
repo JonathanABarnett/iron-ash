@@ -17,6 +17,8 @@
 //
 // Spoil names are placeholders — theme/skin comes after the math is locked.
 
+import type { UnitRange } from './units';
+
 export type Spoil = 'iron' | 'gold' | 'essence' | 'bone' | 'wild' | 'faith';
 export type FactionId = 'warriors' | 'merchants' | 'rangers' | 'necromancers' | 'mages' | 'paladins';
 
@@ -25,15 +27,31 @@ export interface FactionDef {
   name: string;
   primary: Spoil;
   secondary: readonly [Spoil, Spoil];
+  /**
+   * Starting dice pool — the FIRST axis of faction identity (alongside which
+   * spoils score). Differentiated on two axes:
+   *   quantity vs quality  — more dice spread to more tiles; fewer strong dice
+   *                          win key contests but can't be everywhere.
+   *   consistent vs swingy — Soldier/Elite reliable, Levy reliably weak,
+   *                          Champion (1-6) high-variance.
+   * (First-draft compositions — tuned via the sim; see v2-board-test.ts.)
+   */
+  pool: readonly UnitRange[];
 }
 
 export const FACTIONS: Record<FactionId, FactionDef> = {
-  warriors:     { id: 'warriors',     name: 'Warriors',     primary: 'iron',    secondary: ['gold', 'faith'] },
-  merchants:    { id: 'merchants',    name: 'Merchants',    primary: 'gold',    secondary: ['iron', 'wild'] },
-  rangers:      { id: 'rangers',      name: 'Rangers',      primary: 'wild',    secondary: ['gold', 'bone'] },
-  necromancers: { id: 'necromancers', name: 'Necromancers', primary: 'bone',    secondary: ['essence', 'wild'] },
-  mages:        { id: 'mages',        name: 'Mages',        primary: 'essence', secondary: ['bone', 'faith'] },
-  paladins:     { id: 'paladins',     name: 'Paladins',     primary: 'faith',   secondary: ['iron', 'essence'] },
+  // Elite military — fewer, strong, reliable. Wins contests head-on.
+  warriors:     { id: 'warriors',     name: 'Warriors',     primary: 'iron',    secondary: ['gold', 'faith'],   pool: ['3-6', '3-6', '2-5', '2-5', '1-3'] },
+  // Numerous & cheap — 6 weak dice; spread wide, avoid big fights.
+  merchants:    { id: 'merchants',    name: 'Merchants',    primary: 'gold',    secondary: ['iron', 'wild'],    pool: ['2-5', '1-3', '1-3', '1-3', '1-3', '1-3'] },
+  // Swarm skirmishers — 6 dice, light but many.
+  rangers:      { id: 'rangers',      name: 'Rangers',      primary: 'wild',    secondary: ['gold', 'bone'],    pool: ['2-5', '2-5', '1-3', '1-3', '1-3', '1-3'] },
+  // Attrition horde — bodies over quality (recursion ability comes later).
+  necromancers: { id: 'necromancers', name: 'Necromancers', primary: 'bone',    secondary: ['essence', 'wild'], pool: ['2-5', '2-5', '1-3', '1-3', '1-3'] },
+  // Surgical — only 4 dice but high ceiling; swingy Champions.
+  mages:        { id: 'mages',        name: 'Mages',        primary: 'essence', secondary: ['bone', 'faith'],   pool: ['3-6', '1-6', '1-6', '2-5'] },
+  // Disciplined line — consistent, no swing.
+  paladins:     { id: 'paladins',     name: 'Paladins',     primary: 'faith',   secondary: ['iron', 'essence'], pool: ['2-5', '2-5', '2-5', '3-6', '1-3'] },
 };
 
 /** Hexagon ring order — adjacent entries are strong rivals (share 2 spoils). */

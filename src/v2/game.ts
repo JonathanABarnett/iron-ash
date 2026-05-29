@@ -12,7 +12,7 @@
 
 import { Rng } from '../engine/rng';
 import { generateBoard, type BoardV2 } from './board';
-import { defaultPool, makeUnits, rollPool, type RolledDie, type Unit } from './units';
+import { makeUnits, poolFromRanges, rollPool, type RolledDie, type Unit } from './units';
 import { resolveContest } from './combat';
 import { assignObjectives } from './objectives';
 import { FACTIONS, valueOf, type FactionId } from './factions';
@@ -49,7 +49,7 @@ export interface GameV2 {
 export function createGameV2(factionIds: FactionId[], seed: string): GameV2 {
   const board = generateBoard(factionIds, seed);
   const players: PlayerV2[] = factionIds.map((fid, i) => ({
-    id: i, faction: fid, pool: defaultPool(i), vp: 0,
+    id: i, faction: fid, pool: poolFromRanges(FACTIONS[fid].pool, `p${i}`), vp: 0,
     objectiveId: '', objectiveVp: 0,
     stats: { contestsWon: 0, strongpointsCaptured: 0 },
   }));
