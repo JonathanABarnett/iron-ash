@@ -39,10 +39,21 @@ const STEPS: Step[] = [
   {
     body: (
       <>
-        You&rsquo;re the <strong style={{ color: '#2dd4bf' }}>Warriors</strong>. Each territory you
-        still hold at the end of a round scores its spoil&rsquo;s value{' '}
-        <em>to you</em> — your primary spoil (Iron) is worth <strong>3</strong>, your secondaries
-        are worth <strong>2</strong>, anything else <strong>1</strong>.
+        You pick a <strong>faction</strong> at the start. Each territory you still hold at the end of
+        a round scores its spoil&rsquo;s value <em>to your faction</em> — your{' '}
+        <strong>primary spoil</strong> is worth <strong>3</strong>, your secondaries are worth{' '}
+        <strong>2</strong>, anything else <strong>1</strong>.
+      </>
+    ),
+  },
+  {
+    body: (
+      <>
+        Every faction also has a unique <strong>passive ability</strong> — e.g.{' '}
+        <strong>Warriors</strong> fight +1 in every contest, while <strong>Merchants</strong> earn
+        bonus VP for holding lots of land and <strong>Necromancers</strong> raise extra dice from
+        contests they lose. Check <strong>Your faction</strong> card for yours, and the standings for
+        every rival&rsquo;s.
       </>
     ),
   },

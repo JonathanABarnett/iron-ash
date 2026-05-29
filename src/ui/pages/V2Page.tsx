@@ -25,7 +25,16 @@ import {
   type GameV2,
   type Deployments,
 } from '../../v2/game';
-import { FACTIONS, valueOf, type FactionId, type Spoil } from '../../v2/factions';
+import {
+  FACTIONS,
+  valueOf,
+  validCombos,
+  combatBonus,
+  attackBonus,
+  defenseBonusFor,
+  type FactionId,
+  type Spoil,
+} from '../../v2/factions';
 import { pickOneDie, type CommittedSums } from '../../v2/ai';
 import { scoreObjectives, objectiveById } from '../../v2/objectives';
 import { UNIT_PROFILE, type RolledDie } from '../../v2/units';
@@ -80,10 +89,37 @@ const TERRAIN_HELP: Record<string, string> = {
 
 const HUMAN_ID = 0;
 const DEFAULT_FACTIONS: FactionId[] = ['warriors', 'merchants'];
+const ALL_FACTIONS: FactionId[] = ['warriors', 'merchants', 'rangers', 'necromancers', 'mages', 'paladins'];
 // How long each AI placement lingers so the player SEES it appear, in ms.
 const AI_TURN_DELAY_MS = 550;
 
 type Phase = 'deploy' | 'review' | 'end';
+
+// Build a legal, conflict-guaranteed faction set of `count` players that
+// INCLUDES the human's pick, with the human seated first (player 0). We scan
+// the valid ring-arc combos (validCombos) for one containing the chosen
+// faction, rotate it so the human leads, and fall back to a manual ring slice
+// if — impossibly — none matches. `pickIndex` lets the caller cycle through the
+// distinct valid combos (the "shuffle opponents" affordance).
+function buildFactionIds(human: FactionId, count: number, pickIndex = 0): FactionId[] {
+  const combos = validCombos(count).filter((c) => c.includes(human));
+  if (combos.length === 0) {
+    // Defensive fallback — shouldn't happen for n ≤ 6, but keep the human first.
+    const rest = ALL_FACTIONS.filter((f) => f !== human).slice(0, count - 1);
+    return [human, ...rest];
+  }
+  const combo = combos[((pickIndex % combos.length) + combos.length) % combos.length]!;
+  // Rotate the arc so the human sits at seat 0, preserving the ring adjacency
+  // (and thus the guaranteed-rivalry property) of the remaining seats.
+  const start = combo.indexOf(human);
+  return [...combo.slice(start), ...combo.slice(0, start)];
+}
+
+// How many distinct valid combos contain the human's pick at a given count —
+// used to decide whether the "shuffle opponents" control is meaningful.
+function comboCountFor(human: FactionId, count: number): number {
+  return validCombos(count).filter((c) => c.includes(human)).length;
+}
 
 interface ResolveResultRow {
   territoryId: string;
@@ -128,10 +164,10 @@ function toCommittedSums(commitments: Commitments): CommittedSums {
 // Rolls the human hand AND every AI's hand up front so round 1 of a new game
 // has the AI armed (the bug fix: aiRemaining used to start empty on mount, so
 // the AI passed all of round 1). Pure — safe to call from a lazy initializer.
-function freshGame(counter: number): {
+function freshGame(counter: number, factionIds: FactionId[] = DEFAULT_FACTIONS): {
   game: GameV2; rng: Rng; hand: RolledDie[]; ai: Record<number, number[]>;
 } {
-  const game = createGameV2(DEFAULT_FACTIONS, `v2-sandbox-${counter}`);
+  const game = createGameV2(factionIds, `v2-sandbox-${counter}`);
   // A separate, long-lived rng stream for rolling hands round-to-round.
   const rng = new Rng(`v2-sandbox-rng-${counter}`);
   game.round = 1; // begin round 1
@@ -185,9 +221,11 @@ export function V2Page() {
   const [hoveredTid, setHoveredTid] = useState<string | null>(null);
   // "How to play" overlay — auto-shows once (localStorage-gated), reopenable.
   const [howToOpen, setHowToOpen] = useState(false);
-  useEffect(() => {
-    if (shouldAutoShowHowTo()) setHowToOpen(true);
-  }, []);
+  // Faction-selection setup. Open on first load (and on every "New game") so the
+  // player chooses their faction + opponents before a game runs. The game held
+  // in the refs is a throwaway default until the user presses Start.
+  // (The how-to auto-shows AFTER the first Start so two modals never stack.)
+  const [setupOpen, setSetupOpen] = useState(true);
   const closeHowTo = useCallback(() => {
     setHowToOpen(false);
     markHowToSeen();
@@ -256,8 +294,8 @@ export function V2Page() {
 
   // Start a brand-new game. Only called from event handlers, so setState is safe.
   const startGame = useCallback(
-    (counter: number) => {
-      const next = freshGame(counter);
+    (counter: number, factionIds: FactionId[] = DEFAULT_FACTIONS) => {
+      const next = freshGame(counter, factionIds);
       gameRef.current = next.game;
       rngRef.current = next.rng;
       // beginRoundDeploy reads gameRef via rollAiHands; gameRef is now updated.
@@ -286,10 +324,22 @@ export function V2Page() {
     [game, phase, game.round, game.clock],
   );
 
+  // "New game" no longer starts immediately — it reopens the faction setup so
+  // the player can pick a different matchup. Start happens from the panel.
   function onNewGame() {
+    setSetupOpen(true);
+  }
+
+  // Called from the setup panel's Start button with the assembled factionIds
+  // (human first). Advances the seed so the dice differ from any prior game.
+  function onStartSetup(factionIds: FactionId[]) {
     const next = seedCounter + 1;
     setSeedCounter(next);
-    startGame(next);
+    startGame(next, factionIds);
+    setSetupOpen(false);
+    // First-ever start: surface the how-to once the matchup is chosen so the two
+    // modals never overlap.
+    if (shouldAutoShowHowTo()) setHowToOpen(true);
   }
 
   // ── Advancing the turn ───────────────────────────────────────────────────────
@@ -479,7 +529,24 @@ export function V2Page() {
     }
     if (changeLines.length === 0) changeLines.push('No territories changed hands this round.');
 
-    setLog([`— Round ${game.round} resolved —`, ...changeLines]);
+    // Note any combat abilities that fed into the totals above — these resolve
+    // inside the model (we can't show the per-tile arithmetic) so we surface
+    // them here so the player knows the bonus was applied.
+    const abilityLines: string[] = [];
+    for (const p of game.players) {
+      const who = p.id === HUMAN_ID ? 'You' : factionName(game, p.id);
+      if (combatBonus(p.faction) > 0) {
+        abilityLines.push(`⚔ ${who}: Warlord +${combatBonus(p.faction)} to every contested total.`);
+      }
+      if (attackBonus(p.faction) > 0) {
+        abilityLines.push(`⚔ ${who}: Ambush +${attackBonus(p.faction)} when attacking a tile they don't hold.`);
+      }
+      if (defenseBonusFor(p.faction) > 0) {
+        abilityLines.push(`🛡 ${who}: Consecrate +${defenseBonusFor(p.faction)} defending owned tiles.`);
+      }
+    }
+
+    setLog([`— Round ${game.round} resolved —`, ...changeLines, ...abilityLines]);
     setPhase('review');
     bump();
   }
@@ -509,6 +576,25 @@ export function V2Page() {
   const territories = Object.values(game.board.territories);
   const myValuation = (spoil: Spoil | 'universal') => valueOf(FACTIONS[humanFaction], spoil);
   const bonusDice = catchUpDiceCount(game, HUMAN_ID);
+
+  // ── Ability-trigger feedback (UI-computed) ──
+  // Necromancers — Soul Harvest: the model pushes one extra Soldier die into the
+  // hand for each contest lost last round. We can't tell those apart from the
+  // catch-up reinforcements that also pad the hand, so we surface the total
+  // "extra" beyond the base pool and attribute the non-catch-up remainder to the
+  // harvest. (hand.length − pool.length − catch-up = raised-from-the-fallen.)
+  const harvestReinforcements =
+    humanFaction === 'necromancers'
+      ? Math.max(0, hand.length - game.players[HUMAN_ID]!.pool.length - bonusDice)
+      : 0;
+
+  // Merchants — Coffers: +1 VP per 2 territories held. Project it from the live
+  // ownership so the player sees the bonus they're banking this round.
+  const tilesHeld =
+    humanFaction === 'merchants'
+      ? Object.values(game.owner).filter((o) => o === HUMAN_ID).length
+      : 0;
+  const coffersBonus = humanFaction === 'merchants' ? Math.floor(tilesHeld / 2) : 0;
 
   const standings = [...game.players].sort((a, b) => b.vp - a.vp);
   const winner = standings[0];
@@ -590,6 +676,7 @@ export function V2Page() {
       </header>
 
       <V2HowTo open={howToOpen} onClose={closeHowTo} />
+      <SetupPanel open={setupOpen} onStart={onStartSetup} myValuation={(f, s) => valueOf(FACTIONS[f], s)} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
         {/* ── Board ── */}
@@ -631,7 +718,17 @@ export function V2Page() {
             myValuation={myValuation}
             commitments={commitments}
           />
-          <FactionCard faction={humanFaction} myValuation={myValuation} />
+          <FactionCard
+            faction={humanFaction}
+            myValuation={myValuation}
+            abilityNote={
+              humanFaction === 'merchants'
+                ? `Coffers: +${coffersBonus} VP this round (holding ${tilesHeld} ${tilesHeld === 1 ? 'territory' : 'territories'})`
+                : humanFaction === 'necromancers' && harvestReinforcements > 0
+                  ? `Soul Harvest: +${harvestReinforcements} ${harvestReinforcements === 1 ? 'die' : 'dice'} raised from the fallen this round`
+                  : null
+            }
+          />
           <ObjectiveCard objectiveId={game.players[HUMAN_ID]!.objectiveId} />
 
           {phase === 'deploy' && (
@@ -977,6 +1074,7 @@ function Board({
 
 function BoardLegend({ game }: { game: GameV2 }) {
   const allSpoils: Spoil[] = ['iron', 'gold', 'essence', 'bone', 'wild', 'faith'];
+  const humanFaction = game.players[HUMAN_ID]!.faction;
   return (
     <div className="mt-2 flex flex-col gap-2 px-1">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px]" style={{ color: '#a1a1aa' }}>
@@ -1017,8 +1115,8 @@ function BoardLegend({ game }: { game: GameV2 }) {
           <span
             key={s}
             className="flex cursor-help items-center gap-1"
-            title={`${SPOIL_LABEL[s]} — a tile bearing this spoil. As Warriors it is worth ${valueOf(
-              FACTIONS.warriors,
+            title={`${SPOIL_LABEL[s]} — a tile bearing this spoil. As ${FACTIONS[humanFaction].name} it is worth ${valueOf(
+              FACTIONS[humanFaction],
               s,
             )} VP to you.`}
           >
@@ -1234,24 +1332,37 @@ function Standings({
       <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#71717a' }}>
         Standings
       </h2>
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {sorted.map((p) => {
           const isActiveTurn = phase === 'deploy' && !deployDone && p.id === turn;
+          const ability = FACTIONS[p.faction].ability;
           return (
-            <div key={p.id} className="flex items-center gap-2 text-sm">
-              <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: PLAYER_COLOR[p.id] }} />
-              <span className="flex-1 truncate" style={{ color: p.id === HUMAN_ID ? '#fafafa' : '#d4d4d8' }}>
-                {FACTIONS[p.faction].name}
-                {p.id === HUMAN_ID && <span className="ml-1 text-[10px]" style={{ color: '#71717a' }}>(you)</span>}
-                {isActiveTurn && (
-                  <span className="ml-1.5 text-[10px] font-semibold" style={{ color: PLAYER_COLOR[p.id] }}>
-                    ◀ deploying
-                  </span>
-                )}
-              </span>
-              <span className="font-mono font-bold tabular-nums" style={{ color: PLAYER_COLOR[p.id] }}>
-                {p.vp}
-              </span>
+            <div key={p.id}>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: PLAYER_COLOR[p.id] }} />
+                <span className="flex-1 truncate" style={{ color: p.id === HUMAN_ID ? '#fafafa' : '#d4d4d8' }}>
+                  {FACTIONS[p.faction].name}
+                  {p.id === HUMAN_ID && <span className="ml-1 text-[10px]" style={{ color: '#71717a' }}>(you)</span>}
+                  {isActiveTurn && (
+                    <span className="ml-1.5 text-[10px] font-semibold" style={{ color: PLAYER_COLOR[p.id] }}>
+                      ◀ deploying
+                    </span>
+                  )}
+                </span>
+                <span className="font-mono font-bold tabular-nums" style={{ color: PLAYER_COLOR[p.id] }}>
+                  {p.vp}
+                </span>
+              </div>
+              {/* Each faction's signature ability, so you can see what every
+                  rival in the game can do (full text on hover). */}
+              <div
+                className="ml-5 cursor-help truncate text-[10px] leading-tight"
+                style={{ color: '#71717a' }}
+                title={`${ability.name} — ${ability.description}`}
+              >
+                <span style={{ color: '#a1a1aa' }}>✦ {ability.name}</span>
+                <span> — {ability.description}</span>
+              </div>
             </div>
           );
         })}
@@ -1263,9 +1374,12 @@ function Standings({
 function FactionCard({
   faction,
   myValuation,
+  abilityNote,
 }: {
   faction: FactionId;
   myValuation: (spoil: Spoil | 'universal') => number;
+  /** A live "ability is firing right now" line, e.g. coffers/harvest. */
+  abilityNote?: string | null;
 }) {
   const def = FACTIONS[faction];
   const allSpoils: Spoil[] = ['iron', 'gold', 'essence', 'bone', 'wild', 'faith'];
@@ -1274,6 +1388,34 @@ function FactionCard({
       <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#71717a' }}>
         Your faction · {def.name}
       </h2>
+
+      {/* Signature ability — prominent, since it's the second identity axis. */}
+      <div
+        className="mb-2.5 rounded-lg px-2.5 py-2"
+        style={{ background: 'rgba(45,212,191,0.10)', border: '1px solid rgba(45,212,191,0.3)' }}
+      >
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontSize: 12 }}>✦</span>
+          <span className="text-xs font-bold" style={{ color: '#5eead4' }}>
+            {def.ability.name}
+          </span>
+        </div>
+        <div className="mt-0.5 text-[11px] leading-snug" style={{ color: '#d4d4d8' }}>
+          {def.ability.description}
+        </div>
+        {abilityNote && (
+          <div
+            className="mt-1.5 rounded px-1.5 py-1 text-[11px] font-semibold"
+            style={{ background: 'rgba(45,212,191,0.18)', color: '#99f6e4' }}
+          >
+            {abilityNote}
+          </div>
+        )}
+      </div>
+
+      <div className="mb-1 text-[9px] font-semibold uppercase tracking-widest" style={{ color: '#71717a' }}>
+        Spoils &amp; your VP value
+      </div>
       <div className="grid grid-cols-2 gap-1 text-xs">
         {allSpoils.map((s) => {
           const v = myValuation(s);
@@ -1430,11 +1572,20 @@ function ResolveLog({ lines }: { lines: string[] }) {
         Round log
       </h2>
       <div className="space-y-1 text-xs" style={{ color: '#d4d4d8' }}>
-        {lines.map((line, i) => (
-          <div key={i} className={line.startsWith('—') ? 'font-bold text-white' : ''}>
-            {line}
-          </div>
-        ))}
+        {lines.map((line, i) => {
+          const isHeader = line.startsWith('—');
+          // Ability notes (⚔/🛡) are secondary context — dim them.
+          const isAbility = line.startsWith('⚔') || line.startsWith('🛡');
+          return (
+            <div
+              key={i}
+              className={isHeader ? 'font-bold text-white' : ''}
+              style={isAbility ? { color: '#a1a1aa', fontSize: '0.6875rem' } : undefined}
+            >
+              {line}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1495,6 +1646,215 @@ function EndPanel({
       >
         Play again
       </button>
+    </div>
+  );
+}
+
+// ── Faction setup (New Game) ────────────────────────────────────────────────
+//
+// Pre-game modal: choose player count (2/3/4) and your faction, then the
+// opponents auto-fill to a VALID, conflict-guaranteed ring combo containing
+// your pick (you seated first). "Shuffle" cycles the distinct valid combos when
+// more than one exists. Showing each faction's ability + primary spoil up front
+// makes the choice informed; showing the opponents' abilities makes the matchup
+// clear before the first die is placed.
+
+function SetupPanel({
+  open,
+  onStart,
+  myValuation,
+}: {
+  open: boolean;
+  onStart: (factionIds: FactionId[]) => void;
+  myValuation: (faction: FactionId, spoil: Spoil | 'universal') => number;
+}) {
+  const [count, setCount] = useState<number>(2);
+  const [human, setHuman] = useState<FactionId>('warriors');
+  // Cycles the distinct valid combos that contain the human's pick.
+  const [comboPick, setComboPick] = useState<number>(0);
+
+  if (!open) return null;
+
+  const factionIds = buildFactionIds(human, count, comboPick);
+  const opponents = factionIds.slice(1);
+  const comboOptions = comboCountFor(human, count);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="New game setup"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+        background: 'rgba(5,5,10,0.82)',
+        backdropFilter: 'blur(2px)',
+        overflowY: 'auto',
+      }}
+    >
+      <div
+        className="w-full max-w-2xl rounded-2xl p-5 md:p-6"
+        style={{
+          background: '#15151f',
+          border: '1px solid rgba(167,139,250,0.4)',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+          color: '#e4e4e7',
+          maxHeight: '92vh',
+          overflowY: 'auto',
+        }}
+      >
+        <h2 className="mb-1 text-lg font-bold text-white">
+          New game · <span style={{ color: '#a78bfa' }}>choose your matchup</span>
+        </h2>
+        <p className="mb-4 text-xs" style={{ color: '#a1a1aa' }}>
+          Pick how many players and which faction you&rsquo;ll lead. Opponents are
+          drawn from the rivalry ring so every neighbour shares spoils with you —
+          guaranteed conflict.
+        </p>
+
+        {/* Player count */}
+        <div className="mb-4">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#71717a' }}>
+            Players
+          </div>
+          <div className="flex gap-2">
+            {[2, 3, 4].map((n) => {
+              const active = n === count;
+              return (
+                <button
+                  key={n}
+                  onClick={() => {
+                    setCount(n);
+                    setComboPick(0);
+                  }}
+                  className="rounded-lg px-4 py-2 text-sm font-bold transition-colors"
+                  style={{
+                    background: active ? '#7c3aed' : 'rgba(255,255,255,0.07)',
+                    color: active ? '#fff' : '#d4d4d8',
+                    border: active ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  {n} players
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Faction picker */}
+        <div className="mb-4">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#71717a' }}>
+            Your faction
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {ALL_FACTIONS.map((fid) => {
+              const def = FACTIONS[fid];
+              const active = fid === human;
+              return (
+                <button
+                  key={fid}
+                  onClick={() => {
+                    setHuman(fid);
+                    setComboPick(0);
+                  }}
+                  className="rounded-lg p-2.5 text-left transition-colors"
+                  style={{
+                    background: active ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.04)',
+                    border: active ? '1px solid #a78bfa' : '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-white">{def.name}</span>
+                    <span
+                      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-semibold"
+                      style={{ background: 'rgba(255,255,255,0.06)', color: '#d4d4d8' }}
+                      title={`Primary spoil — worth ${myValuation(fid, def.primary)} VP to ${def.name}`}
+                    >
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ background: SPOIL_COLOR[def.primary] }}
+                      />
+                      {SPOIL_LABEL[def.primary]} · {myValuation(fid, def.primary)}VP
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] font-semibold" style={{ color: active ? '#c4b5fd' : '#a1a1aa' }}>
+                    ✦ {def.ability.name}
+                  </div>
+                  <div className="text-[10px] leading-snug" style={{ color: '#a1a1aa' }}>
+                    {def.ability.description}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Opponent preview */}
+        <div className="mb-5">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#71717a' }}>
+              Opponents ({opponents.length})
+            </span>
+            {comboOptions > 1 && (
+              <button
+                onClick={() => setComboPick((i) => i + 1)}
+                className="rounded px-2 py-1 text-[10px] font-semibold transition-colors"
+                style={{ background: 'rgba(255,255,255,0.08)', color: '#c4b5fd' }}
+                title="Cycle to another valid set of opponents from the rivalry ring."
+              >
+                ⟳ Shuffle opponents
+              </button>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            {opponents.map((fid, i) => {
+              const def = FACTIONS[fid];
+              const color = PLAYER_COLOR[i + 1] ?? NEUTRAL_COLOR;
+              return (
+                <div
+                  key={fid}
+                  className="flex items-start gap-2 rounded-lg p-2"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+                >
+                  <span className="mt-0.5 inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: color }} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-white">{def.name}</span>
+                      <span
+                        className="flex items-center gap-1 text-[10px]"
+                        style={{ color: '#a1a1aa' }}
+                        title={`Primary spoil — worth ${myValuation(fid, def.primary)} VP to ${def.name}`}
+                      >
+                        <span
+                          className="inline-block h-2 w-2 rounded-full"
+                          style={{ background: SPOIL_COLOR[def.primary] }}
+                        />
+                        {SPOIL_LABEL[def.primary]}
+                      </span>
+                    </div>
+                    <div className="text-[10px] leading-snug" style={{ color: '#a1a1aa' }}>
+                      <span style={{ color: '#c4b5fd' }}>✦ {def.ability.name}</span> — {def.ability.description}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <button
+          onClick={() => onStart(factionIds)}
+          className="w-full rounded-xl px-4 py-3 text-sm font-bold text-white transition-colors"
+          style={{ background: '#7c3aed' }}
+        >
+          Start game →
+        </button>
+      </div>
     </div>
   );
 }
