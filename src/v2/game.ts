@@ -15,6 +15,7 @@ import { generateBoard, type BoardV2 } from './board';
 import { defaultPool, makeUnits, rollPool, type RolledDie, type Unit } from './units';
 import { resolveContest } from './combat';
 import { assignObjectives } from './objectives';
+import { FACTIONS, valueOf, type FactionId } from './factions';
 
 export const ROUNDS = 6;
 
@@ -27,6 +28,7 @@ export interface PlayerStats {
 
 export interface PlayerV2 {
   id: number;
+  faction: FactionId;     // determines which spoils score for this player
   pool: Unit[];           // persistent dice types (renewed each round)
   vp: number;             // visible accrued VP (the main engine)
   objectiveId: string;    // hidden endgame objective
@@ -44,10 +46,10 @@ export interface GameV2 {
   clock: number;
 }
 
-export function createGameV2(playerCount: number, seed: string): GameV2 {
-  const board = generateBoard(playerCount, seed);
-  const players: PlayerV2[] = Array.from({ length: playerCount }, (_, i) => ({
-    id: i, pool: defaultPool(i), vp: 0,
+export function createGameV2(factionIds: FactionId[], seed: string): GameV2 {
+  const board = generateBoard(factionIds, seed);
+  const players: PlayerV2[] = factionIds.map((fid, i) => ({
+    id: i, faction: fid, pool: defaultPool(i), vp: 0,
     objectiveId: '', objectiveVp: 0,
     stats: { contestsWon: 0, strongpointsCaptured: 0 },
   }));
@@ -56,7 +58,7 @@ export function createGameV2(playerCount: number, seed: string): GameV2 {
   board.homeIds.forEach((h, i) => { owner[h] = i; });
   const game: GameV2 = { board, players, owner, round: 0, clock: 0 };
   // Deal hidden objectives from a seeded, board-independent stream.
-  assignObjectives(game, new Rng(`v2-obj-${seed}-${playerCount}`));
+  assignObjectives(game, new Rng(`v2-obj-${seed}-${factionIds.join('-')}`));
   return game;
 }
 
@@ -132,15 +134,17 @@ export function resolveRound(game: GameV2, deployments: Deployments): {
 }
 
 /**
- * Score the round: each controlled NON-HOME territory is worth 1 VP, plus its
- * vpPerRound bonus (centre +2, fortress +1). Home scores nothing — you must
- * push outward to win, which is what compels aggression.
+ * Score the round by ASYMMETRIC SPOIL VALUATION: each controlled territory is
+ * worth what its spoil is to THAT player's faction — primary 3, secondary 2,
+ * else 1; the centre is universal (3 to anyone). Home (your primary) gives a
+ * base economy floor, but the points are in the contested spoils + centre, so
+ * expansion still dominates and rival factions are pulled to different tiles.
  */
 export function scoreRound(game: GameV2): void {
   for (const [tid, ownerId] of Object.entries(game.owner)) {
     const terr = game.board.territories[tid]!;
-    if (terr.role === 'home') continue;
-    game.players[ownerId]!.vp += 1 + terr.vpPerRound;
+    const faction = FACTIONS[game.players[ownerId]!.faction];
+    game.players[ownerId]!.vp += valueOf(faction, terr.spoil);
   }
 }
 

@@ -21,6 +21,7 @@
 //   4 players → 13 territories   (room to maneuver, still forced to meet)
 
 import { Rng } from '../engine/rng';
+import { FACTIONS, sharedSpoils, type FactionId, type Spoil } from './factions';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,8 @@ export interface TerritoryV2 {
   name: string;
   role: TerritoryRole;
   terrain: TerrainV2;
+  /** Economic value tag — factions score this differently (centre = universal). */
+  spoil: Spoil | 'universal';
   /** Added to the DEFENDER's total in combat — terrain that's hard to storm. */
   defenseBonus: number;
   /** Dice/resources generated each round the territory is held. */
@@ -49,6 +52,8 @@ export interface TerritoryV2 {
 
 export interface BoardV2 {
   playerCount: number;
+  /** Faction seated in each home slot, indexed by player number. */
+  factionIds: FactionId[];
   territories: Record<string, TerritoryV2>;
   /** Home territory id per player, indexed by player number (0..N-1). */
   homeIds: string[];
@@ -90,21 +95,21 @@ function polar(angle: number, radius: number): { x: number; y: number } {
 
 // ─── Generator ───────────────────────────────────────────────────────────────
 
-export function generateBoard(playerCount: number, seed: string): BoardV2 {
-  if (playerCount < 2 || playerCount > 4) {
-    throw new Error(`v2 board supports 2-4 players, got ${playerCount}`);
+export function generateBoard(factionIds: FactionId[], seed: string): BoardV2 {
+  const N = factionIds.length;
+  if (N < 2 || N > 4) {
+    throw new Error(`v2 board supports 2-4 players, got ${N}`);
   }
-  const rng = new Rng(`v2-board-${seed}-${playerCount}`);
-  const N = playerCount;
+  const rng = new Rng(`v2-board-${seed}-${factionIds.join('-')}`);
   const territories: Record<string, TerritoryV2> = {};
 
   const mk = (
     id: string, name: string, role: TerritoryRole, terrain: TerrainV2,
-    pos: { x: number; y: number }, extra: Partial<TerritoryV2> = {},
+    spoil: Spoil | 'universal', pos: { x: number; y: number }, extra: Partial<TerritoryV2> = {},
   ): TerritoryV2 => {
     const p = TERRAIN_PROFILE[terrain];
     const t: TerritoryV2 = {
-      id, name, role, terrain,
+      id, name, role, terrain, spoil,
       defenseBonus: p.defenseBonus, income: p.income, vpPerRound: p.vpPerRound,
       adjacency: [], x: pos.x, y: pos.y, ...extra,
     };
@@ -112,38 +117,45 @@ export function generateBoard(playerCount: number, seed: string): BoardV2 {
     return t;
   };
 
-  // ── Centre — the prize ──
+  // ── Centre — the universal prize ──
   const centerId = 'center';
-  mk(centerId, 'The Iron Throne', 'center', 'center', { x: CX, y: CY });
+  mk(centerId, 'The Iron Throne', 'center', 'center', 'universal', { x: CX, y: CY });
 
   const homeIds: string[] = [];
   const chokeIds: string[] = [];
   const borderIds: string[] = [];
 
   // ── Homes + their spoke chokepoints ──
+  // Home spoil = that faction's PRIMARY (a comfortable base economy).
+  // Choke spoil = that faction's first SECONDARY (push out to it; rivals contest).
   for (let i = 0; i < N; i++) {
     const a = angleFor(i, N);
+    const faction = FACTIONS[factionIds[i]!];
+
     const homeId = `home-${i}`;
     homeIds.push(homeId);
-    mk(homeId, FACTION_HOME_NAMES[i] ?? `Home ${i + 1}`, 'home', 'home', polar(a, R_HOME), { homeOf: i });
+    mk(homeId, FACTION_HOME_NAMES[i] ?? `Home ${i + 1}`, 'home', 'home', faction.primary, polar(a, R_HOME), { homeOf: i });
 
     const chokeId = `choke-${i}`;
     chokeIds.push(chokeId);
-    // Chokepoints alternate mountain / fortress so some spokes are tougher.
     const chokeTerrain: TerrainV2 = i % 2 === 0 ? 'fortress' : 'mountain';
-    mk(chokeId, CHOKE_NAMES[i] ?? `Pass ${i + 1}`, 'choke', chokeTerrain, polar(a, R_CHOKE));
+    mk(chokeId, CHOKE_NAMES[i] ?? `Pass ${i + 1}`, 'choke', chokeTerrain, faction.secondary[0], polar(a, R_CHOKE));
   }
 
   // ── Borders — open ground between each pair of ADJACENT homes ──
-  // For N=2 this yields 2 borders (the two flanks of the lens).
+  // Border spoil = a spoil BOTH neighbouring factions value (their shared
+  // secondary) → engineered contested ground exactly where the ring predicts.
   for (let i = 0; i < N; i++) {
     const a = (angleFor(i, N) + angleFor(i + 1, N)) / 2 + (N === 2 ? (i === 0 ? -Math.PI / 2 : Math.PI / 2) : 0);
-    // N===2 special-case: midpoint of two opposite angles is ambiguous, so we
-    // hand-place the two flanks left and right of the vertical lens.
     const borderId = `border-${i}`;
     borderIds.push(borderId);
     const borderTerrain: TerrainV2 = rng.pick(['plains', 'forest'] as const);
-    mk(borderId, BORDER_NAMES[i] ?? `Border ${i + 1}`, 'border', borderTerrain, polar(a, R_BORDER));
+
+    const left = factionIds[i]!, right = factionIds[(i + 1) % N]!;
+    const shared = sharedSpoils(left, right);
+    // Prefer a genuinely shared spoil; fall back to the left faction's 2nd secondary.
+    const borderSpoil: Spoil = shared[0] ?? FACTIONS[left].secondary[1];
+    mk(borderId, BORDER_NAMES[i] ?? `Border ${i + 1}`, 'border', borderTerrain, borderSpoil, polar(a, R_BORDER));
   }
 
   // ── Edges ──
@@ -170,7 +182,7 @@ export function generateBoard(playerCount: number, seed: string): BoardV2 {
     link(nextBorder, chokeIds[(i + 1) % N]!);
   }
 
-  return { playerCount: N, territories, homeIds, centerId };
+  return { playerCount: N, factionIds, territories, homeIds, centerId };
 }
 
 // ─── Introspection helpers (used by the validation script + renderer) ─────────
