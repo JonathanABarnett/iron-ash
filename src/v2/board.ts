@@ -78,19 +78,39 @@ const FACTION_HOME_NAMES = [
 const CHOKE_NAMES   = ['Stormwall Pass', 'Bonewatch Bridge', 'Ashgate', 'Thornward'];
 const BORDER_NAMES  = ['The Marches', 'Greywood', 'Mireborn Flats', 'Duskfield', 'Redfen', 'Coldreach'];
 
-// ─── Geometry helpers ──────────────────────────────────────────────────────────
+// ─── Layout (render coordinates, viewBox 800 × 600) ─────────────────────────────
+// Explicit, readable positions per player count — no overlaps, uses the canvas.
 
-const CX = 400, CY = 300;        // viewBox centre
-const R_HOME = 250;              // homes sit on this radius
-const R_CHOKE = 130;             // chokepoints halfway in toward the centre
-const R_BORDER = 230;            // borders on the rim, between homes
+const CX = 400, CY = 300;
+type Pt = { x: number; y: number };
 
-// Place the first home at the top (-90°) so 2p is a clean vertical lens.
-function angleFor(i: number, n: number): number {
-  return (-Math.PI / 2) + (i / n) * Math.PI * 2;
+function polarDeg(deg: number, r: number): Pt {
+  const a = (deg * Math.PI) / 180;
+  return { x: Math.round(CX + Math.cos(a) * r), y: Math.round(CY + Math.sin(a) * r) };
 }
-function polar(angle: number, radius: number): { x: number; y: number } {
-  return { x: Math.round(CX + Math.cos(angle) * radius), y: Math.round(CY + Math.sin(angle) * radius) };
+
+interface Layout { center: Pt; home: Pt[]; choke: Pt[]; border: Pt[] }
+
+function layoutPositions(n: number): Layout {
+  if (n === 2) {
+    // Horizontal lens: homes left/right, spine through centre, borders top/bottom.
+    return {
+      center: { x: CX, y: CY },
+      home:   [{ x: 110, y: 300 }, { x: 690, y: 300 }],
+      choke:  [{ x: 255, y: 300 }, { x: 545, y: 300 }],
+      border: [{ x: 400, y: 110 }, { x: 400, y: 490 }],
+    };
+  }
+  // 3p / 4p: radial. Homes evenly spaced on the rim (first at top), chokes on the
+  // spoke toward centre, borders at the angular midpoint between adjacent homes.
+  const start = -90, step = 360 / n;
+  const home: Pt[] = [], choke: Pt[] = [], border: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    home.push(polarDeg(start + i * step, 250));
+    choke.push(polarDeg(start + i * step, 125));
+    border.push(polarDeg(start + (i + 0.5) * step, 250));
+  }
+  return { center: { x: CX, y: CY }, home, choke, border };
 }
 
 // ─── Generator ───────────────────────────────────────────────────────────────
@@ -101,6 +121,7 @@ export function generateBoard(factionIds: FactionId[], seed: string): BoardV2 {
     throw new Error(`v2 board supports 2-4 players, got ${N}`);
   }
   const rng = new Rng(`v2-board-${seed}-${factionIds.join('-')}`);
+  const pos = layoutPositions(N);
   const territories: Record<string, TerritoryV2> = {};
 
   const mk = (
@@ -119,7 +140,7 @@ export function generateBoard(factionIds: FactionId[], seed: string): BoardV2 {
 
   // ── Centre — the universal prize ──
   const centerId = 'center';
-  mk(centerId, 'The Iron Throne', 'center', 'center', 'universal', { x: CX, y: CY });
+  mk(centerId, 'The Iron Throne', 'center', 'center', 'universal', pos.center);
 
   const homeIds: string[] = [];
   const chokeIds: string[] = [];
@@ -129,24 +150,22 @@ export function generateBoard(factionIds: FactionId[], seed: string): BoardV2 {
   // Home spoil = that faction's PRIMARY (a comfortable base economy).
   // Choke spoil = that faction's first SECONDARY (push out to it; rivals contest).
   for (let i = 0; i < N; i++) {
-    const a = angleFor(i, N);
     const faction = FACTIONS[factionIds[i]!];
 
     const homeId = `home-${i}`;
     homeIds.push(homeId);
-    mk(homeId, FACTION_HOME_NAMES[i] ?? `Home ${i + 1}`, 'home', 'home', faction.primary, polar(a, R_HOME), { homeOf: i });
+    mk(homeId, FACTION_HOME_NAMES[i] ?? `Home ${i + 1}`, 'home', 'home', faction.primary, pos.home[i]!, { homeOf: i });
 
     const chokeId = `choke-${i}`;
     chokeIds.push(chokeId);
     const chokeTerrain: TerrainV2 = i % 2 === 0 ? 'fortress' : 'mountain';
-    mk(chokeId, CHOKE_NAMES[i] ?? `Pass ${i + 1}`, 'choke', chokeTerrain, faction.secondary[0], polar(a, R_CHOKE));
+    mk(chokeId, CHOKE_NAMES[i] ?? `Pass ${i + 1}`, 'choke', chokeTerrain, faction.secondary[0], pos.choke[i]!);
   }
 
   // ── Borders — open ground between each pair of ADJACENT homes ──
   // Border spoil = a spoil BOTH neighbouring factions value (their shared
   // secondary) → engineered contested ground exactly where the ring predicts.
   for (let i = 0; i < N; i++) {
-    const a = (angleFor(i, N) + angleFor(i + 1, N)) / 2 + (N === 2 ? (i === 0 ? -Math.PI / 2 : Math.PI / 2) : 0);
     const borderId = `border-${i}`;
     borderIds.push(borderId);
     const borderTerrain: TerrainV2 = rng.pick(['plains', 'forest'] as const);
@@ -155,7 +174,7 @@ export function generateBoard(factionIds: FactionId[], seed: string): BoardV2 {
     const shared = sharedSpoils(left, right);
     // Prefer a genuinely shared spoil; fall back to the left faction's 2nd secondary.
     const borderSpoil: Spoil = shared[0] ?? FACTIONS[left].secondary[1];
-    mk(borderId, BORDER_NAMES[i] ?? `Border ${i + 1}`, 'border', borderTerrain, borderSpoil, polar(a, R_BORDER));
+    mk(borderId, BORDER_NAMES[i] ?? `Border ${i + 1}`, 'border', borderTerrain, borderSpoil, pos.border[i]!);
   }
 
   // ── Edges ──

@@ -426,11 +426,11 @@ function Board({
     return out;
   }, [territories, game.board.territories]);
 
-  const NODE = 64;
+  const NODE = 92;
   const half = NODE / 2;
 
   return (
-    <svg viewBox="0 0 800 600" className="w-full" style={{ maxHeight: '70vh' }}>
+    <svg viewBox="0 0 800 600" className="w-full" style={{ maxHeight: '78vh' }}>
       {/* Edges */}
       {edges.map(({ a, b }, i) => (
         <line
@@ -486,16 +486,19 @@ function Board({
               strokeWidth={3}
             />
 
-            {/* spoil dot (top-left) */}
-            <circle cx={t.x - half + 9} cy={t.y - half + 9} r={5} fill={SPOIL_COLOR[t.spoil]} />
+            {/* spoil dot + label (top-left) */}
+            <circle cx={t.x - half + 11} cy={t.y - half + 12} r={6} fill={SPOIL_COLOR[t.spoil]} />
+            <text x={t.x - half + 21} y={t.y - half + 16} fontSize={9} fill="#d4d4d8">
+              {t.spoil === 'universal' ? 'all' : t.spoil}
+            </text>
 
-            {/* your valuation (top-right) */}
+            {/* your valuation (top-right) — bigger, the key at-a-glance number */}
             <text
-              x={t.x + half - 7}
-              y={t.y - half + 13}
+              x={t.x + half - 8}
+              y={t.y - half + 17}
               textAnchor="end"
-              fontSize={11}
-              fontWeight={700}
+              fontSize={14}
+              fontWeight={800}
               fill="#fde68a"
             >
               {myValuation(t.spoil)}
@@ -503,30 +506,25 @@ function Board({
 
             {/* defense bonus (bottom-left) */}
             {t.defenseBonus > 0 && (
-              <text
-                x={t.x - half + 6}
-                y={t.y + half - 6}
-                fontSize={9}
-                fill="#a1a1aa"
-              >
-                +{t.defenseBonus}
+              <text x={t.x - half + 8} y={t.y + half - 8} fontSize={11} fill="#93c5fd">
+                🛡{t.defenseBonus}
               </text>
             )}
 
             {/* territory name (center) */}
             <text
               x={t.x}
-              y={t.y + 2}
+              y={t.y + 3}
               textAnchor="middle"
-              fontSize={9}
-              fontWeight={600}
+              fontSize={12}
+              fontWeight={700}
               fill="#fafafa"
             >
-              {t.name.length > 12 ? `${t.name.slice(0, 11)}…` : t.name}
+              {t.name.length > 15 ? `${t.name.slice(0, 14)}…` : t.name}
             </text>
 
             {/* role (under name) */}
-            <text x={t.x} y={t.y + 13} textAnchor="middle" fontSize={7} fill="#a1a1aa">
+            <text x={t.x} y={t.y + 17} textAnchor="middle" fontSize={9} fill="#a1a1aa" style={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
               {t.role}
             </text>
 
