@@ -12,6 +12,59 @@ import { reachable, type GameV2 } from './game';
 
 export interface RolledLike { value: number }
 
+/** Summed committed value per player, per territory — the live deploy board. */
+export type CommittedSums = Record<string, Record<number, number>>;
+
+/**
+ * Pick ONE die placement for sequential, visible turn-by-turn deployment.
+ * Reacts to the current (visible) board: commits this player's largest
+ * remaining die to the highest faction-value reachable tile, preferring tiles
+ * where the die would seize the lead and contested fights. Returns null to pass
+ * (only when out of dice or nothing reachable scores).
+ */
+export function pickOneDie(
+  game: GameV2,
+  playerId: number,
+  remaining: number[],
+  committed: CommittedSums,
+): { dieValue: number; tid: string } | null {
+  if (remaining.length === 0) return null;
+  const faction = FACTIONS[game.players[playerId]!.faction];
+  const dieValue = Math.max(...remaining);
+
+  // Effective total for a player on a tile (their committed sum + terrain if owner).
+  const eff = (tid: string, pid: number): number =>
+    (committed[tid]?.[pid] ?? 0) + (game.owner[tid] === pid ? game.board.territories[tid]!.defenseBonus : 0);
+
+  const reach = [...reachable(game, playerId)].filter(
+    (tid) => !(game.board.territories[tid]!.role === 'home' && game.owner[tid] === playerId),
+  );
+
+  let best: string | null = null;
+  let bestScore = -Infinity;
+  for (const tid of reach) {
+    const t = game.board.territories[tid]!;
+    const v = valueOf(faction, t.spoil);
+    const mine = eff(tid, playerId);
+    // strongest opponent presence (committed or the current owner via terrain)
+    let oppMax = 0;
+    if (game.owner[tid] !== undefined && game.owner[tid] !== playerId) oppMax = eff(tid, game.owner[tid]!);
+    for (const k of Object.keys(committed[tid] ?? {})) {
+      const pid = Number(k);
+      if (pid !== playerId) oppMax = Math.max(oppMax, eff(tid, pid));
+    }
+    const wouldLead = mine + dieValue > oppMax;
+    const contested = oppMax > 0;
+    let s = v * 2;
+    if (wouldLead) s += 2; else s -= 1;     // don't throw a die where I'd still lose
+    if (contested) s += 1;                  // pressing an active fight
+    if (t.role === 'center') s += 1;
+    if (s > bestScore) { bestScore = s; best = tid; }
+  }
+  if (best === null) return null;
+  return { dieValue, tid: best };
+}
+
 /** Returns territoryId → summed committed value for this player's hand. */
 export function planDeployment(
   game: GameV2,

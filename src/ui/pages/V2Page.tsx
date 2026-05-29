@@ -2,8 +2,11 @@
 //
 // A single-screen "play the v2 model against the AI" sandbox. This page ONLY
 // drives the pure v2 model in src/v2/ — it imports and reads that logic, never
-// modifies it. Turn model: simultaneous commitment (human deploys, then every
-// AI plans, then a single resolveRound + scoreRound).
+// modifies it. Turn model: SEQUENTIAL, VISIBLE turn-by-turn deployment. Players
+// alternate placing ONE die at a time onto reachable tiles; BOTH sides' dice are
+// visible on the board the whole time, so you watch forces mass on contested
+// tiles and react. When everyone has passed or emptied their hand, a single
+// resolveRound + scoreRound settles the round (unchanged from before).
 //
 // The GameV2 object is mutated in place by resolveRound/scoreRound, so we hold
 // it in a ref and bump a `version` counter to force re-renders after mutations.
@@ -23,7 +26,7 @@ import {
   type Deployments,
 } from '../../v2/game';
 import { FACTIONS, valueOf, type FactionId, type Spoil } from '../../v2/factions';
-import { planDeployment } from '../../v2/ai';
+import { pickOneDie, type CommittedSums } from '../../v2/ai';
 import { scoreObjectives, objectiveById } from '../../v2/objectives';
 import { UNIT_PROFILE, type RolledDie } from '../../v2/units';
 import type { TerritoryV2 } from '../../v2/board';
@@ -77,6 +80,8 @@ const TERRAIN_HELP: Record<string, string> = {
 
 const HUMAN_ID = 0;
 const DEFAULT_FACTIONS: FactionId[] = ['warriors', 'merchants'];
+// How long each AI placement lingers so the player SEES it appear, in ms.
+const AI_TURN_DELAY_MS = 550;
 
 type Phase = 'deploy' | 'review' | 'end';
 
@@ -87,8 +92,8 @@ interface ResolveResultRow {
   newOwner: number | null;
 }
 
-// Human placements: territoryId → list of committed die VALUES placed there.
-type Placements = Record<string, number[]>;
+// Visible commitments: territoryId → playerId → list of committed die VALUES.
+type Commitments = Record<string, Record<number, number[]>>;
 
 function ownerColor(ownerId: number | undefined): string {
   if (ownerId === undefined) return NEUTRAL_COLOR;
@@ -99,17 +104,43 @@ function sum(values: number[]): number {
   return values.reduce((a, b) => a + b, 0);
 }
 
+function factionName(game: GameV2, pid: number): string {
+  return FACTIONS[game.players[pid]!.faction].name;
+}
+
+// Reduce the visible per-die commitments to the summed shape the model + AI
+// brain want: territoryId → playerId → summed value.
+function toCommittedSums(commitments: Commitments): CommittedSums {
+  const out: CommittedSums = {};
+  for (const [tid, perPlayer] of Object.entries(commitments)) {
+    for (const [pid, values] of Object.entries(perPlayer)) {
+      const total = sum(values);
+      if (total <= 0) continue;
+      (out[tid] ??= {})[Number(pid)] = total;
+    }
+  }
+  return out;
+}
+
 // ── Page ────────────────────────────────────────────────────────────────────
 
-// Build a fresh game + its rng stream + round-1 hand for a given seed counter.
-// Pure: no React state touched, so it's safe to call from a lazy initializer.
-function freshGame(counter: number): { game: GameV2; rng: Rng; hand: RolledDie[] } {
+// Build a fresh game + its rng stream + round-1 hands for a given seed counter.
+// Rolls the human hand AND every AI's hand up front so round 1 of a new game
+// has the AI armed (the bug fix: aiRemaining used to start empty on mount, so
+// the AI passed all of round 1). Pure — safe to call from a lazy initializer.
+function freshGame(counter: number): {
+  game: GameV2; rng: Rng; hand: RolledDie[]; ai: Record<number, number[]>;
+} {
   const game = createGameV2(DEFAULT_FACTIONS, `v2-sandbox-${counter}`);
   // A separate, long-lived rng stream for rolling hands round-to-round.
   const rng = new Rng(`v2-sandbox-rng-${counter}`);
   game.round = 1; // begin round 1
   const hand = rollHand(game, HUMAN_ID, rng);
-  return { game, rng, hand };
+  const ai: Record<number, number[]> = {};
+  for (let p = 1; p < game.players.length; p++) {
+    ai[p] = rollHand(game, p, rng).map((d) => d.value);
+  }
+  return { game, rng, hand, ai };
 }
 
 export function V2Page() {
@@ -118,7 +149,7 @@ export function V2Page() {
 
   // The mutable game + its rng live in refs; `version` forces re-renders after
   // the model mutates in place. Lazy-init once so no setState fires in render.
-  const initial = useRef<{ game: GameV2; rng: Rng; hand: RolledDie[] } | null>(null);
+  const initial = useRef<{ game: GameV2; rng: Rng; hand: RolledDie[]; ai: Record<number, number[]> } | null>(null);
   if (initial.current === null) initial.current = freshGame(0);
   const gameRef = useRef<GameV2>(initial.current.game);
   const rngRef = useRef<Rng>(initial.current.rng);
@@ -127,12 +158,24 @@ export function V2Page() {
 
   const [phase, setPhase] = useState<Phase>('deploy');
   const [hand, setHand] = useState<RolledDie[]>(() => initial.current!.hand);
-  // Which hand-slot indices have been committed (so each die is used once).
+  // Which human hand-slot indices have been committed (so each die is used once).
   const [usedDice, setUsedDice] = useState<Set<number>>(new Set());
   // Selected die slot index (the one waiting to be placed), or null.
   const [selected, setSelected] = useState<number | null>(null);
-  // territoryId → die values the human committed there.
-  const [placements, setPlacements] = useState<Placements>({});
+
+  // ── Turn-by-turn deploy state ──
+  // Visible commitments for EVERY player: tid → playerId → die values.
+  const [commitments, setCommitments] = useState<Commitments>({});
+  // Each AI player's remaining (unplaced) die VALUES this round. Index = playerId.
+  // Human (index 0) is unused here — the human's remaining come from hand/usedDice.
+  const [aiRemaining, setAiRemaining] = useState<Record<number, number[]>>(() => initial.current!.ai);
+  // Whose turn it is right now (a playerId). Order: 0,1,2,…,then wraps.
+  const [turn, setTurn] = useState<number>(HUMAN_ID);
+  // Players who have chosen to stop placing (or run dry) this round.
+  const [passed, setPassed] = useState<Set<number>>(new Set());
+  // True once deployment is over and we're waiting on the Resolve button.
+  const [deployDone, setDeployDone] = useState(false);
+
   const [log, setLog] = useState<string[]>([]);
   // The territory the player is hovering (drives the HUD inspector panel).
   const [hoveredTid, setHoveredTid] = useState<string | null>(null);
@@ -146,24 +189,90 @@ export function V2Page() {
     markHowToSeen();
   }, []);
 
-  // ── Game lifecycle ─────────────────────────────────────────────────────────
-
-  // Start a brand-new game. Only called from event handlers, so setState is safe.
-  const startGame = useCallback((counter: number) => {
-    const next = freshGame(counter);
-    gameRef.current = next.game;
-    rngRef.current = next.rng;
-    setHand(next.hand);
-    setUsedDice(new Set());
-    setSelected(null);
-    setPlacements({});
-    setLog([]);
-    setPhase('deploy');
-    bump();
-  }, [bump]);
-
   const game = gameRef.current;
   const humanFaction = game.players[HUMAN_ID]!.faction;
+
+  // ── Turn helpers ────────────────────────────────────────────────────────────
+
+  // Remaining die count for any player given the current pass/used/hand state.
+  const remainingCountFor = useCallback(
+    (pid: number, used: Set<number>, ai: Record<number, number[]>): number => {
+      if (pid === HUMAN_ID) return hand.length - used.size;
+      return ai[pid]?.length ?? 0;
+    },
+    [hand.length],
+  );
+
+  // Find the next player (after `from`, cycling) who hasn't passed and still has
+  // dice. Returns null if nobody qualifies → deployment is over.
+  const nextActivePlayer = useCallback(
+    (from: number, passedSet: Set<number>, used: Set<number>, ai: Record<number, number[]>): number | null => {
+      const n = game.players.length;
+      for (let step = 1; step <= n; step++) {
+        const pid = (from + step) % n;
+        if (passedSet.has(pid)) continue;
+        if (remainingCountFor(pid, used, ai) <= 0) continue;
+        return pid;
+      }
+      return null;
+    },
+    [game.players.length, remainingCountFor],
+  );
+
+  // ── Game lifecycle ─────────────────────────────────────────────────────────
+
+  // Roll every AI's hand for the current round and store their remaining values.
+  const rollAiHands = useCallback((): Record<number, number[]> => {
+    const rng = rngRef.current!;
+    const out: Record<number, number[]> = {};
+    for (let p = 1; p < game.players.length; p++) {
+      out[p] = rollHand(game, p, rng).map((d) => d.value);
+    }
+    return out;
+  }, [game]);
+
+  // Reset all per-round deploy state and hand the first turn to the human.
+  const beginRoundDeploy = useCallback(
+    (humanHand: RolledDie[]) => {
+      setHand(humanHand);
+      setUsedDice(new Set());
+      setSelected(null);
+      setCommitments({});
+      setAiRemaining(rollAiHands());
+      setPassed(new Set());
+      setDeployDone(false);
+      setTurn(HUMAN_ID);
+      setLog([]);
+      setPhase('deploy');
+    },
+    [rollAiHands],
+  );
+
+  // Start a brand-new game. Only called from event handlers, so setState is safe.
+  const startGame = useCallback(
+    (counter: number) => {
+      const next = freshGame(counter);
+      gameRef.current = next.game;
+      rngRef.current = next.rng;
+      // beginRoundDeploy reads gameRef via rollAiHands; gameRef is now updated.
+      // We pass the freshly-rolled human hand explicitly.
+      setHand(next.hand);
+      setUsedDice(new Set());
+      setSelected(null);
+      setCommitments({});
+      // AI hands were already rolled inside freshGame (same rng stream), so the
+      // first round of a new game has the AI armed.
+      setAiRemaining(next.ai);
+      setPassed(new Set());
+      setDeployDone(false);
+      setTurn(HUMAN_ID);
+      setLog([]);
+      setPhase('deploy');
+      bump();
+    },
+    [bump],
+  );
+
   const reachableSet = useMemo(
     () => reachable(game, HUMAN_ID),
     // recompute whenever ownership/round may have changed
@@ -177,123 +286,172 @@ export function V2Page() {
     startGame(next);
   }
 
-  // ── Deploy interactions ──────────────────────────────────────────────────────
+  // ── Advancing the turn ───────────────────────────────────────────────────────
+
+  // Hand the turn to the next eligible player given the LATEST state. We pass the
+  // freshly-computed used/passed/ai so we don't read stale closure state.
+  const advanceTurn = useCallback(
+    (from: number, passedSet: Set<number>, used: Set<number>, ai: Record<number, number[]>) => {
+      const next = nextActivePlayer(from, passedSet, used, ai);
+      if (next === null) {
+        setDeployDone(true);
+      } else {
+        setTurn(next);
+      }
+    },
+    [nextActivePlayer],
+  );
+
+  // ── Human deploy interactions ──────────────────────────────────────────────────
+
+  const isHumanTurn = phase === 'deploy' && !deployDone && turn === HUMAN_ID && !passed.has(HUMAN_ID);
 
   function onSelectDie(slot: number) {
-    if (phase !== 'deploy') return;
+    if (!isHumanTurn) return;
     if (usedDice.has(slot)) return;
     setSelected((cur) => (cur === slot ? null : slot));
   }
 
   function onTerritoryClick(tid: string) {
-    if (phase !== 'deploy') return;
+    if (!isHumanTurn) return;
     if (!reachableSet.has(tid)) return;
     if (selected === null) return;
     const die = hand[selected];
-    if (!die) return;
-    setPlacements((p) => ({ ...p, [tid]: [...(p[tid] ?? []), die.value] }));
-    setUsedDice((u) => {
-      const next = new Set(u);
-      next.add(selected);
-      return next;
+    if (die === undefined) return;
+
+    // Commit this die value into the human's visible stack on the tile.
+    setCommitments((c) => {
+      const tile: Record<number, number[]> = { ...(c[tid] ?? {}) };
+      tile[HUMAN_ID] = [...(tile[HUMAN_ID] ?? []), die.value];
+      return { ...c, [tid]: tile };
     });
+    const nextUsed = new Set(usedDice);
+    nextUsed.add(selected);
+    setUsedDice(nextUsed);
     setSelected(null);
+    // End of the human's turn → advance.
+    advanceTurn(HUMAN_ID, passed, nextUsed, aiRemaining);
   }
 
-  // Recall a single placed die (by hand slot) back to the hand. Used when the
-  // player clicks a dimmed "placed" die in the hand. Removes ONE matching value
-  // from its territory's committed list (the slot→territory map handles which).
-  function recallDie(slot: number, tid: string) {
-    if (phase !== 'deploy') return;
-    if (!usedDice.has(slot)) return;
-    const value = hand[slot]?.value;
-    if (value === undefined) return;
-    setPlacements((p) => {
-      const values = p[tid];
-      if (!values) return p;
-      const idx = values.indexOf(value);
-      if (idx === -1) return p;
-      const nextValues = [...values];
-      nextValues.splice(idx, 1);
-      const next = { ...p };
-      if (nextValues.length === 0) delete next[tid];
-      else next[tid] = nextValues;
-      return next;
-    });
-    setUsedDice((u) => {
-      const next = new Set(u);
-      next.delete(slot);
-      return next;
-    });
+  // The human stops placing for this round.
+  function onPass() {
+    if (!isHumanTurn) return;
+    const nextPassed = new Set(passed);
+    nextPassed.add(HUMAN_ID);
+    setPassed(nextPassed);
     setSelected(null);
+    advanceTurn(HUMAN_ID, nextPassed, usedDice, aiRemaining);
   }
 
-  // Clear all dice the human committed to a territory, returning them to hand.
-  function clearTerritory(tid: string) {
-    if (phase !== 'deploy') return;
-    const committedValues = placements[tid];
-    if (!committedValues || committedValues.length === 0) return;
-    // Free the matching used-dice slots: find used slots whose value matches,
-    // returning exactly as many as were committed here.
+  // Recall the human's most-recent committed die from a tile back to the hand.
+  // Allowed ONLY on the human's own turn (before they pass) — recalling mid-AI-turn
+  // would desync the visible board the AI is reacting to. We recall the LAST die the
+  // human committed to that tile and free a matching used hand-slot.
+  function recallFromTile(tid: string) {
+    if (!isHumanTurn) return;
+    const mine = commitments[tid]?.[HUMAN_ID];
+    if (!mine || mine.length === 0) return;
+    const value = mine[mine.length - 1]!; // most-recent committed value
+
+    setCommitments((c) => {
+      const perPlayer = c[tid];
+      if (!perPlayer) return c;
+      const values = perPlayer[HUMAN_ID];
+      if (!values || values.length === 0) return c;
+      const nextValues = values.slice(0, -1);
+      const nextPerPlayer = { ...perPlayer };
+      if (nextValues.length === 0) delete nextPerPlayer[HUMAN_ID];
+      else nextPerPlayer[HUMAN_ID] = nextValues;
+      const next = { ...c };
+      if (Object.keys(nextPerPlayer).length === 0) delete next[tid];
+      else next[tid] = nextPerPlayer;
+      return next;
+    });
+    // Free one used hand-slot whose die value matches the recalled die.
     setUsedDice((u) => {
       const next = new Set(u);
-      const want = [...committedValues];
-      for (const slot of [...next]) {
-        const v = hand[slot]?.value;
-        const idx = v === undefined ? -1 : want.indexOf(v);
-        if (idx !== -1) {
-          want.splice(idx, 1);
+      for (const slot of next) {
+        if (hand[slot]?.value === value) {
           next.delete(slot);
+          break;
         }
-        if (want.length === 0) break;
       }
       return next;
     });
-    setPlacements((p) => {
-      const next = { ...p };
-      delete next[tid];
-      return next;
-    });
     setSelected(null);
   }
+
+  // ── AI auto-turn (timed so the player SEES each enemy die appear) ─────────────
+  // A guard ref prevents the effect from firing the same AI placement twice
+  // (React StrictMode double-invoke, or a re-render landing on the same turn).
+  const aiActingRef = useRef(false);
+  useEffect(() => {
+    if (phase !== 'deploy' || deployDone) return;
+    const p = turn;
+    if (p === HUMAN_ID) return; // human turns are user-driven
+    if (passed.has(p)) return; // shouldn't be their turn, but guard anyway
+    if (aiActingRef.current) return; // already scheduled for this turn
+
+    aiActingRef.current = true;
+    const timer = setTimeout(() => {
+      const remaining = aiRemaining[p] ?? [];
+      const committedSums = toCommittedSums(commitments);
+      const choice = remaining.length > 0 ? pickOneDie(game, p, remaining, committedSums) : null;
+
+      if (choice === null) {
+        // AI passes (out of dice or nothing worth placing).
+        const nextPassed = new Set(passed);
+        nextPassed.add(p);
+        setPassed(nextPassed);
+        aiActingRef.current = false;
+        advanceTurn(p, nextPassed, usedDice, aiRemaining);
+        return;
+      }
+
+      // Place the chosen die: push its value into the AI's visible stack and
+      // remove ONE matching value from that AI's remaining.
+      const { dieValue, tid } = choice;
+      setCommitments((c) => {
+        const tile: Record<number, number[]> = { ...(c[tid] ?? {}) };
+        tile[p] = [...(tile[p] ?? []), dieValue];
+        return { ...c, [tid]: tile };
+      });
+      const nextAi = { ...aiRemaining };
+      const arr = [...(nextAi[p] ?? [])];
+      const idx = arr.indexOf(dieValue);
+      if (idx !== -1) arr.splice(idx, 1);
+      nextAi[p] = arr;
+      setAiRemaining(nextAi);
+
+      aiActingRef.current = false;
+      advanceTurn(p, passed, usedDice, nextAi);
+    }, AI_TURN_DELAY_MS);
+
+    return () => {
+      clearTimeout(timer);
+      aiActingRef.current = false;
+    };
+    // `aiRemaining` is in the deps so a same-AI multi-die turn keeps firing:
+    // when the human has passed, advanceTurn re-targets the SAME AI (turn
+    // unchanged), so without this dep the effect would place exactly one die
+    // and stall. Each placement shrinks aiRemaining → re-fires → next die.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turn, phase, deployDone, aiRemaining]);
 
   // ── Resolve the round ────────────────────────────────────────────────────────
 
   function onResolve() {
-    if (phase !== 'deploy') return;
-    const rng = rngRef.current!;
+    if (phase !== 'deploy' || !deployDone) return;
 
-    // 1. Build the merged Deployments object: human (player 0) + every AI.
+    // 1. Build the merged Deployments object by summing every player's visible
+    //    commitments on each tile.
     const deployments: Deployments = {};
-    const addCommit = (tid: string, pid: number, value: number) => {
-      if (value <= 0) return;
-      const slot = (deployments[tid] ??= {});
-      slot[pid] = (slot[pid] ?? 0) + value;
-    };
-
-    // Human placements.
-    for (const [tid, values] of Object.entries(placements)) {
-      const total = sum(values);
-      if (total > 0) addCommit(tid, HUMAN_ID, total);
-    }
-
-    // Every AI player rolls + plans.
-    const aiSummaries: string[] = [];
-    for (let p = 1; p < game.players.length; p++) {
-      const aiHand = rollHand(game, p, rng);
-      const plan = planDeployment(game, p, aiHand);
-      let placed = 0;
-      for (const [tid, value] of Object.entries(plan)) {
-        if (value > 0) {
-          addCommit(tid, p, value);
-          placed += value;
-        }
+    for (const [tid, perPlayer] of Object.entries(commitments)) {
+      for (const [pid, values] of Object.entries(perPlayer)) {
+        const total = sum(values);
+        if (total <= 0) continue;
+        (deployments[tid] ??= {})[Number(pid)] = total;
       }
-      aiSummaries.push(
-        `${FACTIONS[game.players[p]!.faction].name} committed ${placed} force across ${
-          Object.keys(plan).length
-        } territories.`,
-      );
     }
 
     // 2. Resolve + score (both mutate game).
@@ -310,12 +468,12 @@ export function V2Page() {
           ? 'no one (left neutral)'
           : r.newOwner === HUMAN_ID
             ? 'YOU'
-            : FACTIONS[game.players[r.newOwner]!.faction].name;
+            : factionName(game, r.newOwner);
       changeLines.push(`${terr.name} → ${who}${r.contested ? ' (contested)' : ''}`);
     }
     if (changeLines.length === 0) changeLines.push('No territories changed hands this round.');
 
-    setLog([`— Round ${game.round} resolved —`, ...changeLines, ...aiSummaries]);
+    setLog([`— Round ${game.round} resolved —`, ...changeLines]);
     setPhase('review');
     bump();
   }
@@ -336,12 +494,7 @@ export function V2Page() {
 
     game.round += 1;
     const nextHand = rollHand(game, HUMAN_ID, rng);
-    setHand(nextHand);
-    setUsedDice(new Set());
-    setSelected(null);
-    setPlacements({});
-    setLog([]);
-    setPhase('deploy');
+    beginRoundDeploy(nextHand);
     bump();
   }
 
@@ -354,15 +507,15 @@ export function V2Page() {
   const standings = [...game.players].sort((a, b) => b.vp - a.vp);
   const winner = standings[0];
 
-  // Map each USED die slot → the territory it was committed to, so the hand can
-  // show a "→ {territory}" tag on placed dice. Mirrors clearTerritory's
-  // value-matching: walk each territory's committed values and claim a matching
-  // unused slot for each. Greedy + deterministic, good enough for the tag UI.
+  // Map each USED human die slot → the tile it was committed to, so the hand can
+  // show a "→ {territory}" tag on placed dice. Greedy value-match, deterministic.
   const slotPlacement = useMemo(() => {
     const map: Record<number, string> = {};
     const claimed = new Set<number>();
-    for (const [tid, values] of Object.entries(placements)) {
-      for (const v of values) {
+    for (const [tid, perPlayer] of Object.entries(commitments)) {
+      const mine = perPlayer[HUMAN_ID];
+      if (!mine) continue;
+      for (const v of mine) {
         for (let slot = 0; slot < hand.length; slot++) {
           if (claimed.has(slot)) continue;
           if (!usedDice.has(slot)) continue;
@@ -375,17 +528,25 @@ export function V2Page() {
       }
     }
     return map;
-  }, [placements, hand, usedDice]);
+  }, [commitments, hand, usedDice]);
 
-  // Live instruction line that tracks the deploy flow.
+  // Live instruction line that tracks the turn-based deploy flow.
   const remainingDice = hand.length - usedDice.size;
   let instruction: string;
-  if (selected !== null) {
-    instruction = `② Click a glowing territory to send your ${hand[selected]?.value ?? ''}`;
+  if (phase !== 'deploy') {
+    instruction = '';
+  } else if (deployDone) {
+    instruction = 'Everyone has deployed — press Resolve →';
+  } else if (turn !== HUMAN_ID) {
+    instruction = `${factionName(game, turn)} is deploying…`;
+  } else if (passed.has(HUMAN_ID)) {
+    instruction = 'You passed — waiting for the round to finish…';
+  } else if (selected !== null) {
+    instruction = `Your turn — click a glowing territory to send your ${hand[selected]?.value ?? ''}`;
   } else if (remainingDice > 0) {
-    instruction = '① Click a die to select it';
+    instruction = 'Your turn — click a die to select it, then a tile (or Pass)';
   } else {
-    instruction = 'All dice committed — press Resolve →';
+    instruction = 'Your turn — no dice left; press Pass';
   }
 
   const hoveredTerritory = hoveredTid ? game.board.territories[hoveredTid] : undefined;
@@ -399,7 +560,7 @@ export function V2Page() {
           </h1>
           <p className="text-xs" style={{ color: '#71717a' }}>
             You are <span style={{ color: PLAYER_COLOR[HUMAN_ID] }}>{FACTIONS[humanFaction].name}</span> ·
-            simultaneous commitment vs AI
+            turn-by-turn deployment vs AI
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -430,30 +591,39 @@ export function V2Page() {
           className="rounded-2xl p-3"
           style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}
         >
-          {phase === 'deploy' && <InstructionLine text={instruction} hasSelection={selected !== null} />}
+          {phase === 'deploy' && (
+            <TurnBanner
+              turn={turn}
+              deployDone={deployDone}
+              humanPassed={passed.has(HUMAN_ID)}
+              text={instruction}
+              hasSelection={selected !== null}
+            />
+          )}
           <Board
             territories={territories}
             game={game}
             reachableSet={reachableSet}
-            placements={placements}
+            commitments={commitments}
             phase={phase}
+            isHumanTurn={isHumanTurn}
             selected={selected}
             myValuation={myValuation}
             onTerritoryClick={onTerritoryClick}
-            onClearTerritory={clearTerritory}
+            onRecallFromTile={recallFromTile}
             onHoverTerritory={setHoveredTid}
           />
-          <BoardLegend />
+          <BoardLegend game={game} />
         </section>
 
         {/* ── HUD / side panel ── */}
         <aside className="flex flex-col gap-3">
-          <Standings players={game.players} phase={phase} />
+          <Standings players={game.players} phase={phase} turn={turn} deployDone={deployDone} />
           <Inspector
             territory={hoveredTerritory}
             game={game}
             myValuation={myValuation}
-            placements={placements}
+            commitments={commitments}
           />
           <FactionCard faction={humanFaction} myValuation={myValuation} />
           <ObjectiveCard objectiveId={game.players[HUMAN_ID]!.objectiveId} />
@@ -467,8 +637,8 @@ export function V2Page() {
               slotPlacement={slotPlacement}
               territories={game.board.territories}
               instruction={instruction}
+              interactive={isHumanTurn}
               onSelectDie={onSelectDie}
-              onRecallDie={recallDie}
             />
           )}
 
@@ -476,7 +646,17 @@ export function V2Page() {
 
           {/* ── Action buttons ── */}
           <div className="flex flex-col gap-2">
-            {phase === 'deploy' && (
+            {phase === 'deploy' && !deployDone && isHumanTurn && (
+              <button
+                onClick={onPass}
+                className="rounded-xl px-4 py-3 text-sm font-bold transition-colors"
+                style={{ background: 'rgba(255,255,255,0.08)', color: '#e4e4e7' }}
+                title="Stop placing dice for this round"
+              >
+                Pass
+              </button>
+            )}
+            {phase === 'deploy' && deployDone && (
               <button
                 onClick={onResolve}
                 className="rounded-xl px-4 py-3 text-sm font-bold text-white transition-colors"
@@ -511,12 +691,13 @@ interface BoardProps {
   territories: TerritoryV2[];
   game: GameV2;
   reachableSet: Set<string>;
-  placements: Placements;
+  commitments: Commitments;
   phase: Phase;
+  isHumanTurn: boolean;
   selected: number | null;
   myValuation: (spoil: Spoil | 'universal') => number;
   onTerritoryClick: (tid: string) => void;
-  onClearTerritory: (tid: string) => void;
+  onRecallFromTile: (tid: string) => void;
   onHoverTerritory: (tid: string | null) => void;
 }
 
@@ -524,12 +705,13 @@ function Board({
   territories,
   game,
   reachableSet,
-  placements,
+  commitments,
   phase,
+  isHumanTurn,
   selected,
   myValuation,
   onTerritoryClick,
-  onClearTerritory,
+  onRecallFromTile,
   onHoverTerritory,
 }: BoardProps) {
   // Dedupe undirected edge pairs.
@@ -581,11 +763,12 @@ function Board({
       {/* Nodes */}
       {territories.map((t) => {
         const owner = game.owner[t.id];
-        const reachableNow = phase === 'deploy' && reachableSet.has(t.id);
+        // Reachable glow only matters while it's actually the human's turn.
+        const reachableNow = isHumanTurn && reachableSet.has(t.id);
         // Tiles you can't deploy into this turn are visibly dimmed.
-        const dimmed = phase === 'deploy' && !reachableNow;
-        const committed = placements[t.id] ?? [];
-        const committedTotal = sum(committed);
+        const dimmed = phase === 'deploy' && isHumanTurn && !reachableNow;
+        const perPlayer = commitments[t.id] ?? {};
+        const myCommitted = perPlayer[HUMAN_ID] ?? [];
         const armable = reachableNow && selected !== null;
 
         const ownerName =
@@ -593,13 +776,27 @@ function Board({
             ? 'neutral'
             : owner === HUMAN_ID
               ? 'you'
-              : FACTIONS[game.players[owner]!.faction].name;
+              : factionName(game, owner);
+
+        // Build a per-player committed summary for the tooltip.
+        const committedLines = Object.entries(perPlayer)
+          .map(([pid, values]) => {
+            const id = Number(pid);
+            const label = id === HUMAN_ID ? 'You' : factionName(game, id);
+            return `${label}: ${values.join('+')} = ${sum(values)}`;
+          });
         const tooltip =
           `${t.name} — ${t.role}, ${t.terrain}\n` +
           `Spoil: ${SPOIL_LABEL[t.spoil]} (worth ${myValuation(t.spoil)} to you)\n` +
           `Defense bonus: +${t.defenseBonus}\n` +
           `Owner: ${ownerName}` +
-          (committedTotal > 0 ? `\nYour committed force: ${committedTotal}` : '');
+          (committedLines.length > 0 ? `\n${committedLines.join('\n')}` : '');
+
+        // Players who have committed here, in playerId order, for the chip rows.
+        const committedPlayers = Object.keys(perPlayer)
+          .map(Number)
+          .filter((pid) => (perPlayer[pid] ?? []).length > 0)
+          .sort((a, b) => a - b);
 
         return (
           <g
@@ -683,61 +880,72 @@ function Board({
               {t.role}
             </text>
 
-            {/* committed dice — one chip per die value, in your colour, sitting
-                just under the tile so you see exactly what you sent (not a sum). */}
-            {committed.length > 0 && (
+            {/* committed dice — BOTH sides, one short row per player below the tile,
+                each chip in that player's colour, so you see who massed what. */}
+            {committedPlayers.length > 0 && (
               <g>
-                {committed.map((v, i) => {
-                  const chipW = 16;
+                {committedPlayers.map((pid, rowIdx) => {
+                  const values = perPlayer[pid] ?? [];
+                  const color = PLAYER_COLOR[pid] ?? NEUTRAL_COLOR;
+                  const chipW = 15;
                   const gap = 3;
-                  const totalW = committed.length * chipW + (committed.length - 1) * gap;
+                  const rowH = 15;
+                  const totalW = values.length * chipW + (values.length - 1) * gap;
                   const startX = t.x - totalW / 2;
-                  const cx = startX + i * (chipW + gap) + chipW / 2;
-                  const cy = t.y + half + 9;
+                  const rowY = t.y + half + 8 + rowIdx * (rowH + 3);
+                  const total = sum(values);
                   return (
-                    <g key={i}>
-                      <rect
-                        x={cx - chipW / 2}
-                        y={cy - 8}
-                        width={chipW}
-                        height={16}
-                        rx={4}
-                        fill={PLAYER_COLOR[HUMAN_ID]}
-                      />
-                      <text
-                        x={cx}
-                        y={cy + 4}
-                        textAnchor="middle"
-                        fontSize={10}
-                        fontWeight={800}
-                        fill="#0a0a12"
-                      >
-                        {v}
-                      </text>
+                    <g key={pid}>
+                      {values.map((v, i) => {
+                        const cx = startX + i * (chipW + gap) + chipW / 2;
+                        return (
+                          <g key={i}>
+                            <rect
+                              x={cx - chipW / 2}
+                              y={rowY}
+                              width={chipW}
+                              height={rowH}
+                              rx={4}
+                              fill={color}
+                            />
+                            <text
+                              x={cx}
+                              y={rowY + rowH - 4}
+                              textAnchor="middle"
+                              fontSize={9}
+                              fontWeight={800}
+                              fill="#0a0a12"
+                            >
+                              {v}
+                            </text>
+                          </g>
+                        );
+                      })}
+                      {/* running total to the right of the row */}
+                      {values.length > 1 && (
+                        <text
+                          x={startX + totalW + 5}
+                          y={rowY + rowH - 4}
+                          fontSize={9}
+                          fontWeight={700}
+                          fill={color}
+                        >
+                          ={total}
+                        </text>
+                      )}
                     </g>
                   );
                 })}
-                {committed.length > 1 && (
-                  <text
-                    x={t.x}
-                    y={t.y + half + 26}
-                    textAnchor="middle"
-                    fontSize={8}
-                    fontWeight={700}
-                    fill={PLAYER_COLOR[HUMAN_ID]}
-                  >
-                    = {committedTotal}
-                  </text>
-                )}
               </g>
             )}
 
-            {/* clear hotspot — small × when the human has dice here */}
-            {phase === 'deploy' && committed.length > 0 && (
+            {/* recall hotspot — small × to pull back the human's last die here.
+                Only on the human's own turn (recalling mid-AI desyncs the board). */}
+            {isHumanTurn && myCommitted.length > 0 && (
               <g
                 onClick={(e) => {
                   e.stopPropagation();
-                  onClearTerritory(t.id);
+                  onRecallFromTile(t.id);
                 }}
                 style={{ cursor: 'pointer' }}
               >
@@ -761,7 +969,7 @@ function Board({
   );
 }
 
-function BoardLegend() {
+function BoardLegend({ game }: { game: GameV2 }) {
   const allSpoils: Spoil[] = ['iron', 'gold', 'essence', 'bone', 'wild', 'faith'];
   return (
     <div className="mt-2 flex flex-col gap-2 px-1">
@@ -784,6 +992,19 @@ function BoardLegend() {
           🛡+N = defense bonus
         </span>
       </div>
+      {/* Who's-who: each player's colour, so the committed-dice chip rows read. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]" style={{ color: '#a1a1aa' }}>
+        <span className="mr-1" style={{ color: '#71717a' }}>dice under a tile = committed force:</span>
+        {game.players.map((p) => (
+          <span key={p.id} className="flex items-center gap-1">
+            <span
+              className="inline-block h-3 w-3 rounded"
+              style={{ background: PLAYER_COLOR[p.id] ?? NEUTRAL_COLOR }}
+            />
+            {p.id === HUMAN_ID ? 'You' : FACTIONS[p.faction].name}
+          </span>
+        ))}
+      </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]" style={{ color: '#a1a1aa' }}>
         <span className="mr-1" style={{ color: '#71717a' }}>spoils (hover):</span>
         {allSpoils.map((s) => (
@@ -804,19 +1025,59 @@ function BoardLegend() {
   );
 }
 
-// ── Instruction line + hover inspector ────────────────────────────────────────
+// ── Turn banner + hover inspector ──────────────────────────────────────────────
 
-function InstructionLine({ text, hasSelection }: { text: string; hasSelection: boolean }) {
+// The whose-turn indicator that sits above the board during deployment.
+function TurnBanner({
+  turn,
+  deployDone,
+  humanPassed,
+  text,
+  hasSelection,
+}: {
+  turn: number;
+  deployDone: boolean;
+  humanPassed: boolean;
+  text: string;
+  hasSelection: boolean;
+}) {
+  const yourTurn = !deployDone && turn === HUMAN_ID && !humanPassed;
+  const aiTurn = !deployDone && turn !== HUMAN_ID;
+  const accent = deployDone
+    ? '#a78bfa'
+    : yourTurn
+      ? PLAYER_COLOR[HUMAN_ID]
+      : aiTurn
+        ? PLAYER_COLOR[turn] ?? '#a78bfa'
+        : '#a1a1aa';
+
   return (
     <div
-      className="mb-3 rounded-lg px-3 py-2 text-sm font-semibold transition-colors"
+      className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors"
       style={{
         background: hasSelection ? 'rgba(45,212,191,0.14)' : 'rgba(255,255,255,0.05)',
-        color: hasSelection ? '#5eead4' : '#d4d4d8',
+        color: yourTurn ? (hasSelection ? '#5eead4' : '#d4d4d8') : accent,
         border: `1px solid ${hasSelection ? 'rgba(45,212,191,0.4)' : 'rgba(255,255,255,0.08)'}`,
       }}
     >
-      {text}
+      {/* turn dot — pulses while an AI is deploying */}
+      <span
+        className={aiTurn ? 'ia-reach-armed' : undefined}
+        style={{
+          display: 'inline-block',
+          height: 10,
+          width: 10,
+          borderRadius: 9999,
+          background: accent,
+          flexShrink: 0,
+        }}
+      />
+      <span>{text}</span>
+      {aiTurn && (
+        <span className="ml-1 text-[10px]" style={{ color: '#71717a' }}>
+          (watch the board)
+        </span>
+      )}
     </div>
   );
 }
@@ -825,12 +1086,12 @@ function Inspector({
   territory,
   game,
   myValuation,
-  placements,
+  commitments,
 }: {
   territory: TerritoryV2 | undefined;
   game: GameV2;
   myValuation: (spoil: Spoil | 'universal') => number;
-  placements: Placements;
+  commitments: Commitments;
 }) {
   return (
     <div
@@ -852,9 +1113,13 @@ function Inspector({
               ? 'Neutral'
               : owner === HUMAN_ID
                 ? 'You'
-                : FACTIONS[game.players[owner]!.faction].name;
+                : factionName(game, owner);
           const v = myValuation(territory.spoil);
-          const committed = placements[territory.id] ?? [];
+          const perPlayer = commitments[territory.id] ?? {};
+          const committedPlayers = Object.keys(perPlayer)
+            .map(Number)
+            .filter((pid) => (perPlayer[pid] ?? []).length > 0)
+            .sort((a, b) => a - b);
           return (
             <div className="space-y-1.5 text-xs">
               <div className="flex items-center justify-between">
@@ -895,12 +1160,20 @@ function Inspector({
                   {ownerName}
                 </span>
               </InspectorRow>
-              <InspectorRow label="Your dice">
-                {committed.length === 0 ? (
-                  <span style={{ color: '#71717a' }}>none committed</span>
+              <InspectorRow label="Committed">
+                {committedPlayers.length === 0 ? (
+                  <span style={{ color: '#71717a' }}>none yet</span>
                 ) : (
-                  <span style={{ color: PLAYER_COLOR[HUMAN_ID] }}>
-                    {committed.join(' + ')} = {sum(committed)}
+                  <span className="flex flex-col items-end gap-0.5">
+                    {committedPlayers.map((pid) => {
+                      const values = perPlayer[pid] ?? [];
+                      const label = pid === HUMAN_ID ? 'You' : factionName(game, pid);
+                      return (
+                        <span key={pid} style={{ color: PLAYER_COLOR[pid] ?? NEUTRAL_COLOR }}>
+                          {label}: {values.join(' + ')} = {sum(values)}
+                        </span>
+                      );
+                    })}
                   </span>
                 )}
               </InspectorRow>
@@ -938,7 +1211,17 @@ function PhaseBadge({ phase, round }: { phase: Phase; round: number }) {
   );
 }
 
-function Standings({ players, phase }: { players: GameV2['players']; phase: Phase }) {
+function Standings({
+  players,
+  phase,
+  turn,
+  deployDone,
+}: {
+  players: GameV2['players'];
+  phase: Phase;
+  turn: number;
+  deployDone: boolean;
+}) {
   const sorted = phase === 'end' ? [...players].sort((a, b) => b.vp - a.vp) : players;
   return (
     <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -946,18 +1229,26 @@ function Standings({ players, phase }: { players: GameV2['players']; phase: Phas
         Standings
       </h2>
       <div className="space-y-1.5">
-        {sorted.map((p) => (
-          <div key={p.id} className="flex items-center gap-2 text-sm">
-            <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: PLAYER_COLOR[p.id] }} />
-            <span className="flex-1 truncate" style={{ color: p.id === HUMAN_ID ? '#fafafa' : '#d4d4d8' }}>
-              {FACTIONS[p.faction].name}
-              {p.id === HUMAN_ID && <span className="ml-1 text-[10px]" style={{ color: '#71717a' }}>(you)</span>}
-            </span>
-            <span className="font-mono font-bold tabular-nums" style={{ color: PLAYER_COLOR[p.id] }}>
-              {p.vp}
-            </span>
-          </div>
-        ))}
+        {sorted.map((p) => {
+          const isActiveTurn = phase === 'deploy' && !deployDone && p.id === turn;
+          return (
+            <div key={p.id} className="flex items-center gap-2 text-sm">
+              <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: PLAYER_COLOR[p.id] }} />
+              <span className="flex-1 truncate" style={{ color: p.id === HUMAN_ID ? '#fafafa' : '#d4d4d8' }}>
+                {FACTIONS[p.faction].name}
+                {p.id === HUMAN_ID && <span className="ml-1 text-[10px]" style={{ color: '#71717a' }}>(you)</span>}
+                {isActiveTurn && (
+                  <span className="ml-1.5 text-[10px] font-semibold" style={{ color: PLAYER_COLOR[p.id] }}>
+                    ◀ deploying
+                  </span>
+                )}
+              </span>
+              <span className="font-mono font-bold tabular-nums" style={{ color: PLAYER_COLOR[p.id] }}>
+                {p.vp}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1024,8 +1315,8 @@ function Hand({
   slotPlacement,
   territories,
   instruction,
+  interactive,
   onSelectDie,
-  onRecallDie,
 }: {
   hand: RolledDie[];
   usedDice: Set<number>;
@@ -1034,8 +1325,8 @@ function Hand({
   slotPlacement: Record<number, string>;
   territories: Record<string, TerritoryV2>;
   instruction: string;
+  interactive: boolean;
   onSelectDie: (slot: number) => void;
-  onRecallDie: (slot: number, tid: string) => void;
 }) {
   return (
     <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -1051,7 +1342,7 @@ function Hand({
           </span>
         )}
       </h2>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2" style={{ opacity: interactive ? 1 : 0.6 }}>
         {hand.map((die, slot) => {
           const used = usedDice.has(slot);
           const isSelected = selected === slot;
@@ -1059,22 +1350,26 @@ function Hand({
           const tier = TIER_META[profile.tier] ?? TIER_META.Soldier!;
           const placedTid = slotPlacement[slot];
           const placedName = placedTid ? territories[placedTid]?.name : undefined;
+          const clickable = interactive && !used;
 
           return (
             <button
               key={`${die.unit.id}-${slot}`}
-              onClick={() => (used && placedTid ? onRecallDie(slot, placedTid) : onSelectDie(slot))}
+              onClick={() => clickable && onSelectDie(slot)}
+              disabled={!clickable}
               title={
                 used
-                  ? `Placed${placedName ? ` on ${placedName}` : ''} — click to recall. ${tier.help}`
-                  : tier.help
+                  ? `Placed${placedName ? ` on ${placedName}` : ''}. ${tier.help}`
+                  : interactive
+                    ? tier.help
+                    : `${tier.help} — wait for your turn.`
               }
               className="relative flex w-16 flex-col items-center overflow-hidden rounded-lg pt-1.5 pb-1 transition-all"
               style={{
                 background: isSelected ? PLAYER_COLOR[HUMAN_ID] : 'rgba(255,255,255,0.07)',
                 border: isSelected ? `2px solid #fff` : `2px solid ${used ? 'transparent' : tier.band}`,
                 opacity: used ? 0.4 : 1,
-                cursor: 'pointer',
+                cursor: clickable ? 'pointer' : 'default',
                 transform: isSelected ? 'translateY(-4px)' : 'none',
                 boxShadow: isSelected ? `0 0 0 3px ${PLAYER_COLOR[HUMAN_ID]}66, 0 6px 14px rgba(0,0,0,0.5)` : 'none',
               }}
@@ -1114,7 +1409,9 @@ function Hand({
       </div>
       <p className="mt-2 text-[10px]" style={{ color: '#a1a1aa' }}>
         {instruction}
-        {usedDice.size > 0 && <span style={{ color: '#71717a' }}> · click a dimmed die to recall it</span>}
+        {interactive && usedDice.size > 0 && (
+          <span style={{ color: '#71717a' }}> · tap the × on a tile to recall your last die</span>
+        )}
       </p>
     </div>
   );

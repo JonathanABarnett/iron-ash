@@ -65,8 +65,11 @@ const STEPS: Step[] = [
   {
     body: (
       <>
-        Press <strong>Resolve</strong> — you and the AI reveal commitments at once. Highest total
-        wins the tile (the current defender adds their terrain bonus; ties stay with the owner).
+        You and your rival <strong>take turns placing one die at a time</strong> — and you can see
+        each other&rsquo;s forces on every tile, so watch where they mass and react. Place a die or{' '}
+        <strong>Pass</strong> when you&rsquo;re done. When everyone has finished, press{' '}
+        <strong>Resolve</strong>: each tile goes to the highest total (the current defender adds
+        their terrain bonus; ties stay with the owner).
       </>
     ),
   },
