@@ -5,9 +5,10 @@
 // Run:  npx tsx scripts/v2-board-test.ts
 
 import {
-  createGameV2, reachable, rollHand, resolveRound, scoreRound, ROUNDS,
-  type GameV2, type Deployments,
+  createGameV2, rollHand, resolveRound, scoreRound, ROUNDS,
+  type Deployments,
 } from '../src/v2/game';
+import { planDeployment } from '../src/v2/ai';
 import { scoreObjectives, objectiveById } from '../src/v2/objectives';
 import {
   FACTIONS, RING, valueOf, validCombos, opposite, ringArc,
@@ -39,38 +40,8 @@ for (const [s, ws] of Object.entries(wanters)) console.log(`    ${s.padEnd(8)} �
 
 // ─── greedy AI: pursue tiles VALUED BY MY FACTION (the asymmetry driver) ──────
 
-function aiPlace(game: GameV2, playerId: number, hand: { value: number }[]): Record<string, number> {
-  const faction = FACTIONS[game.players[playerId]!.faction];
-  const reach = [...reachable(game, playerId)];
-  const desirability = (tid: string): number => {
-    const t = game.board.territories[tid]!;
-    const mine = game.owner[tid] === playerId;
-    const enemyOwned = game.owner[tid] !== undefined && !mine;
-    let s = valueOf(faction, t.spoil);          // 3/2/1 by faction — drives fan-out
-    if (t.role === 'center') s += 1;            // universal prize, slight extra pull
-    if (enemyOwned) s += 0.5;                   // taking enemy land
-    if (mine && t.role !== 'home') s += 0.3;    // hold scoring land we already have
-    return s;
-  };
-  const targets = reach
-    .filter((tid) => !(game.board.territories[tid]!.role === 'home' && game.owner[tid] === playerId))
-    .sort((a, b) => desirability(b) - desirability(a));
-  const need = (tid: string): number => {
-    const t = game.board.territories[tid]!;
-    const enemyOwned = game.owner[tid] !== undefined && game.owner[tid] !== playerId;
-    return (enemyOwned ? t.defenseBonus : 0) + 5;
-  };
-  const dice = [...hand].sort((a, b) => b.value - a.value);
-  const placements: Record<string, number> = {};
-  let ti = 0;
-  for (const d of dice) {
-    while (ti < targets.length && (placements[targets[ti]!] ?? 0) >= need(targets[ti]!)) ti++;
-    const tid = targets[ti] ?? targets[0];
-    if (!tid) break;
-    placements[tid] = (placements[tid] ?? 0) + d.value;
-  }
-  return placements;
-}
+// AI deployment is shared with the sandbox UI — single brain in src/v2/ai.ts.
+const aiPlace = planDeployment;
 
 interface GameResult {
   decisions: number; contested: number; changes: number;

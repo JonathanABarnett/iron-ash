@@ -6,12 +6,14 @@ import { TutorialPage }  from '@ui/pages/TutorialPage';
 import { ConfigPage }    from '@ui/pages/ConfigPage';
 import { ReplayPage }    from '@ui/pages/ReplayPage';
 import { RulesPage }     from '@ui/pages/RulesPage';
+import { V2Page }        from '@ui/pages/V2Page';
 
 // ── Nav structure ─────────────────────────────────────────────────────────────
 
 const NAV_PRIMARY = [
   { to: '/tutorial', icon: TutorialIcon, label: 'Tutorial' },
   { to: '/play',     icon: PlayIcon,     label: 'Play'     },
+  { to: '/v2',       icon: V2Icon,       label: 'V2'       },
   { to: '/sim',      icon: SimIcon,      label: 'Simulate' },
 ] as const;
 
@@ -41,6 +43,7 @@ export default function App() {
               <Route path="/"          element={<HomePage />}      />
               <Route path="/tutorial"  element={<TutorialPage />} />
               <Route path="/play"      element={<PlayPage />}     />
+              <Route path="/v2"        element={<V2Page />}       />
               <Route path="/sim"       element={<SimPage />}      />
               <Route path="/rules"     element={<RulesPage />}    />
               <Route path="/replay"    element={<ReplayPage />}   />
@@ -157,6 +160,7 @@ const ALL_NAV = [
   { to: '/',          icon: HomeIcon,     label: 'Home'     },
   { to: '/tutorial',  icon: TutorialIcon, label: 'Tutorial' },
   { to: '/play',      icon: PlayIcon,     label: 'Play'     },
+  { to: '/v2',        icon: V2Icon,       label: 'V2'       },
   { to: '/sim',       icon: SimIcon,      label: 'Sim'      },
   { to: '/rules',     icon: RulesIcon,    label: 'Rules'    },
 ];
@@ -207,6 +211,15 @@ function PlayIcon({ className = '' }) {
       <rect x="1" y="10" width="5" height="4" rx="0.75" />
       <rect x="10" y="6" width="5" height="4" rx="0.75" />
       <path d="M6 4h4M6 12h4M6 4v8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function V2Icon({ className = '' }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 1.5l5.5 3v7L8 14.5 2.5 11.5v-7L8 1.5z" strokeLinejoin="round" />
+      <circle cx="8" cy="8" r="1.25" fill="currentColor" stroke="none" />
     </svg>
   );
 }
