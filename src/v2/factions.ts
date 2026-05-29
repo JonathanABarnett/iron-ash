@@ -22,11 +22,19 @@ import type { UnitRange } from './units';
 export type Spoil = 'iron' | 'gold' | 'essence' | 'bone' | 'wild' | 'faith';
 export type FactionId = 'warriors' | 'merchants' | 'rangers' | 'necromancers' | 'mages' | 'paladins';
 
+export interface FactionAbility {
+  name: string;
+  /** Player-facing one-liner for the UI. */
+  description: string;
+}
+
 export interface FactionDef {
   id: FactionId;
   name: string;
   primary: Spoil;
   secondary: readonly [Spoil, Spoil];
+  /** Signature passive — the SECOND identity axis beyond spoils + pool shape. */
+  ability: FactionAbility;
   /**
    * Starting dice pool — the FIRST axis of faction identity (alongside which
    * spoils score). Differentiated on two axes:
@@ -48,18 +56,39 @@ export interface FactionDef {
 // (variance, count) + the spoil web, kept close enough in effectiveness.
 export const FACTIONS: Record<FactionId, FactionDef> = {
   // Elite — 5 dice, two strong + support. Wins contests, decent reach.
-  warriors:     { id: 'warriors',     name: 'Warriors',     primary: 'iron',    secondary: ['gold', 'faith'],   pool: ['3-6', '3-6', '2-5', '1-3', '1-3'] },
+  warriors:     { id: 'warriors',     name: 'Warriors',     primary: 'iron',    secondary: ['gold', 'faith'],   pool: ['3-6', '3-6', '2-5', '1-3', '1-3'],
+    ability: { name: 'Warlord', description: 'Your forces fight harder — +2 to your total in every contest.' } },
   // Breadth swarm — 6 lighter dice; spread wide, win on coverage not punch.
-  merchants:    { id: 'merchants',    name: 'Merchants',    primary: 'gold',    secondary: ['iron', 'wild'],    pool: ['2-5', '2-5', '1-3', '1-3', '1-3', '1-3'] },
+  merchants:    { id: 'merchants',    name: 'Merchants',    primary: 'gold',    secondary: ['iron', 'wild'],    pool: ['2-5', '2-5', '1-3', '1-3', '1-3', '1-3'],
+    ability: { name: 'Coffers', description: 'Trade wealth — +1 bonus VP each round for every 2 territories you hold.' } },
   // Skirmisher swarm — 6 dice, a touch lighter than a line army.
-  rangers:      { id: 'rangers',      name: 'Rangers',      primary: 'wild',    secondary: ['gold', 'bone'],    pool: ['2-5', '2-5', '1-3', '1-3', '1-3', '1-3'] },
-  // Mixed/durable — elite anchor + line + bodies (recursion ability later).
-  necromancers: { id: 'necromancers', name: 'Necromancers', primary: 'bone',    secondary: ['essence', 'wild'], pool: ['3-6', '2-5', '2-5', '1-3', '1-3'] },
+  rangers:      { id: 'rangers',      name: 'Rangers',      primary: 'wild',    secondary: ['gold', 'bone'],    pool: ['2-5', '2-5', '1-3', '1-3', '1-3', '1-3'],
+    ability: { name: 'Ambush', description: 'Raiders — +1 to your total when attacking a territory you don\'t hold.' } },
+  // Mixed/durable — elite anchor + line + bodies; recovers from defeat.
+  necromancers: { id: 'necromancers', name: 'Necromancers', primary: 'bone',    secondary: ['essence', 'wild'], pool: ['3-6', '2-5', '2-5', '1-3', '1-3'],
+    ability: { name: 'Soul Harvest', description: 'Raise the fallen — gain a bonus die next round for each contest you lose this round.' } },
   // Surgical & swingy — 5 dice, two high-ceiling Champions.
-  mages:        { id: 'mages',        name: 'Mages',        primary: 'essence', secondary: ['bone', 'faith'],   pool: ['1-6', '1-6', '2-5', '2-5', '1-3'] },
+  mages:        { id: 'mages',        name: 'Mages',        primary: 'essence', secondary: ['bone', 'faith'],   pool: ['1-6', '1-6', '2-5', '2-5', '1-3'],
+    ability: { name: 'Arcane Focus', description: 'Precision casting — your Champion dice (1-6) never roll below 4.' } },
   // Disciplined line — 5 dice, reliable, low swing.
-  paladins:     { id: 'paladins',     name: 'Paladins',     primary: 'faith',   secondary: ['iron', 'essence'], pool: ['2-5', '2-5', '2-5', '1-3', '1-3'] },
+  paladins:     { id: 'paladins',     name: 'Paladins',     primary: 'faith',   secondary: ['iron', 'essence'], pool: ['2-5', '2-5', '2-5', '1-3', '1-3'],
+    ability: { name: 'Consecrate', description: 'Hold the line — +1 defense on every territory you hold (your ground is harder to take).' } },
 };
+
+/** Warriors' Warlord: bonus added to their committed total in any contest. */
+export function combatBonus(factionId: FactionId): number {
+  return factionId === 'warriors' ? 1 : 0;
+}
+
+/** Paladins' Consecrate: bonus defense added when they're the tile's owner. */
+export function defenseBonusFor(factionId: FactionId): number {
+  return factionId === 'paladins' ? 1 : 0;
+}
+
+/** Rangers' Ambush: bonus added to their total when ATTACKING (not the owner). */
+export function attackBonus(factionId: FactionId): number {
+  return factionId === 'rangers' ? 1 : 0;
+}
 
 /** Hexagon ring order — adjacent entries are strong rivals (share 2 spoils). */
 export const RING: readonly FactionId[] = ['warriors', 'merchants', 'rangers', 'necromancers', 'mages', 'paladins'];

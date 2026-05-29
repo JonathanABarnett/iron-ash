@@ -15,7 +15,7 @@ import { generateBoard, type BoardV2 } from './board';
 import { makeUnits, poolFromRanges, rollPool, type RolledDie, type Unit } from './units';
 import { resolveContest } from './combat';
 import { assignObjectives } from './objectives';
-import { FACTIONS, valueOf, type FactionId } from './factions';
+import { FACTIONS, valueOf, combatBonus, defenseBonusFor, attackBonus, type FactionId } from './factions';
 
 export const ROUNDS = 6;
 
@@ -52,6 +52,9 @@ export interface GameV2 {
    * anti-snowball). Reset on capture, incremented at scoring.
    */
   heldStreak: Record<string, number>;
+  /** Necromancers' Soul Harvest: bonus dice owed to a player next round
+   *  (1 per contest they lost). playerId → count. Consumed at rollHand. */
+  pendingBonusDice: Record<number, number>;
 }
 
 /** Per-round yield of a tile after depletion: full value minus how many times
@@ -70,13 +73,13 @@ export function createGameV2(factionIds: FactionId[], seed: string): GameV2 {
   // Each player starts owning their home.
   const owner: Record<string, number> = {};
   board.homeIds.forEach((h, i) => { owner[h] = i; });
-  const game: GameV2 = { board, players, owner, round: 0, clock: 0, heldStreak: {} };
+  const game: GameV2 = { board, players, owner, round: 0, clock: 0, heldStreak: {}, pendingBonusDice: {} };
   // Deal hidden objectives from a seeded, board-independent stream.
   assignObjectives(game, new Rng(`v2-obj-${seed}-${factionIds.join('-')}`));
   return game;
 }
 
-/** Territories a player may deploy into: ones they own, or adjacent to ones they own. */
+/** Territories a player may deploy into: ones they own, or adjacent to them. */
 export function reachable(game: GameV2, playerId: number): Set<string> {
   const out = new Set<string>();
   for (const [tid, o] of Object.entries(game.owner)) {
@@ -104,11 +107,28 @@ export function catchUpDiceCount(game: GameV2, playerId: number): number {
 }
 
 export function rollHand(game: GameV2, playerId: number, rng: Rng): RolledDie[] {
-  const base = rollPool(game.players[playerId]!.pool, rng);
-  const bonus = catchUpDiceCount(game, playerId);
-  if (bonus === 0) return base;
-  const reinforcements = makeUnits('2-5', bonus, `catchup-p${playerId}-r${game.round}`);
-  return [...base, ...rollPool(reinforcements, rng)];
+  const faction = FACTIONS[game.players[playerId]!.faction];
+  const hand = rollPool(game.players[playerId]!.pool, rng);
+
+  // Mages — Arcane Focus: Champion dice (1-6) never roll below 4.
+  if (faction.id === 'mages') {
+    for (const d of hand) if (d.unit.range === '1-6' && d.value < 4) d.value = 4;
+  }
+
+  // Catch-up reinforcements (underdog).
+  const catchup = catchUpDiceCount(game, playerId);
+  if (catchup > 0) {
+    hand.push(...rollPool(makeUnits('2-5', catchup, `catchup-p${playerId}-r${game.round}`), rng));
+  }
+
+  // Necromancers — Soul Harvest: bonus dice owed from contests lost last round.
+  const owed = game.pendingBonusDice[playerId] ?? 0;
+  if (owed > 0) {
+    hand.push(...rollPool(makeUnits('2-5', owed, `harvest-p${playerId}-r${game.round}`), rng));
+    game.pendingBonusDice[playerId] = 0;
+  }
+
+  return hand;
 }
 
 /** A deployment: which player put how much total value onto a territory this round. */
@@ -124,24 +144,49 @@ export function resolveRound(game: GameV2, deployments: Deployments): {
   const results: { territoryId: string; changed: boolean; contested: boolean; newOwner: number | null }[] = [];
   for (const [tid, committed] of Object.entries(deployments)) {
     const terr = game.board.territories[tid]!;
-    const r = resolveContest({
-      committed,
-      owner: game.owner[tid] ?? null,
-      terrainBonus: terr.defenseBonus,
-    });
+
     const prevOwner = game.owner[tid] ?? null;
+    // Combat abilities: Warriors' Warlord (+1 always) and Rangers' Ambush
+    // (+2 when attacking a tile they don't own) fold into committed totals.
+    const effectiveCommitted: Record<number, number> = {};
+    for (const k of Object.keys(committed)) {
+      const pid = Number(k);
+      const fac = game.players[pid]!.faction;
+      const ambush = pid !== prevOwner ? attackBonus(fac) : 0;
+      effectiveCommitted[pid] = committed[pid]! + combatBonus(fac) + ambush;
+    }
+
+    // Paladins — Consecrate: +2 defense on tiles they own.
+    const ownerDefBonus = prevOwner !== null ? defenseBonusFor(game.players[prevOwner]!.faction) : 0;
+    const r = resolveContest({
+      committed: effectiveCommitted,
+      owner: prevOwner,
+      terrainBonus: terr.defenseBonus + ownerDefBonus,
+    });
     if (r.newOwner !== null) game.owner[tid] = r.newOwner;
     if (r.changed) { game.clock += 1; game.heldStreak[tid] = 0; } // fresh capture → full yield
 
-    // Stats for hidden objectives.
     if (r.newOwner !== null && r.newOwner !== prevOwner) {
+      // Stats for hidden objectives.
       if (r.contested) game.players[r.newOwner]!.stats.contestsWon += 1;
-      // Captured a strongpoint (pass or throne) from a rival?
       const captured = prevOwner !== null;
       if (captured && (terr.role === 'choke' || terr.role === 'center')) {
         game.players[r.newOwner]!.stats.strongpointsCaptured += 1;
       }
     }
+
+    // Necromancers — Soul Harvest: each contest a Necromancer LOST (committed
+    // here but didn't end up owning the contested tile) earns a bonus die next
+    // round.
+    if (r.contested) {
+      for (const k of Object.keys(committed)) {
+        const pid = Number(k);
+        if (pid !== r.newOwner && game.players[pid]!.faction === 'necromancers') {
+          game.pendingBonusDice[pid] = (game.pendingBonusDice[pid] ?? 0) + 1;
+        }
+      }
+    }
+
     results.push({ territoryId: tid, changed: r.changed, contested: r.contested, newOwner: r.newOwner });
   }
   return results;
@@ -155,12 +200,19 @@ export function resolveRound(game: GameV2, deployments: Deployments): {
  * pushing players off their corners onto fresh, contested ground.
  */
 export function scoreRound(game: GameV2): void {
+  const tilesHeld: Record<number, number> = {};
   for (const [tid, ownerId] of Object.entries(game.owner)) {
     const terr = game.board.territories[tid]!;
     const faction = FACTIONS[game.players[ownerId]!.faction];
+    tilesHeld[ownerId] = (tilesHeld[ownerId] ?? 0) + 1;
     const streak = game.heldStreak[tid] ?? 0;
     game.players[ownerId]!.vp += depletedYield(valueOf(faction, terr.spoil), streak);
-    game.heldStreak[tid] = streak + 1; // one more scoring under the current owner
+    game.heldStreak[tid] = streak + 1;
+  }
+
+  // Merchants — Coffers: +1 bonus VP per 2 territories held this round.
+  for (const p of game.players) {
+    if (p.faction === 'merchants') p.vp += Math.floor((tilesHeld[p.id] ?? 0) / 2);
   }
 }
 
