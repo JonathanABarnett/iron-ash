@@ -39,19 +39,26 @@ export interface FactionDef {
   pool: readonly UnitRange[];
 }
 
+// Pools are POWER-NORMALISED (~14.7–15.5 avg total each) so no faction is just
+// weak — they differ in SHAPE, not strength. avg/die: Levy 2.0, Soldier 3.17,
+// Elite 4.5, Champion 3.5 (swingy).
+// In the churn meta, dice COUNT (placements) is the dominant lever but weak
+// dice waste it — so counts cluster at 5-6 and the strong-die factions trade
+// raw power for fewer/weaker support dice. Identity now lives in SHAPE
+// (variance, count) + the spoil web, kept close enough in effectiveness.
 export const FACTIONS: Record<FactionId, FactionDef> = {
-  // Elite military — fewer, strong, reliable. Wins contests head-on.
-  warriors:     { id: 'warriors',     name: 'Warriors',     primary: 'iron',    secondary: ['gold', 'faith'],   pool: ['3-6', '3-6', '2-5', '2-5', '1-3'] },
-  // Numerous & cheap — 6 weak dice; spread wide, avoid big fights.
-  merchants:    { id: 'merchants',    name: 'Merchants',    primary: 'gold',    secondary: ['iron', 'wild'],    pool: ['2-5', '1-3', '1-3', '1-3', '1-3', '1-3'] },
-  // Swarm skirmishers — 6 dice, light but many.
+  // Elite — 5 dice, two strong + support. Wins contests, decent reach.
+  warriors:     { id: 'warriors',     name: 'Warriors',     primary: 'iron',    secondary: ['gold', 'faith'],   pool: ['3-6', '3-6', '2-5', '1-3', '1-3'] },
+  // Breadth swarm — 6 lighter dice; spread wide, win on coverage not punch.
+  merchants:    { id: 'merchants',    name: 'Merchants',    primary: 'gold',    secondary: ['iron', 'wild'],    pool: ['2-5', '2-5', '1-3', '1-3', '1-3', '1-3'] },
+  // Skirmisher swarm — 6 dice, a touch lighter than a line army.
   rangers:      { id: 'rangers',      name: 'Rangers',      primary: 'wild',    secondary: ['gold', 'bone'],    pool: ['2-5', '2-5', '1-3', '1-3', '1-3', '1-3'] },
-  // Attrition horde — bodies over quality (recursion ability comes later).
-  necromancers: { id: 'necromancers', name: 'Necromancers', primary: 'bone',    secondary: ['essence', 'wild'], pool: ['2-5', '2-5', '1-3', '1-3', '1-3'] },
-  // Surgical — only 4 dice but high ceiling; swingy Champions.
-  mages:        { id: 'mages',        name: 'Mages',        primary: 'essence', secondary: ['bone', 'faith'],   pool: ['3-6', '1-6', '1-6', '2-5'] },
-  // Disciplined line — consistent, no swing.
-  paladins:     { id: 'paladins',     name: 'Paladins',     primary: 'faith',   secondary: ['iron', 'essence'], pool: ['2-5', '2-5', '2-5', '3-6', '1-3'] },
+  // Mixed/durable — elite anchor + line + bodies (recursion ability later).
+  necromancers: { id: 'necromancers', name: 'Necromancers', primary: 'bone',    secondary: ['essence', 'wild'], pool: ['3-6', '2-5', '2-5', '1-3', '1-3'] },
+  // Surgical & swingy — 5 dice, two high-ceiling Champions.
+  mages:        { id: 'mages',        name: 'Mages',        primary: 'essence', secondary: ['bone', 'faith'],   pool: ['1-6', '1-6', '2-5', '2-5', '1-3'] },
+  // Disciplined line — 5 dice, reliable, low swing.
+  paladins:     { id: 'paladins',     name: 'Paladins',     primary: 'faith',   secondary: ['iron', 'essence'], pool: ['2-5', '2-5', '2-5', '1-3', '1-3'] },
 };
 
 /** Hexagon ring order — adjacent entries are strong rivals (share 2 spoils). */
