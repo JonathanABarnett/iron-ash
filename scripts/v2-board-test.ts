@@ -1,15 +1,14 @@
-// ─── v2 prototype validation ─────────────────────────────────────────────────
-// Answers the core design questions BEFORE we build any UI:
-//   1. Does the player-count-scaled board have sane topology?
-//   2. Do armies actually COLLIDE? (v1's fatal flaw was that they didn't.)
-//   3. Is combat balanced? (Is defense too dominant? Are casualties healthy?)
-//   4. Does combat read dramatically?
+// ─── v2 lean-model validation ────────────────────────────────────────────────
+// Renewable dice + single-comparison contests + 6 rounds. Confirms the model
+// is (a) conflict-rich, (b) TIGHT enough for 45–90 min, (c) competitive.
 //
 // Run:  npx tsx scripts/v2-board-test.ts
 
-import { generateBoard, territoryList, graphDistance, type BoardV2 } from '../src/v2/board';
-import { resolveBattle, describeBattle } from '../src/v2/combat';
-import { makeUnits, UNIT_PROFILE, type Unit, type UnitRange } from '../src/v2/units';
+import { generateBoard, territoryList, graphDistance } from '../src/v2/board';
+import {
+  createGameV2, reachable, rollHand, resolveRound, scoreRound, ROUNDS,
+  type GameV2, type Deployments,
+} from '../src/v2/game';
 import { Rng } from '../src/engine/rng';
 
 function hr(label: string) {
@@ -18,164 +17,143 @@ function hr(label: string) {
   console.log('─'.repeat(74));
 }
 
-// ─── 1. Topology report ───────────────────────────────────────────────────────
+// ─── 1. Topology ──────────────────────────────────────────────────────────────
 
 hr('1. BOARD TOPOLOGY (3N + 1 scaling)');
-
 for (const N of [2, 3, 4]) {
   const board = generateBoard(N, 'demo');
   const list = territoryList(board);
-  const byRole = (role: string) => list.filter((t) => t.role === role).length;
   const avgDegree = (list.reduce((s, t) => s + t.adjacency.length, 0) / list.length).toFixed(1);
   const homeToCenter = board.homeIds.map((h) => graphDistance(board, h, board.centerId));
-
-  console.log(`\n  ${N} players → ${list.length} territories (expected ${3 * N + 1})`);
-  console.log(`    roles: ${byRole('home')} home · ${byRole('choke')} choke · ${byRole('border')} border · ${byRole('center')} center`);
-  console.log(`    avg connections/territory: ${avgDegree} · home→center: ${homeToCenter.join(', ')} edges`);
+  console.log(`  ${N}p → ${list.length} territories (exp ${3 * N + 1}) · avg degree ${avgDegree} · home→centre ${homeToCenter.join('/')} edges`);
 }
 
-// ─── 2. Combat balance ────────────────────────────────────────────────────────
-// Equal-force clashes across terrain bonuses — is defense too dominant?
+// ─── Greedy AI: concentrate force on the most valuable reachable targets ──────
 
-hr('2. COMBAT BALANCE (attacker win % at equal force, by terrain bonus)');
+function aiPlace(game: GameV2, playerId: number, hand: { value: number }[]): Record<string, number> {
+  const reach = [...reachable(game, playerId)];
+  const desirability = (tid: string): number => {
+    const t = game.board.territories[tid]!;
+    const mine = game.owner[tid] === playerId;
+    const enemyOwned = game.owner[tid] !== undefined && !mine;
+    let s = 1 + t.vpPerRound * 2;
+    if (t.role === 'center') s += 3;
+    if (enemyOwned) s += 1;                       // taking enemy land
+    if (mine && t.role !== 'home') s += 0.5;      // defend scoring land we hold
+    return s;
+  };
+  // Don't bother deploying into our own home (it doesn't score and isn't threatened often).
+  const targets = reach
+    .filter((tid) => !(game.board.territories[tid]!.role === 'home' && game.owner[tid] === playerId))
+    .sort((a, b) => desirability(b) - desirability(a));
 
-function unitsOf(range: UnitRange, n: number, tag: string): Unit[] {
-  return makeUnits(range, n, tag);
-}
+  const need = (tid: string): number => {
+    const t = game.board.territories[tid]!;
+    const enemyOwned = game.owner[tid] !== undefined && game.owner[tid] !== playerId;
+    return (enemyOwned ? t.defenseBonus : 0) + 5; // rough force to secure
+  };
 
-function attackerWinRate(atk: Unit[], def: Unit[], defenseBonus: number, trials: number): { win: number; atkLoss: number; defLoss: number } {
-  let wins = 0, atkLoss = 0, defLoss = 0;
-  for (let i = 0; i < trials; i++) {
-    const rng = new Rng(`bal-${defenseBonus}-${atk.length}-${def.length}-${i}`);
-    const r = resolveBattle({ units: atk }, { units: def }, defenseBonus, rng);
-    if (r.territoryCaptured) wins++;
-    atkLoss += r.attackerLosses;
-    defLoss += r.defenderLosses;
+  const dice = [...hand].sort((a, b) => b.value - a.value);
+  const placements: Record<string, number> = {};
+  let ti = 0;
+  for (const d of dice) {
+    while (ti < targets.length && (placements[targets[ti]!] ?? 0) >= need(targets[ti]!)) ti++;
+    const tid = targets[ti] ?? targets[0];
+    if (!tid) break;
+    placements[tid] = (placements[tid] ?? 0) + d.value;
   }
-  return { win: wins / trials, atkLoss: atkLoss / trials, defLoss: defLoss / trials };
+  return placements;
 }
 
-console.log('\n  3 soldiers (2-5) attacking 3 soldiers (2-5):');
-for (const bonus of [0, 1, 2, 3]) {
-  const r = attackerWinRate(unitsOf('2-5', 3, 'a'), unitsOf('2-5', 3, 'd'), bonus, 4000);
-  console.log(`    +${bonus} terrain → attacker wins ${(r.win * 100).toFixed(0)}%  (avg losses: atk ${r.atkLoss.toFixed(1)}, def ${r.defLoss.toFixed(1)})`);
-}
+interface GameMetrics { decisions: number; contested: number; changes: number; vps: number[] }
 
-console.log('\n  Force-quality matters — vs a 3-soldier defender on +2 terrain:');
-for (const [range, label] of [['1-3', '3 levies   '], ['2-5', '3 soldiers '], ['3-6', '3 elites   '], ['1-6', '3 champions']] as const) {
-  const r = attackerWinRate(unitsOf(range, 3, 'a'), unitsOf('2-5', 3, 'd'), 2, 4000);
-  console.log(`    ${label} attacking → ${(r.win * 100).toFixed(0)}% win`);
-}
-
-console.log('\n  Numbers matter — soldiers vs a 3-soldier defender on +2 terrain:');
-for (const n of [2, 3, 4, 5]) {
-  const r = attackerWinRate(unitsOf('2-5', n, 'a'), unitsOf('2-5', 3, 'd'), 2, 4000);
-  console.log(`    ${n} attackers → ${(r.win * 100).toFixed(0)}% win  (avg atk losses ${r.atkLoss.toFixed(1)})`);
-}
-
-// ─── 3. Collision simulation ──────────────────────────────────────────────────
-
-interface Occupancy { owner: number; units: Unit[] }
-
-function startForce(tag: string): Unit[] {
-  // Two soldiers + a levy — a small mixed garrison.
-  return [...makeUnits('2-5', 2, `${tag}-s`), ...makeUnits('1-3', 1, `${tag}-l`)];
-}
-
-function reinforce(income: number, tag: string): Unit[] {
-  // Income buys soldiers; the centre/fortresses (income 3) fund an elite.
-  if (income >= 3) return makeUnits('3-6', 1, `${tag}-e`);
-  return makeUnits('2-5', Math.max(1, income - 1), `${tag}-r`);
-}
-
-function simulateGame(board: BoardV2, seed: string): { battles: number; centerFlips: number } {
+function simulateGame(playerCount: number, seed: string): GameMetrics {
   const rng = new Rng(seed);
-  const occ: Record<string, Occupancy> = {};
-  board.homeIds.forEach((h, i) => { occ[h] = { owner: i, units: startForce(`p${i}-r0`) }; });
+  const game = createGameV2(playerCount, seed);
+  let decisions = 0, contested = 0, changes = 0;
 
-  let battles = 0, centerFlips = 0, lastCenterOwner = -1, idc = 0;
-  const ROUNDS = 7;
-
-  for (let round = 0; round < ROUNDS; round++) {
-    for (let p = 0; p < board.playerCount; p++) {
-      const sources = Object.entries(occ).filter(([, o]) => o.owner === p && o.units.length >= 2);
-      if (sources.length === 0) continue;
-
-      let best: { from: string; to: string; score: number } | null = null;
-      for (const [fromId] of sources) {
-        for (const toId of board.territories[fromId]!.adjacency) {
-          const target = occ[toId];
-          const enemy = target && target.owner !== p;
-          const closer = graphDistance(board, toId, board.centerId) < graphDistance(board, fromId, board.centerId);
-          const score = (enemy ? 3 : 0) + (closer ? 1 : 0) + (toId === board.centerId ? 2 : 0);
-          if (score > 0 && (!best || score > best.score)) best = { from: fromId, to: toId, score };
-        }
+  for (let round = 1; round <= ROUNDS; round++) {
+    game.round = round;
+    const deployments: Deployments = {};
+    for (let p = 0; p < playerCount; p++) {
+      const hand = rollHand(game, p, rng);
+      decisions += hand.length; // each die placed ≈ one decision
+      const placements = aiPlace(game, p, hand);
+      for (const [tid, val] of Object.entries(placements)) {
+        (deployments[tid] ??= {})[p] = (deployments[tid]![p] ?? 0) + val;
       }
-      if (!best) continue;
-
-      const src = occ[best.from]!;
-      const moveCount = Math.max(1, Math.floor(src.units.length / 2));
-      const moving = src.units.slice(0, moveCount);
-      src.units = src.units.slice(moveCount);
-      if (src.units.length === 0) delete occ[best.from];
-
-      const target = occ[best.to];
-      if (!target) {
-        occ[best.to] = { owner: p, units: moving };
-      } else if (target.owner === p) {
-        target.units.push(...moving);
-      } else {
-        battles++;
-        const r = resolveBattle({ units: moving }, { units: target.units }, board.territories[best.to]!.defenseBonus, rng);
-        if (r.territoryCaptured) {
-          if (r.attackerSurvivors.length > 0) occ[best.to] = { owner: p, units: r.attackerSurvivors };
-          else delete occ[best.to];
-        } else {
-          if (r.defenderSurvivors.length > 0) target.units = r.defenderSurvivors;
-          else delete occ[best.to];
-        }
-      }
-
-      const centerOwner = occ[board.centerId]?.owner ?? -1;
-      if (centerOwner !== lastCenterOwner && centerOwner !== -1) { centerFlips++; lastCenterOwner = centerOwner; }
     }
-    for (const [id, o] of Object.entries(occ)) {
-      o.units.push(...reinforce(board.territories[id]!.income, `p${o.owner}-r${round}-${idc++}`));
-    }
+    const results = resolveRound(game, deployments);
+    contested += results.filter((r) => r.contested).length;
+    changes += results.filter((r) => r.changed).length;
+    scoreRound(game);
   }
-  return { battles, centerFlips };
+  return { decisions, contested, changes, vps: game.players.map((p) => p.vp) };
 }
 
-hr('3. COLLISION SIM (200 games each · do armies actually meet?)');
+// ─── 2. Tightness + conflict ──────────────────────────────────────────────────
 
+hr('2. TIGHTNESS & CONFLICT (300 games each)');
+const SEC_PER_DECISION = 45; // wall-clock per placement incl. downtime, light-game ballpark
 for (const N of [2, 3, 4]) {
-  const board = generateBoard(N, 'demo');
-  let totalBattles = 0, totalFlips = 0, zeroBattleGames = 0;
-  const GAMES = 200;
+  let dec = 0, con = 0, chg = 0;
+  const GAMES = 300;
   for (let g = 0; g < GAMES; g++) {
-    const r = simulateGame(board, `collide-${N}-${g}`);
-    totalBattles += r.battles; totalFlips += r.centerFlips;
-    if (r.battles === 0) zeroBattleGames++;
+    const m = simulateGame(N, `tight-${N}-${g}`);
+    dec += m.decisions; con += m.contested; chg += m.changes;
   }
-  console.log(`\n  ${N}p → avg ${(totalBattles / GAMES).toFixed(1)} battles, ${(totalFlips / GAMES).toFixed(1)} centre flips/game · zero-battle games: ${zeroBattleGames}/${GAMES} ${zeroBattleGames === 0 ? '✓' : '✗'}`);
+  const avgDec = dec / GAMES;
+  const mins = Math.round((avgDec * SEC_PER_DECISION) / 60);
+  console.log(`\n  ${N}p:`);
+  console.log(`    decisions/game:  ${avgDec.toFixed(0)}   → ~${mins} min @ ${SEC_PER_DECISION}s/decision  (target ${N === 2 ? '~45' : N === 4 ? '~90' : '~65'})`);
+  console.log(`    contested terr/game: ${(con / GAMES).toFixed(1)}   control changes/game: ${(chg / GAMES).toFixed(1)}`);
 }
 
-// ─── 4. Combat drama samples ───────────────────────────────────────────────────
+// ─── 3. Competitiveness ────────────────────────────────────────────────────────
 
-hr('4. COMBAT SAMPLES (does rolling for territory read dramatically?)');
-
-const rng = new Rng('combat-samples');
-const RANGES: UnitRange[] = ['1-3', '2-5', '3-6', '1-6'];
-console.log();
-for (let i = 0; i < 6; i++) {
-  const atk = Array.from({ length: rng.nextInt(2, 4) }, (_, k) => ({ id: `a${k}`, range: rng.pick(RANGES) }));
-  const def = Array.from({ length: rng.nextInt(1, 3) }, (_, k) => ({ id: `d${k}`, range: rng.pick(RANGES) }));
-  const defBonus = rng.pick([0, 1, 2, 3] as const);
-  const r = resolveBattle({ units: atk }, { units: def }, defBonus, rng);
-  const tiers = (us: { range: UnitRange }[]) => us.map((u) => UNIT_PROFILE[u.range].tier[0]).join('');
-  console.log(`  atk ${tiers(atk)} vs def ${tiers(def)} +${defBonus}`);
-  console.log(`    → ${describeBattle(r, 'Warriors', 'Mages', 'Stormwall Pass')}\n`);
+hr('3. COMPETITIVENESS (is it close, or do leaders run away?)');
+for (const N of [2, 3, 4]) {
+  let runaway = 0, totalMargin = 0;
+  const winsBySeat = new Array(N).fill(0);
+  const GAMES = 500;
+  for (let g = 0; g < GAMES; g++) {
+    const m = simulateGame(N, `comp-${N}-${g}`);
+    const sorted = [...m.vps].map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v);
+    const win = sorted[0]!, second = sorted[1]!;
+    winsBySeat[win.i]++;
+    totalMargin += win.v - second.v;
+    if (win.v > second.v * 1.5 && second.v > 0) runaway++;
+    if (second.v === 0 && win.v > 0) runaway++;
+  }
+  const seatPct = winsBySeat.map((w) => `${Math.round((w / GAMES) * 100)}%`).join(' / ');
+  console.log(`\n  ${N}p: avg winning margin ${(totalMargin / GAMES).toFixed(1)} VP · runaways ${Math.round((runaway / GAMES) * 100)}% · wins by seat ${seatPct}`);
 }
 
-console.log('─'.repeat(74));
-console.log('  v2 prototype validation complete.\n');
+// ─── 4. Sample game arc ────────────────────────────────────────────────────────
+
+hr('4. SAMPLE 2P GAME ARC (does it build, and is the centre contested?)');
+{
+  const N = 2;
+  const rng = new Rng('arc-demo');
+  const game = createGameV2(N, 'arc-demo');
+  console.log();
+  for (let round = 1; round <= ROUNDS; round++) {
+    game.round = round;
+    const deployments: Deployments = {};
+    for (let p = 0; p < N; p++) {
+      const hand = rollHand(game, p, rng);
+      const placements = aiPlace(game, p, hand);
+      for (const [tid, val] of Object.entries(placements)) (deployments[tid] ??= {})[p] = val;
+    }
+    resolveRound(game, deployments);
+    scoreRound(game);
+    const centreOwner = game.owner[game.board.centerId];
+    const held = (p: number) => Object.values(game.owner).filter((o) => o === p).length;
+    console.log(`  R${round}:  VP ${game.players.map((p) => p.vp).join(' – ')}   ·  centre: ${centreOwner === undefined ? 'neutral' : 'P' + (centreOwner + 1)}   ·  territories ${[...Array(N)].map((_, p) => held(p)).join('/')}   ·  clock ${game.clock}`);
+  }
+  const w = [...game.players].sort((a, b) => b.vp - a.vp)[0]!;
+  console.log(`\n  Winner: P${w.id + 1} with ${w.vp} VP`);
+}
+
+console.log('\n' + '─'.repeat(74));
+console.log('  v2 lean-model validation complete.\n');

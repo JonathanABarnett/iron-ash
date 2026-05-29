@@ -45,13 +45,34 @@ export const UNIT_PROFILE: Record<UnitRange, UnitProfile> = {
   '1-6': { tier: 'Champion', cost: 4, avg: 3.5 },
 };
 
-/** Roll a single unit's strength for one clash. */
+/** A pool die rolled for the current round. */
+export interface RolledDie {
+  unit: Unit;
+  value: number;
+}
+
+/** Roll a single unit's strength. */
 export function rollUnit(unit: Unit, rng: Rng): number {
   const faces = FACES[unit.range];
   return rng.pick(faces);
 }
 
+/** Roll an entire pool into this round's hand of known values. */
+export function rollPool(pool: Unit[], rng: Rng): RolledDie[] {
+  return pool.map((unit) => ({ unit, value: rollUnit(unit, rng) }));
+}
+
 /** Make N units of a range with deterministic ids. */
 export function makeUnits(range: UnitRange, count: number, idPrefix: string): Unit[] {
   return Array.from({ length: count }, (_, i) => ({ id: `${idPrefix}-${range}-${i}`, range }));
+}
+
+/** Default starting pool — 5 dice spanning the tiers (tune via sim). */
+export function defaultPool(playerIndex: number): Unit[] {
+  return [
+    ...makeUnits('2-5', 2, `p${playerIndex}`), // two reliable soldiers
+    ...makeUnits('1-3', 1, `p${playerIndex}`), // a cheap levy
+    ...makeUnits('3-6', 1, `p${playerIndex}`), // an elite
+    ...makeUnits('1-6', 1, `p${playerIndex}`), // a swingy champion
+  ];
 }

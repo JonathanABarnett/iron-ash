@@ -1,133 +1,78 @@
-// ─── Iron & Ash v2 — combat resolution ──────────────────────────────────────
+// ─── Iron & Ash v2 — contest resolution ─────────────────────────────────────
 //
-// THE LINCHPIN of the redesign. Units (ranged dice) are committed to a fight
-// and ROLLED at the moment of clash — that's where the dice drama lands.
+// LEAN MODEL (post "not-Warhammer" correction):
+//   • dice are a RENEWABLE hand, re-rolled each round, returned to pool after
+//   • a contested territory resolves in ONE comparison — no attrition exchange
+//   • territory control persists via an owner marker; the dice that took it
+//     cycle back next round
 //
 // RESOLUTION
-//   each side rolls every committed unit
-//   attackerTotal = Σ attacker rolls
-//   defenderTotal = Σ defender rolls + terrain defenseBonus
-//   higher total wins; TIES go to the DEFENDER (the classic defender's edge)
+//   each contender's effective total = sum of the dice they committed here,
+//   PLUS the terrain bonus IF they're the current owner (fortifications help
+//   the defender). Highest effective total takes/holds control.
+//   TIES favour the current owner (defender's edge).
 //
-// CASUALTIES — margin-driven, so combat has texture instead of a flat coin-flip:
-//   margin M = winnerTotal − loserTotal
-//   LOSER  removes their weakest-rolled units one at a time until the removed
-//          rolls sum to ≥ M (a blowout kills many; a squeaker kills ~1)
-//   WINNER bleeds ONLY in a close fight (M ≤ CLOSE_MARGIN): loses 1 unit.
-//          A decisive win (M ≥ 3) is clean — you crush them and walk away.
-//
-// Why this shape:
-//   • Attacking decisively is REWARDED (no losses) → counters defender bias.
-//   • Grinding, near-even fights bleed BOTH sides → attrition texture that an
-//     attrition faction (Necromancers) can build a whole identity around.
-//   • Losses are real (units are persistent) but a single fight rarely wipes
-//     a stack outright → no instant death spiral.
+// No casualties, no removing units one at a time. Fast, legible, one sitting.
 
-import type { Rng } from '../engine/rng';
-import { rollUnit, type Unit } from './units';
-
-const CLOSE_MARGIN = 2; // fights won by ≤ this also cost the winner a unit
-
-export interface Combatant {
-  units: Unit[];
+export interface ContestInput {
+  /** playerId → summed face value committed to this territory this round. */
+  committed: Record<number, number>;
+  /** Current owner of the territory, or null if neutral/unclaimed. */
+  owner: number | null;
+  /** Terrain defense bonus (added to the owner's effective total). */
+  terrainBonus: number;
 }
 
-export interface RolledUnit {
-  unit: Unit;
-  roll: number;
+export interface ContestResult {
+  /** Effective totals per contender (owner already includes terrainBonus). */
+  effective: Record<number, number>;
+  previousOwner: number | null;
+  newOwner: number | null;
+  /** Did control change hands this round? */
+  changed: boolean;
+  /** Was this territory actually fought over (≥2 sides, or an attack on an owner)? */
+  contested: boolean;
 }
 
-export interface BattleResult {
-  attackerRolls: RolledUnit[];
-  defenderRolls: RolledUnit[];
-  attackerTotal: number;
-  defenderTotal: number; // includes terrain bonus
-  defenseBonus: number;
-  winner: 'attacker' | 'defender';
-  margin: number;
-  /** Units each side KEEPS after the fight. */
-  attackerSurvivors: Unit[];
-  defenderSurvivors: Unit[];
-  attackerLosses: number;
-  defenderLosses: number;
-  territoryCaptured: boolean;
-}
+export function resolveContest(input: ContestInput): ContestResult {
+  const { committed, owner, terrainBonus } = input;
+  const contenders = Object.keys(committed).map(Number);
 
-function rollSide(units: Unit[], rng: Rng): RolledUnit[] {
-  return units.map((unit) => ({ unit, roll: rollUnit(unit, rng) }));
-}
-
-/** Remove weakest-rolled units until removed rolls sum to ≥ margin (min 1 unit). */
-function applyLoserCasualties(rolled: RolledUnit[], margin: number): Unit[] {
-  const byWeakest = [...rolled].sort((a, b) => a.roll - b.roll);
-  let removedValue = 0;
-  let removed = 0;
-  for (const r of byWeakest) {
-    if (removed >= 1 && removedValue >= margin) break;
-    removedValue += r.roll;
-    removed += 1;
+  // Effective totals — owner gets the terrain bonus folded in.
+  const effective: Record<number, number> = {};
+  for (const pid of contenders) {
+    effective[pid] = committed[pid]! + (pid === owner ? terrainBonus : 0);
   }
-  // Survivors = the strongest (rolled.length - removed) units.
-  return byWeakest.slice(removed).map((r) => r.unit);
-}
+  // An undefended owner still "defends" with their fortifications.
+  if (owner !== null && effective[owner] === undefined) {
+    effective[owner] = terrainBonus;
+  }
 
-/** A close win costs the winner their single weakest-rolled unit. */
-function applyWinnerCasualties(rolled: RolledUnit[], margin: number): Unit[] {
-  if (margin > CLOSE_MARGIN || rolled.length === 0) return rolled.map((r) => r.unit);
-  const byWeakest = [...rolled].sort((a, b) => a.roll - b.roll);
-  return byWeakest.slice(1).map((r) => r.unit);
-}
+  const allSides = Object.keys(effective).map(Number);
+  const contested =
+    allSides.filter((p) => p !== owner).length > 0 && // someone other than the owner is pushing
+    (allSides.length > 1 || owner === null);          // ...into a contested or neutral space
 
-export function resolveBattle(
-  attacker: Combatant,
-  defender: Combatant,
-  defenseBonus: number,
-  rng: Rng,
-): BattleResult {
-  const attackerRolls = rollSide(attacker.units, rng);
-  const defenderRolls = rollSide(defender.units, rng);
-
-  const attackerTotal = attackerRolls.reduce((s, r) => s + r.roll, 0);
-  const defenderTotal = defenderRolls.reduce((s, r) => s + r.roll, 0) + defenseBonus;
-
-  const attackerWins = attackerTotal > defenderTotal; // ties → defender
-  const margin = Math.abs(attackerTotal - defenderTotal);
-
-  let attackerSurvivors: Unit[];
-  let defenderSurvivors: Unit[];
-
-  if (attackerWins) {
-    defenderSurvivors = applyLoserCasualties(defenderRolls, margin);
-    attackerSurvivors = applyWinnerCasualties(attackerRolls, margin);
-  } else {
-    attackerSurvivors = applyLoserCasualties(attackerRolls, margin);
-    defenderSurvivors = applyWinnerCasualties(defenderRolls, margin);
+  // Pick the highest effective total; ties go to the current owner.
+  let best: number | null = owner;
+  let bestVal = owner !== null ? (effective[owner] ?? 0) : -1;
+  for (const pid of allSides) {
+    if (pid === owner) continue;
+    const v = effective[pid]!;
+    if (v > bestVal) { best = pid; bestVal = v; }
+  }
+  // Neutral territory with a single uncontested claimant → they take it.
+  if (owner === null && allSides.length >= 1) {
+    let topPid = allSides[0]!, topVal = effective[topPid]!;
+    for (const pid of allSides) { if (effective[pid]! > topVal) { topPid = pid; topVal = effective[pid]!; } }
+    best = topPid;
   }
 
   return {
-    attackerRolls,
-    defenderRolls,
-    attackerTotal,
-    defenderTotal,
-    defenseBonus,
-    winner: attackerWins ? 'attacker' : 'defender',
-    margin,
-    attackerSurvivors,
-    defenderSurvivors,
-    attackerLosses: attacker.units.length - attackerSurvivors.length,
-    defenderLosses: defender.units.length - defenderSurvivors.length,
-    territoryCaptured: attackerWins,
+    effective,
+    previousOwner: owner,
+    newOwner: best,
+    changed: best !== owner,
+    contested,
   };
-}
-
-/** Human-readable one-liner for the combat log / UI banner. */
-export function describeBattle(r: BattleResult, attackerName: string, defenderName: string, territory: string): string {
-  const def = r.defenseBonus > 0 ? ` (incl +${r.defenseBonus} terrain)` : '';
-  const score = `${r.attackerTotal} vs ${r.defenderTotal}${def}`;
-  if (r.territoryCaptured) {
-    const flavor = r.margin >= 6 ? ' — a rout!' : r.margin <= 2 ? ' — by a hair!' : '';
-    return `${attackerName} took ${territory}, ${score}${flavor} (${defenderName} lost ${r.defenderLosses}, ${attackerName} lost ${r.attackerLosses}).`;
-  }
-  const flavor = r.margin >= 6 ? ' — crushed the assault.' : r.margin === 0 ? ' — held on a tie!' : ' — held.';
-  return `${defenderName} kept ${territory}, ${score}${flavor} (${attackerName} lost ${r.attackerLosses}, ${defenderName} lost ${r.defenderLosses}).`;
 }
