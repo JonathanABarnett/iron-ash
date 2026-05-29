@@ -1,4 +1,4 @@
-import { BrowserRouter, NavLink, Route, Routes } from 'react-router';
+import { HashRouter, NavLink, Route, Routes } from 'react-router';
 import { HomePage }      from '@ui/pages/HomePage';
 import { SimPage }       from '@ui/pages/SimPage';
 import { PlayPage }      from '@ui/pages/PlayPage';
@@ -28,9 +28,13 @@ const NAV_UTIL = [
 
 // ── Root layout ───────────────────────────────────────────────────────────────
 
+// HashRouter (not BrowserRouter): the steam build is a SECOND SPA under
+// /iron-ash/next/ on GitHub Pages, which only serves the root v1 404 handler.
+// Hash routes (#/v2) never hit the server, so deep links and refreshes resolve
+// client-side instead of being hijacked into the v1 app at the root.
 export default function App() {
   return (
-    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || '/iron-ash/next'}>
+    <HashRouter>
       <div className="flex min-h-screen" style={{ background: 'var(--color-bg)' }}>
 
         {/* Desktop sidebar */}
@@ -55,7 +59,7 @@ export default function App() {
         {/* Mobile bottom nav */}
         <MobileNav />
       </div>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
