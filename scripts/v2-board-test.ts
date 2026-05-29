@@ -2,12 +2,14 @@
 // Answers the core design questions BEFORE we build any UI:
 //   1. Does the player-count-scaled board have sane topology?
 //   2. Do armies actually COLLIDE? (v1's fatal flaw was that they didn't.)
-//   3. Does combat produce dramatic, non-deterministic outcomes?
+//   3. Is combat balanced? (Is defense too dominant? Are casualties healthy?)
+//   4. Does combat read dramatically?
 //
 // Run:  npx tsx scripts/v2-board-test.ts
 
 import { generateBoard, territoryList, graphDistance, type BoardV2 } from '../src/v2/board';
 import { resolveBattle, describeBattle } from '../src/v2/combat';
+import { makeUnits, UNIT_PROFILE, type Unit, type UnitRange } from '../src/v2/units';
 import { Rng } from '../src/engine/rng';
 
 function hr(label: string) {
@@ -25,53 +27,80 @@ for (const N of [2, 3, 4]) {
   const list = territoryList(board);
   const byRole = (role: string) => list.filter((t) => t.role === role).length;
   const avgDegree = (list.reduce((s, t) => s + t.adjacency.length, 0) / list.length).toFixed(1);
-
-  // distance from each home to the centre, and between adjacent homes
   const homeToCenter = board.homeIds.map((h) => graphDistance(board, h, board.centerId));
-  const homeToHome: number[] = [];
-  for (let i = 0; i < board.homeIds.length; i++) {
-    for (let j = i + 1; j < board.homeIds.length; j++) {
-      homeToHome.push(graphDistance(board, board.homeIds[i]!, board.homeIds[j]!));
-    }
-  }
 
   console.log(`\n  ${N} players → ${list.length} territories (expected ${3 * N + 1})`);
   console.log(`    roles: ${byRole('home')} home · ${byRole('choke')} choke · ${byRole('border')} border · ${byRole('center')} center`);
-  console.log(`    avg connections/territory: ${avgDegree}`);
-  console.log(`    home→center distance: ${homeToCenter.join(', ')} edges`);
-  console.log(`    home→home distance:   min ${Math.min(...homeToHome)}, max ${Math.max(...homeToHome)} edges`);
+  console.log(`    avg connections/territory: ${avgDegree} · home→center: ${homeToCenter.join(', ')} edges`);
 }
 
-// ─── 2. Collision simulation ──────────────────────────────────────────────────
-// Greedy AI: each round every player marches a force from one held territory
-// into an adjacent one, preferring moves that (a) attack an enemy or (b) step
-// closer to the centre. We count how many BATTLES occur per game.
+// ─── 2. Combat balance ────────────────────────────────────────────────────────
+// Equal-force clashes across terrain bonuses — is defense too dominant?
 
-interface Occupancy { owner: number; dice: number[] }
+hr('2. COMBAT BALANCE (attacker win % at equal force, by terrain bonus)');
 
-function rollForce(rng: Rng, count: number): number[] {
-  return Array.from({ length: count }, () => rng.nextInt(1, 6));
+function unitsOf(range: UnitRange, n: number, tag: string): Unit[] {
+  return makeUnits(range, n, tag);
+}
+
+function attackerWinRate(atk: Unit[], def: Unit[], defenseBonus: number, trials: number): { win: number; atkLoss: number; defLoss: number } {
+  let wins = 0, atkLoss = 0, defLoss = 0;
+  for (let i = 0; i < trials; i++) {
+    const rng = new Rng(`bal-${defenseBonus}-${atk.length}-${def.length}-${i}`);
+    const r = resolveBattle({ units: atk }, { units: def }, defenseBonus, rng);
+    if (r.territoryCaptured) wins++;
+    atkLoss += r.attackerLosses;
+    defLoss += r.defenderLosses;
+  }
+  return { win: wins / trials, atkLoss: atkLoss / trials, defLoss: defLoss / trials };
+}
+
+console.log('\n  3 soldiers (2-5) attacking 3 soldiers (2-5):');
+for (const bonus of [0, 1, 2, 3]) {
+  const r = attackerWinRate(unitsOf('2-5', 3, 'a'), unitsOf('2-5', 3, 'd'), bonus, 4000);
+  console.log(`    +${bonus} terrain → attacker wins ${(r.win * 100).toFixed(0)}%  (avg losses: atk ${r.atkLoss.toFixed(1)}, def ${r.defLoss.toFixed(1)})`);
+}
+
+console.log('\n  Force-quality matters — vs a 3-soldier defender on +2 terrain:');
+for (const [range, label] of [['1-3', '3 levies   '], ['2-5', '3 soldiers '], ['3-6', '3 elites   '], ['1-6', '3 champions']] as const) {
+  const r = attackerWinRate(unitsOf(range, 3, 'a'), unitsOf('2-5', 3, 'd'), 2, 4000);
+  console.log(`    ${label} attacking → ${(r.win * 100).toFixed(0)}% win`);
+}
+
+console.log('\n  Numbers matter — soldiers vs a 3-soldier defender on +2 terrain:');
+for (const n of [2, 3, 4, 5]) {
+  const r = attackerWinRate(unitsOf('2-5', n, 'a'), unitsOf('2-5', 3, 'd'), 2, 4000);
+  console.log(`    ${n} attackers → ${(r.win * 100).toFixed(0)}% win  (avg atk losses ${r.atkLoss.toFixed(1)})`);
+}
+
+// ─── 3. Collision simulation ──────────────────────────────────────────────────
+
+interface Occupancy { owner: number; units: Unit[] }
+
+function startForce(tag: string): Unit[] {
+  // Two soldiers + a levy — a small mixed garrison.
+  return [...makeUnits('2-5', 2, `${tag}-s`), ...makeUnits('1-3', 1, `${tag}-l`)];
+}
+
+function reinforce(income: number, tag: string): Unit[] {
+  // Income buys soldiers; the centre/fortresses (income 3) fund an elite.
+  if (income >= 3) return makeUnits('3-6', 1, `${tag}-e`);
+  return makeUnits('2-5', Math.max(1, income - 1), `${tag}-r`);
 }
 
 function simulateGame(board: BoardV2, seed: string): { battles: number; centerFlips: number } {
   const rng = new Rng(seed);
   const occ: Record<string, Occupancy> = {};
-  // Each player starts holding their home with a 3-die garrison.
-  board.homeIds.forEach((h, i) => { occ[h] = { owner: i, dice: rollForce(rng, 3) }; });
+  board.homeIds.forEach((h, i) => { occ[h] = { owner: i, units: startForce(`p${i}-r0`) }; });
 
-  let battles = 0;
-  let centerFlips = 0;
-  let lastCenterOwner = -1;
+  let battles = 0, centerFlips = 0, lastCenterOwner = -1, idc = 0;
   const ROUNDS = 7;
 
   for (let round = 0; round < ROUNDS; round++) {
     for (let p = 0; p < board.playerCount; p++) {
-      // Territories this player holds with ≥2 dice (keep 1 behind to hold).
-      const sources = Object.entries(occ).filter(([, o]) => o.owner === p && o.dice.length >= 2);
+      const sources = Object.entries(occ).filter(([, o]) => o.owner === p && o.units.length >= 2);
       if (sources.length === 0) continue;
 
-      // Pick the source + adjacent target that best advances toward the centre
-      // or lands on an enemy.
       let best: { from: string; to: string; score: number } | null = null;
       for (const [fromId] of sources) {
         for (const toId of board.territories[fromId]!.adjacency) {
@@ -84,49 +113,40 @@ function simulateGame(board: BoardV2, seed: string): { battles: number; centerFl
       }
       if (!best) continue;
 
-      // March half the force (at least 1, leave at least 1 behind).
       const src = occ[best.from]!;
-      const moveCount = Math.max(1, Math.floor(src.dice.length / 2));
-      const moving = src.dice.slice(0, moveCount);
-      src.dice = src.dice.slice(moveCount);
-      if (src.dice.length === 0) delete occ[best.from];
+      const moveCount = Math.max(1, Math.floor(src.units.length / 2));
+      const moving = src.units.slice(0, moveCount);
+      src.units = src.units.slice(moveCount);
+      if (src.units.length === 0) delete occ[best.from];
 
       const target = occ[best.to];
       if (!target) {
-        // Unoccupied — walk in.
-        occ[best.to] = { owner: p, dice: moving };
+        occ[best.to] = { owner: p, units: moving };
       } else if (target.owner === p) {
-        // Reinforce.
-        target.dice.push(...moving);
+        target.units.push(...moving);
       } else {
-        // BATTLE.
         battles++;
-        const r = resolveBattle({ dice: moving }, { dice: target.dice }, board.territories[best.to]!.defenseBonus);
+        const r = resolveBattle({ units: moving }, { units: target.units }, board.territories[best.to]!.defenseBonus, rng);
         if (r.territoryCaptured) {
-          occ[best.to] = { owner: p, dice: r.attackerSurviving };
-          if (occ[best.to]!.dice.length === 0) delete occ[best.to];
+          if (r.attackerSurvivors.length > 0) occ[best.to] = { owner: p, units: r.attackerSurvivors };
+          else delete occ[best.to];
         } else {
-          target.dice = r.defenderSurviving;
-          if (target.dice.length === 0) delete occ[best.to];
+          if (r.defenderSurvivors.length > 0) target.units = r.defenderSurvivors;
+          else delete occ[best.to];
         }
       }
 
-      // Track centre ownership changes.
       const centerOwner = occ[board.centerId]?.owner ?? -1;
       if (centerOwner !== lastCenterOwner && centerOwner !== -1) { centerFlips++; lastCenterOwner = centerOwner; }
     }
-
-    // End of round: each held territory's garrison gets fresh dice (income).
     for (const [id, o] of Object.entries(occ)) {
-      const inc = board.territories[id]!.income;
-      o.dice.push(...rollForce(rng, Math.max(1, Math.floor(inc))));
+      o.units.push(...reinforce(board.territories[id]!.income, `p${o.owner}-r${round}-${idc++}`));
     }
   }
-
   return { battles, centerFlips };
 }
 
-hr('2. COLLISION SIM (200 games each · do armies actually meet?)');
+hr('3. COLLISION SIM (200 games each · do armies actually meet?)');
 
 for (const N of [2, 3, 4]) {
   const board = generateBoard(N, 'demo');
@@ -134,30 +154,26 @@ for (const N of [2, 3, 4]) {
   const GAMES = 200;
   for (let g = 0; g < GAMES; g++) {
     const r = simulateGame(board, `collide-${N}-${g}`);
-    totalBattles += r.battles;
-    totalFlips += r.centerFlips;
+    totalBattles += r.battles; totalFlips += r.centerFlips;
     if (r.battles === 0) zeroBattleGames++;
   }
-  console.log(`\n  ${N} players:`);
-  console.log(`    avg battles/game:        ${(totalBattles / GAMES).toFixed(1)}`);
-  console.log(`    avg centre flips/game:   ${(totalFlips / GAMES).toFixed(1)}`);
-  console.log(`    games with ZERO battles: ${zeroBattleGames}/${GAMES}  ${zeroBattleGames === 0 ? '✓' : zeroBattleGames < GAMES * 0.1 ? '~' : '✗ (armies not meeting!)'}`);
+  console.log(`\n  ${N}p → avg ${(totalBattles / GAMES).toFixed(1)} battles, ${(totalFlips / GAMES).toFixed(1)} centre flips/game · zero-battle games: ${zeroBattleGames}/${GAMES} ${zeroBattleGames === 0 ? '✓' : '✗'}`);
 }
 
-// ─── 3. Combat drama samples ───────────────────────────────────────────────────
+// ─── 4. Combat drama samples ───────────────────────────────────────────────────
 
-hr('3. COMBAT SAMPLES (does rolling for territory feel dramatic?)');
+hr('4. COMBAT SAMPLES (does rolling for territory read dramatically?)');
 
 const rng = new Rng('combat-samples');
+const RANGES: UnitRange[] = ['1-3', '2-5', '3-6', '1-6'];
 console.log();
 for (let i = 0; i < 6; i++) {
-  const atkCount = rng.nextInt(2, 4);
-  const defCount = rng.nextInt(1, 3);
-  const atk = { dice: Array.from({ length: atkCount }, () => rng.nextInt(1, 6)) };
-  const def = { dice: Array.from({ length: defCount }, () => rng.nextInt(1, 6)) };
+  const atk = Array.from({ length: rng.nextInt(2, 4) }, (_, k) => ({ id: `a${k}`, range: rng.pick(RANGES) }));
+  const def = Array.from({ length: rng.nextInt(1, 3) }, (_, k) => ({ id: `d${k}`, range: rng.pick(RANGES) }));
   const defBonus = rng.pick([0, 1, 2, 3] as const);
-  const r = resolveBattle(atk, def, defBonus);
-  console.log(`  atk[${atk.dice.join(',')}] vs def[${def.dice.join(',')}] +${defBonus}`);
+  const r = resolveBattle({ units: atk }, { units: def }, defBonus, rng);
+  const tiers = (us: { range: UnitRange }[]) => us.map((u) => UNIT_PROFILE[u.range].tier[0]).join('');
+  console.log(`  atk ${tiers(atk)} vs def ${tiers(def)} +${defBonus}`);
   console.log(`    → ${describeBattle(r, 'Warriors', 'Mages', 'Stormwall Pass')}\n`);
 }
 

@@ -1,103 +1,133 @@
 // ─── Iron & Ash v2 — combat resolution ──────────────────────────────────────
 //
-// This is the LINCHPIN of the v2 redesign. In v1, dice were placed on
-// number-slots — no drama. Here, dice are FORCES you commit to a fight, and
-// you ROLL FOR territory with real stakes. A good roll is a rush; a bad one
-// hurts. That is the emotional core v1 was missing.
+// THE LINCHPIN of the redesign. Units (ranged dice) are committed to a fight
+// and ROLLED at the moment of clash — that's where the dice drama lands.
 //
 // RESOLUTION
-//   attackerTotal = sum(attacker dice)
-//   defenderTotal = sum(defender dice) + terrain defenseBonus
-//   higher total wins; TIES go to the DEFENDER (classic defender's edge)
+//   each side rolls every committed unit
+//   attackerTotal = Σ attacker rolls
+//   defenderTotal = Σ defender rolls + terrain defenseBonus
+//   higher total wins; TIES go to the DEFENDER (the classic defender's edge)
 //
-// CASUALTIES (deliberately punchy for the first prototype — tune via sim)
-//   loser:  all committed dice are lost (the assault is broken / the garrison falls)
-//   winner: loses their single weakest committed die (the vanguard who fell)
+// CASUALTIES — margin-driven, so combat has texture instead of a flat coin-flip:
+//   margin M = winnerTotal − loserTotal
+//   LOSER  removes their weakest-rolled units one at a time until the removed
+//          rolls sum to ≥ M (a blowout kills many; a squeaker kills ~1)
+//   WINNER bleeds ONLY in a close fight (M ≤ CLOSE_MARGIN): loses 1 unit.
+//          A decisive win (M ≥ 3) is clean — you crush them and walk away.
 //
-// The winner-still-bleeds rule is what makes attacking a real DECISION: even a
-// won fight costs you a die, so you can't just swing at everything for free.
+// Why this shape:
+//   • Attacking decisively is REWARDED (no losses) → counters defender bias.
+//   • Grinding, near-even fights bleed BOTH sides → attrition texture that an
+//     attrition faction (Necromancers) can build a whole identity around.
+//   • Losses are real (units are persistent) but a single fight rarely wipes
+//     a stack outright → no instant death spiral.
+
+import type { Rng } from '../engine/rng';
+import { rollUnit, type Unit } from './units';
+
+const CLOSE_MARGIN = 2; // fights won by ≤ this also cost the winner a unit
 
 export interface Combatant {
-  /** Face values of the dice committed to this fight. */
-  dice: number[];
+  units: Unit[];
+}
+
+export interface RolledUnit {
+  unit: Unit;
+  roll: number;
 }
 
 export interface BattleResult {
+  attackerRolls: RolledUnit[];
+  defenderRolls: RolledUnit[];
   attackerTotal: number;
-  defenderTotal: number;
+  defenderTotal: number; // includes terrain bonus
   defenseBonus: number;
   winner: 'attacker' | 'defender';
-  /** Face values the attacker KEEPS after the fight. */
-  attackerSurviving: number[];
-  /** Face values the defender KEEPS after the fight. */
-  defenderSurviving: number[];
+  margin: number;
+  /** Units each side KEEPS after the fight. */
+  attackerSurvivors: Unit[];
+  defenderSurvivors: Unit[];
   attackerLosses: number;
   defenderLosses: number;
-  /** True when the attacker takes the territory. */
   territoryCaptured: boolean;
-  /** Margin of victory (winner total − loser total) — drives narration drama. */
-  margin: number;
 }
 
-function sum(xs: number[]): number {
-  return xs.reduce((a, b) => a + b, 0);
+function rollSide(units: Unit[], rng: Rng): RolledUnit[] {
+  return units.map((unit) => ({ unit, roll: rollUnit(unit, rng) }));
 }
 
-/** Drop the single lowest value from a list (the vanguard who fell). */
-function dropLowest(xs: number[]): number[] {
-  if (xs.length === 0) return [];
-  const sorted = [...xs].sort((a, b) => a - b);
-  return sorted.slice(1);
+/** Remove weakest-rolled units until removed rolls sum to ≥ margin (min 1 unit). */
+function applyLoserCasualties(rolled: RolledUnit[], margin: number): Unit[] {
+  const byWeakest = [...rolled].sort((a, b) => a.roll - b.roll);
+  let removedValue = 0;
+  let removed = 0;
+  for (const r of byWeakest) {
+    if (removed >= 1 && removedValue >= margin) break;
+    removedValue += r.roll;
+    removed += 1;
+  }
+  // Survivors = the strongest (rolled.length - removed) units.
+  return byWeakest.slice(removed).map((r) => r.unit);
+}
+
+/** A close win costs the winner their single weakest-rolled unit. */
+function applyWinnerCasualties(rolled: RolledUnit[], margin: number): Unit[] {
+  if (margin > CLOSE_MARGIN || rolled.length === 0) return rolled.map((r) => r.unit);
+  const byWeakest = [...rolled].sort((a, b) => a.roll - b.roll);
+  return byWeakest.slice(1).map((r) => r.unit);
 }
 
 export function resolveBattle(
   attacker: Combatant,
   defender: Combatant,
   defenseBonus: number,
+  rng: Rng,
 ): BattleResult {
-  const attackerTotal = sum(attacker.dice);
-  const defenderTotal = sum(defender.dice) + defenseBonus;
+  const attackerRolls = rollSide(attacker.units, rng);
+  const defenderRolls = rollSide(defender.units, rng);
 
-  // Ties favour the defender.
-  const attackerWins = attackerTotal > defenderTotal;
-  const winner: 'attacker' | 'defender' = attackerWins ? 'attacker' : 'defender';
+  const attackerTotal = attackerRolls.reduce((s, r) => s + r.roll, 0);
+  const defenderTotal = defenderRolls.reduce((s, r) => s + r.roll, 0) + defenseBonus;
+
+  const attackerWins = attackerTotal > defenderTotal; // ties → defender
   const margin = Math.abs(attackerTotal - defenderTotal);
 
-  let attackerSurviving: number[];
-  let defenderSurviving: number[];
+  let attackerSurvivors: Unit[];
+  let defenderSurvivors: Unit[];
 
   if (attackerWins) {
-    // Attacker wins: keeps all but their weakest die; defender is wiped.
-    attackerSurviving = dropLowest(attacker.dice);
-    defenderSurviving = [];
+    defenderSurvivors = applyLoserCasualties(defenderRolls, margin);
+    attackerSurvivors = applyWinnerCasualties(attackerRolls, margin);
   } else {
-    // Defender holds: keeps all but their weakest die; attacker's assault breaks.
-    attackerSurviving = [];
-    defenderSurviving = dropLowest(defender.dice);
+    attackerSurvivors = applyLoserCasualties(attackerRolls, margin);
+    defenderSurvivors = applyWinnerCasualties(defenderRolls, margin);
   }
 
   return {
+    attackerRolls,
+    defenderRolls,
     attackerTotal,
     defenderTotal,
     defenseBonus,
-    winner,
-    attackerSurviving,
-    defenderSurviving,
-    attackerLosses: attacker.dice.length - attackerSurviving.length,
-    defenderLosses: defender.dice.length - defenderSurviving.length,
-    territoryCaptured: attackerWins,
+    winner: attackerWins ? 'attacker' : 'defender',
     margin,
+    attackerSurvivors,
+    defenderSurvivors,
+    attackerLosses: attacker.units.length - attackerSurvivors.length,
+    defenderLosses: defender.units.length - defenderSurvivors.length,
+    territoryCaptured: attackerWins,
   };
 }
 
 /** Human-readable one-liner for the combat log / UI banner. */
 export function describeBattle(r: BattleResult, attackerName: string, defenderName: string, territory: string): string {
-  const def = r.defenseBonus > 0 ? ` (+${r.defenseBonus} terrain)` : '';
+  const def = r.defenseBonus > 0 ? ` (incl +${r.defenseBonus} terrain)` : '';
   const score = `${r.attackerTotal} vs ${r.defenderTotal}${def}`;
   if (r.territoryCaptured) {
-    const rout = r.margin >= 5 ? ' — a rout!' : r.margin <= 1 ? ' — barely!' : '';
-    return `${attackerName} stormed ${territory} ${score}${rout} ${defenderName} was wiped; ${attackerName} lost ${r.attackerLosses} die.`;
+    const flavor = r.margin >= 6 ? ' — a rout!' : r.margin <= 2 ? ' — by a hair!' : '';
+    return `${attackerName} took ${territory}, ${score}${flavor} (${defenderName} lost ${r.defenderLosses}, ${attackerName} lost ${r.attackerLosses}).`;
   }
-  const hold = r.margin >= 5 ? ' — held with ease.' : r.margin === 0 ? ' — held on a tie!' : ' — held the line.';
-  return `${defenderName} defended ${territory} ${score}${hold} ${attackerName}'s assault broke (${r.attackerLosses} lost).`;
+  const flavor = r.margin >= 6 ? ' — crushed the assault.' : r.margin === 0 ? ' — held on a tie!' : ' — held.';
+  return `${defenderName} kept ${territory}, ${score}${flavor} (${attackerName} lost ${r.attackerLosses}, ${defenderName} lost ${r.defenderLosses}).`;
 }
