@@ -510,9 +510,9 @@ export function V2Page() {
       }
     }
 
-    // 2. Resolve + score (both mutate game).
+    // 2. Resolve (mutates ownership) + score (mutates VP, returns a breakdown).
     const results = resolveRound(game, deployments) as ResolveResultRow[];
-    scoreRound(game);
+    const scores = scoreRound(game);
 
     // 3. Build a human-readable log of what changed.
     const changeLines: string[] = [];
@@ -528,6 +528,24 @@ export function V2Page() {
       changeLines.push(`${terr.name} → ${who}${r.contested ? ' (contested)' : ''}`);
     }
     if (changeLines.length === 0) changeLines.push('No territories changed hands this round.');
+
+    // 3b. Per-player SCORING breakdown — answers "where did those points come
+    //     from?" by itemising every tile each side scored this round.
+    const scoreLines: string[] = ['Scoring this round:'];
+    const ordered = [...scores].sort((a, b) =>
+      a.playerId === HUMAN_ID ? -1 : b.playerId === HUMAN_ID ? 1 : a.playerId - b.playerId,
+    );
+    let anyDepleted = false;
+    for (const s of ordered) {
+      const who = s.playerId === HUMAN_ID ? 'You' : factionName(game, s.playerId);
+      const parts = s.lines.map((l) => {
+        if (l.depleted) anyDepleted = true;
+        return `${l.name} ${l.value}${l.depleted ? '▼' : ''}`;
+      });
+      if (s.coffers > 0) parts.push(`Coffers ${s.coffers}`);
+      scoreLines.push(`${who} +${s.total}${parts.length ? ': ' + parts.join(' · ') : ' (held nothing)'}`);
+    }
+    if (anyDepleted) scoreLines.push('▼ = fading: held several rounds; capture fresh ground for full value');
 
     // Note any combat abilities that fed into the totals above — these resolve
     // inside the model (we can't show the per-tile arithmetic) so we surface
@@ -546,7 +564,13 @@ export function V2Page() {
       }
     }
 
-    setLog([`— Round ${game.round} resolved —`, ...changeLines, ...abilityLines]);
+    setLog([
+      `— Round ${game.round} resolved —`,
+      ...changeLines,
+      '',
+      ...scoreLines,
+      ...(abilityLines.length ? ['', ...abilityLines] : []),
+    ]);
     setPhase('review');
     bump();
   }
@@ -1326,42 +1350,56 @@ function Standings({
   turn: number;
   deployDone: boolean;
 }) {
-  const sorted = phase === 'end' ? [...players].sort((a, b) => b.vp - a.vp) : players;
+  // Always rank by VP so it reads like a scoreboard — VP is the whole game.
+  const ranked = [...players].sort((a, b) => b.vp - a.vp);
+  const leadVp = Math.max(...players.map((p) => p.vp));
   return (
     <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-      <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#71717a' }}>
-        Standings
+      <h2 className="mb-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#71717a' }}>
+        <span>Standings</span>
+        <span style={{ color: '#52525b' }}>victory points</span>
       </h2>
-      <div className="space-y-2">
-        {sorted.map((p) => {
+      <div className="space-y-1.5">
+        {ranked.map((p) => {
           const isActiveTurn = phase === 'deploy' && !deployDone && p.id === turn;
           const ability = FACTIONS[p.faction].ability;
+          const leading = p.vp === leadVp && p.vp > 0;
           return (
-            <div key={p.id}>
-              <div className="flex items-center gap-2 text-sm">
-                <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: PLAYER_COLOR[p.id] }} />
-                <span className="flex-1 truncate" style={{ color: p.id === HUMAN_ID ? '#fafafa' : '#d4d4d8' }}>
-                  {FACTIONS[p.faction].name}
-                  {p.id === HUMAN_ID && <span className="ml-1 text-[10px]" style={{ color: '#71717a' }}>(you)</span>}
+            <div
+              key={p.id}
+              className="flex items-center gap-2.5 rounded-lg px-2 py-1.5"
+              style={{
+                background: p.id === HUMAN_ID ? 'rgba(255,255,255,0.04)' : 'transparent',
+                border: `1px solid ${isActiveTurn ? (PLAYER_COLOR[p.id] ?? '#52525b') + '66' : 'transparent'}`,
+              }}
+            >
+              <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: PLAYER_COLOR[p.id] }} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 text-sm leading-tight">
+                  <span className="truncate font-semibold" style={{ color: p.id === HUMAN_ID ? '#fafafa' : '#d4d4d8' }}>
+                    {FACTIONS[p.faction].name}
+                  </span>
+                  {leading && <span title="Leading">👑</span>}
+                  {p.id === HUMAN_ID && <span className="text-[10px]" style={{ color: '#71717a' }}>(you)</span>}
                   {isActiveTurn && (
-                    <span className="ml-1.5 text-[10px] font-semibold" style={{ color: PLAYER_COLOR[p.id] }}>
-                      ◀ deploying
-                    </span>
+                    <span className="text-[10px] font-semibold" style={{ color: PLAYER_COLOR[p.id] }}>◀ deploying</span>
                   )}
-                </span>
-                <span className="font-mono font-bold tabular-nums" style={{ color: PLAYER_COLOR[p.id] }}>
+                </div>
+                {/* ability name only — full text on hover, so VP stays the hero */}
+                <div
+                  className="cursor-help truncate text-[10px] leading-tight"
+                  style={{ color: '#71717a' }}
+                  title={`${ability.name} — ${ability.description}`}
+                >
+                  ✦ {ability.name}
+                </div>
+              </div>
+              {/* VP — the hero number */}
+              <div className="flex shrink-0 flex-col items-end leading-none">
+                <span className="font-mono text-2xl font-black tabular-nums" style={{ color: PLAYER_COLOR[p.id] }}>
                   {p.vp}
                 </span>
-              </div>
-              {/* Each faction's signature ability, so you can see what every
-                  rival in the game can do (full text on hover). */}
-              <div
-                className="ml-5 cursor-help truncate text-[10px] leading-tight"
-                style={{ color: '#71717a' }}
-                title={`${ability.name} — ${ability.description}`}
-              >
-                <span style={{ color: '#a1a1aa' }}>✦ {ability.name}</span>
-                <span> — {ability.description}</span>
+                <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: '#52525b' }}>VP</span>
               </div>
             </div>
           );

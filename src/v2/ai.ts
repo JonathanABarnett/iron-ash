@@ -59,17 +59,26 @@ export function pickOneDie(
       const pid = Number(k);
       if (pid !== playerId) oppMax = Math.max(oppMax, eff(tid, pid));
     }
-    const wouldLead = mine + dieValue > oppMax;
-    const gap = oppMax - (mine + dieValue); // how far behind we'd still be (<0 = leading)
+    // MARGINAL-GAIN scoring — value the die by what it actually WINS me, so the
+    // AI secures a tile then moves to the next instead of dumping its whole hand
+    // on one square. Three cases by where this die leaves the contest:
+    const before = mine;
+    const after = mine + dieValue;
     const contested = oppMax > 0;
-    let s = v * 2;                          // faction value dominates (primary 6 / sec 4 / other 2)
-    // Reward seizing the lead, but only LIGHTLY penalise investing in a tile
-    // we don't yet lead — so the AI will build up across turns toward a
-    // valuable contested prize instead of always fleeing to safe ground.
-    if (wouldLead) s += 2;
-    else s -= Math.min(1.5, gap * 0.4);     // mild, scales with how hopeless it is
-    if (contested) s += 1;                  // pressing an active fight is good
-    if (t.role === 'center') s += 2;        // the prize — strong pull
+    const centerPull = t.role === 'center' ? 2 : 0;
+    let s: number;
+    if (before > oppMax) {
+      // Already securely holding this tile — extra force is (almost) wasted.
+      // Tiny, decaying with how over-committed we already are → go elsewhere.
+      s = Math.max(0.05, 0.6 - (before - oppMax) * 0.3);
+    } else if (after > oppMax) {
+      // This die SECURES the tile — the real payoff, worth its full spoil value.
+      s = v * 2 + (contested ? 1.5 : 0) + centerPull;
+    } else {
+      // Still short even after this die — partial credit for BUILDING toward a
+      // valuable/contested prize across turns, less the deeper the deficit.
+      s = v * 0.6 + centerPull * 0.5 - Math.min(2, (oppMax - after) * 0.3);
+    }
     if (s > bestScore) { bestScore = s; best = tid; }
   }
   if (best === null) return null;

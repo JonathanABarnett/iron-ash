@@ -15,7 +15,7 @@ import { generateBoard, type BoardV2 } from './board';
 import { makeUnits, poolFromRanges, rollPool, type RolledDie, type Unit } from './units';
 import { resolveContest } from './combat';
 import { assignObjectives } from './objectives';
-import { FACTIONS, valueOf, combatBonus, defenseBonusFor, attackBonus, type FactionId } from './factions';
+import { FACTIONS, valueOf, combatBonus, defenseBonusFor, attackBonus, type FactionId, type Spoil } from './factions';
 
 export const ROUNDS = 6;
 
@@ -202,30 +202,65 @@ export function resolveRound(game: GameV2, deployments: Deployments): {
   return results;
 }
 
+/** One scored tile in a player's round breakdown (for UI legibility). */
+export interface RoundScoreLine {
+  tid: string;
+  name: string;
+  spoil: Spoil | 'universal';
+  value: number;     // VP this tile actually paid this round (after depletion)
+  base: number;      // its full (undepleted) value
+  depleted: boolean; // value < base (this tile is fading from being camped)
+}
+export interface RoundScore {
+  playerId: number;
+  lines: RoundScoreLine[]; // one per held, scoring tile
+  coffers: number;         // Merchants' Coffers bonus this round (0 otherwise)
+  total: number;           // lines + coffers = VP gained this round
+}
+
 /**
  * Score the round by ASYMMETRIC SPOIL VALUATION × DEPLETION: each controlled
  * territory is worth its spoil to that faction (primary 3 / secondary 2 / other
  * 1; centre universal 5), MINUS how many times the owner has already scored it
  * (floor 1). So a freshly-taken tile pays full and a long-camped one dwindles —
  * pushing players off their corners onto fresh, contested ground.
+ *
+ * Returns a per-player breakdown so the UI can show WHERE each point came from.
  */
-export function scoreRound(game: GameV2): void {
+export function scoreRound(game: GameV2): RoundScore[] {
+  const scores: Record<number, RoundScore> = {};
+  for (const p of game.players) scores[p.id] = { playerId: p.id, lines: [], coffers: 0, total: 0 };
+
   const tilesHeld: Record<number, number> = {};
   for (const [tid, ownerId] of Object.entries(game.owner)) {
     const terr = game.board.territories[tid]!;
     const faction = FACTIONS[game.players[ownerId]!.faction];
     tilesHeld[ownerId] = (tilesHeld[ownerId] ?? 0) + 1;
     const streak = game.heldStreak[tid] ?? 0;
-    game.players[ownerId]!.vp += depletedYield(valueOf(faction, terr.spoil), streak);
+    const base = valueOf(faction, terr.spoil);
+    const gain = depletedYield(base, streak);
+    game.players[ownerId]!.vp += gain;
     game.heldStreak[tid] = streak + 1;
+    const sc = scores[ownerId]!;
+    sc.lines.push({ tid, name: terr.name, spoil: terr.spoil, value: gain, base, depleted: gain < base });
+    sc.total += gain;
   }
 
   // Merchants — Coffers: +1 bonus VP per 2 territories held this round.
   if (ABILITIES_ENABLED) {
     for (const p of game.players) {
-      if (p.faction === 'merchants') p.vp += Math.floor((tilesHeld[p.id] ?? 0) / 2);
+      if (p.faction === 'merchants') {
+        const c = Math.floor((tilesHeld[p.id] ?? 0) / 2);
+        p.vp += c;
+        scores[p.id]!.coffers = c;
+        scores[p.id]!.total += c;
+      }
     }
   }
+
+  // Sort each player's lines high→low so the biggest contributors read first.
+  for (const s of Object.values(scores)) s.lines.sort((a, b) => b.value - a.value);
+  return Object.values(scores);
 }
 
 export function isGameOver(game: GameV2): boolean {
