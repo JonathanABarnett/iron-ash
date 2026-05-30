@@ -14,16 +14,19 @@
 set -u
 cd "$(dirname "$0")/.."
 
-BUNDLE="${TMPDIR:-/tmp}/v2tune.mjs"
-STATE="${TMPDIR:-/tmp}/v2tune-state.json"
+# TUNE_SRC selects which tuner to run (pool by default, or the board-defense one).
+TUNE_SRC="${TUNE_SRC:-scripts/v2-tune.ts}"
+TAG="$(basename "$TUNE_SRC" .ts)"
+BUNDLE="${TMPDIR:-/tmp}/${TAG}.mjs"
+STATE="${TMPDIR:-/tmp}/${TAG}-state.json"
 TOTAL="${1:-240}"
 CHUNK="${2:-15}"
 GAMES="${3:-70}"
 VALIDATE="${4:-700}"
 SEED="${5:-1}"
 
-echo "bundling tuner → $BUNDLE"
-npx esbuild scripts/v2-tune.ts --bundle --platform=node --format=esm --outfile="$BUNDLE" >/dev/null 2>&1 \
+echo "bundling $TUNE_SRC → $BUNDLE"
+npx esbuild "$TUNE_SRC" --bundle --platform=node --format=esm --outfile="$BUNDLE" >/dev/null 2>&1 \
   || { echo "esbuild bundle failed"; exit 1; }
 rm -f "$STATE"
 

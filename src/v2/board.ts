@@ -113,6 +113,18 @@ function layoutPositions(n: number): Layout {
   return { center: { x: CX, y: CY }, home, choke, border };
 }
 
+// ─── Balance: per-faction positional sturdiness (the BALANCE knob) ───────────
+// Pools, abilities and the spoil web are IDENTITY. The one lever the balance
+// tuner is allowed to move is how defensible each faction's CORE GROUND (its
+// home + choke) is — board-disadvantaged factions get sturdier terrain,
+// over-strong ones softer, tuned independently PER PLAYER COUNT (the thing pools
+// can't do). Default {} = the shipped board, untouched. Set per-count by
+// scripts/v2-tune-board.ts; production leaves it empty.
+let FACTION_DEFENSE_ADJ: Partial<Record<FactionId, number>> = {};
+export function setFactionDefenseAdj(adj: Partial<Record<FactionId, number>>): void {
+  FACTION_DEFENSE_ADJ = adj;
+}
+
 // ─── Generator ───────────────────────────────────────────────────────────────
 
 export function generateBoard(factionIds: FactionId[], seed: string): BoardV2 {
@@ -151,15 +163,19 @@ export function generateBoard(factionIds: FactionId[], seed: string): BoardV2 {
   // Choke spoil = that faction's first SECONDARY (push out to it; rivals contest).
   for (let i = 0; i < N; i++) {
     const faction = FACTIONS[factionIds[i]!];
+    // Positional-balance adjustment for THIS faction's core ground (home + choke).
+    const adj = FACTION_DEFENSE_ADJ[factionIds[i]!] ?? 0;
 
     const homeId = `home-${i}`;
     homeIds.push(homeId);
-    mk(homeId, FACTION_HOME_NAMES[i] ?? `Home ${i + 1}`, 'home', 'home', faction.primary, pos.home[i]!, { homeOf: i });
+    const homeT = mk(homeId, FACTION_HOME_NAMES[i] ?? `Home ${i + 1}`, 'home', 'home', faction.primary, pos.home[i]!, { homeOf: i });
+    if (adj) homeT.defenseBonus = Math.max(0, homeT.defenseBonus + adj);
 
     const chokeId = `choke-${i}`;
     chokeIds.push(chokeId);
     const chokeTerrain: TerrainV2 = i % 2 === 0 ? 'fortress' : 'mountain';
-    mk(chokeId, CHOKE_NAMES[i] ?? `Pass ${i + 1}`, 'choke', chokeTerrain, faction.secondary[0], pos.choke[i]!);
+    const chokeT = mk(chokeId, CHOKE_NAMES[i] ?? `Pass ${i + 1}`, 'choke', chokeTerrain, faction.secondary[0], pos.choke[i]!);
+    if (adj) chokeT.defenseBonus = Math.max(0, chokeT.defenseBonus + adj);
   }
 
   // ── Borders — open ground between each pair of ADJACENT homes ──
