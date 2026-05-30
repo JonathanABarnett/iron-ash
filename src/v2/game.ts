@@ -19,6 +19,15 @@ import { FACTIONS, valueOf, combatBonus, defenseBonusFor, attackBonus, type Fact
 
 export const ROUNDS = 6;
 
+// Diagnostic / balance-tuning switch. When off, every faction signature ability
+// is neutralised (combat bonuses → 0, Coffers/Soul-Harvest/Arcane-Focus inert)
+// so a sim can measure how much of the win-rate spread is ability-driven vs
+// pool/board-driven. Production play always leaves this ON; only the balance
+// scripts flip it. Module-level (not per-game) — the scripts run sequentially.
+let ABILITIES_ENABLED = true;
+export function setAbilitiesEnabled(on: boolean): void { ABILITIES_ENABLED = on; }
+export function abilitiesEnabled(): boolean { return ABILITIES_ENABLED; }
+
 export interface PlayerStats {
   /** Contested territories this player won (won a fight, not a walk-in). */
   contestsWon: number;
@@ -111,7 +120,7 @@ export function rollHand(game: GameV2, playerId: number, rng: Rng): RolledDie[] 
   const hand = rollPool(game.players[playerId]!.pool, rng);
 
   // Mages — Arcane Focus: Champion dice (1-6) never roll below 4.
-  if (faction.id === 'mages') {
+  if (ABILITIES_ENABLED && faction.id === 'mages') {
     for (const d of hand) if (d.unit.range === '1-6' && d.value < 4) d.value = 4;
   }
 
@@ -122,7 +131,7 @@ export function rollHand(game: GameV2, playerId: number, rng: Rng): RolledDie[] 
   }
 
   // Necromancers — Soul Harvest: bonus dice owed from contests lost last round.
-  const owed = game.pendingBonusDice[playerId] ?? 0;
+  const owed = ABILITIES_ENABLED ? (game.pendingBonusDice[playerId] ?? 0) : 0;
   if (owed > 0) {
     hand.push(...rollPool(makeUnits('2-5', owed, `harvest-p${playerId}-r${game.round}`), rng));
     game.pendingBonusDice[playerId] = 0;
@@ -152,12 +161,13 @@ export function resolveRound(game: GameV2, deployments: Deployments): {
     for (const k of Object.keys(committed)) {
       const pid = Number(k);
       const fac = game.players[pid]!.faction;
-      const ambush = pid !== prevOwner ? attackBonus(fac) : 0;
-      effectiveCommitted[pid] = committed[pid]! + combatBonus(fac) + ambush;
+      const ambush = ABILITIES_ENABLED && pid !== prevOwner ? attackBonus(fac) : 0;
+      const warlord = ABILITIES_ENABLED ? combatBonus(fac) : 0;
+      effectiveCommitted[pid] = committed[pid]! + warlord + ambush;
     }
 
     // Paladins — Consecrate: +2 defense on tiles they own.
-    const ownerDefBonus = prevOwner !== null ? defenseBonusFor(game.players[prevOwner]!.faction) : 0;
+    const ownerDefBonus = ABILITIES_ENABLED && prevOwner !== null ? defenseBonusFor(game.players[prevOwner]!.faction) : 0;
     const r = resolveContest({
       committed: effectiveCommitted,
       owner: prevOwner,
@@ -178,7 +188,7 @@ export function resolveRound(game: GameV2, deployments: Deployments): {
     // Necromancers — Soul Harvest: each contest a Necromancer LOST (committed
     // here but didn't end up owning the contested tile) earns a bonus die next
     // round.
-    if (r.contested) {
+    if (ABILITIES_ENABLED && r.contested) {
       for (const k of Object.keys(committed)) {
         const pid = Number(k);
         if (pid !== r.newOwner && game.players[pid]!.faction === 'necromancers') {
@@ -211,8 +221,10 @@ export function scoreRound(game: GameV2): void {
   }
 
   // Merchants — Coffers: +1 bonus VP per 2 territories held this round.
-  for (const p of game.players) {
-    if (p.faction === 'merchants') p.vp += Math.floor((tilesHeld[p.id] ?? 0) / 2);
+  if (ABILITIES_ENABLED) {
+    for (const p of game.players) {
+      if (p.faction === 'merchants') p.vp += Math.floor((tilesHeld[p.id] ?? 0) / 2);
+    }
   }
 }
 
